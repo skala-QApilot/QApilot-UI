@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ScenarioNetworkGraph from './components/ScenarioNetworkGraph';
 import {
   Bell, Play, ChevronDown, ChevronRight, Upload, FileText,
   CheckCircle2, XCircle, Clock, Loader2, Download, Plus, Trash2,
@@ -264,6 +265,7 @@ export default function App() {
   const [showLinkedFiles, setShowLinkedFiles] = useState(false);
   const [changeItemActions, setChangeItemActions] = useState<Record<number, 'approved' | 'deferred'>>({});
   const [aiItemActions, setAiItemActions] = useState<Record<string, 'approved' | 'deferred' | 'rejected'>>({});
+  const [showDeferredAIItems, setShowDeferredAIItems] = useState(false);
   const [codeChangeDetected, setCodeChangeDetected] = useState(false);
   const [dynamicScenarios, setDynamicScenarios] = useState([...mockScenarios]);
   const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }>>({ ...mockAIItems });
@@ -923,48 +925,74 @@ export default function App() {
       const q = scenarioSearchQuery.toLowerCase();
       const matchSearch = !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
       // AI 필터: dynamicAIItems에 있고 아직 승인/거절 안 된 항목만
-      const matchChange = !scenarioChangeFilter || (!!dynamicAIItems[s.id] && aiItemActions[s.id] !== 'approved' && aiItemActions[s.id] !== 'rejected');
-      return matchSearch && matchChange;
+      const isDeferred = aiItemActions[s.id] === 'deferred';
+      const matchChange = !scenarioChangeFilter || (!!dynamicAIItems[s.id] && aiItemActions[s.id] !== 'approved' && aiItemActions[s.id] !== 'rejected' && !isDeferred);
+      return matchSearch && matchChange && !isDeferred;
     });
+    const deferredAIIds = Object.entries(aiItemActions)
+      .filter(([, value]) => value === 'deferred')
+      .map(([id]) => id);
 
-    // ── 네트워크 그래프 연결 노드 계산 ───────────────────────────
-    const getConnectedIds = (nodeId: string | null): Set<string> => {
-      if (!nodeId) return new Set();
-      const connected = new Set<string>([nodeId]);
-      mockNetworkEdges.forEach(e => {
-        if (e.from === nodeId) connected.add(e.to);
-        if (e.to === nodeId) connected.add(e.from);
+    // ── ScenarioNetworkGraph 노드 데이터 ─────────────────────────
+    const tsNodesForGraph = mockScenarios.map(s => ({
+      id: s.id,
+      label: s.id,
+      name: s.name,
+      frs: mockRTMData.filter(r => r.ts === s.id).map(r => r.frId),
+    }));
+    const tcNodesForGraph = Object.entries(mockTestCases).flatMap(([tsId, tcs]) =>
+      tcs.map(tc => ({
+        id: `${tsId}_${tc.id}`,
+        label: tc.id,
+        name: tc.name,
+        frs: mockRTMData.filter(r => r.ts === tsId && r.tc === tc.id).map(r => r.frId),
+        parent: tsId,
+      }))
+    );
+    const tvNodesForGraph = Object.entries(mockTestCases).flatMap(([tsId, tcs]) =>
+      tcs.flatMap(tc =>
+        tc.testVariables.map(tv => ({
+          id: `${tsId}_${tc.id}_${tv.id}`,
+          label: tv.id,
+          name: tv.name,
+          frs: mockRTMData.filter(r => r.ts === tsId && r.tc === tc.id).map(r => r.frId),
+          parent: `${tsId}_${tc.id}`,
+        }))
+      )
+    );
+
+    // ResizeObserver로 center 컨테이너 크기를 캔버스에 전달
+    const graphContainerRef = React.useRef<HTMLDivElement>(null);
+    const [graphSize, setGraphSize] = React.useState({ width: 680, height: 420 });
+    React.useEffect(() => {
+      const el = graphContainerRef.current;
+      if (!el) return;
+      const ro = new ResizeObserver(entries => {
+        const { width, height } = entries[0].contentRect;
+        if (width > 0 && height > 0) setGraphSize({ width: Math.floor(width), height: Math.floor(height) });
       });
-      return connected;
-    };
-    const connectedIds = getConnectedIds(selectedNetworkNodeId);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }, []);
 
-    const nodeStatusColor = (status: string) => {
-      if (status === 'completed') return '#9AB17A';
-      if (status === 'failed') return '#FF9A86';
-      if (status === 'running') return '#f78ca0';
-      return '#BFC6C4';
-    };
+    // ── 그래프 ↔ 우측 패널 연동 ──────────────────────────────────
+    // detailPanelRow → graphSelectedId (그래프에 전달)
+    const graphSelectedId = detailPanelRow ? (
+      detailPanelRow.level === 'TS' ? detailPanelRow.tsId :
+      detailPanelRow.level === 'TC' ? `${detailPanelRow.tsId}_${detailPanelRow.tcId}` :
+      `${detailPanelRow.tsId}_${detailPanelRow.tcId}_${detailPanelRow.tvId}`
+    ) : null;
 
-    // ── 네트워크 노드 클릭 → detailPanel 연결 ─────────────────────
-    const handleNetworkNodeClick = (nodeId: string) => {
-      const isSelected = selectedNetworkNodeId === nodeId;
-      if (isSelected) { setSelectedNetworkNodeId(null); setDetailPanelRow(null); return; }
-      setSelectedNetworkNodeId(nodeId);
-      const parts = nodeId.split('_');
-      if (parts[0] === 'ts') {
-        const tsId = parts[1];
-        setDetailPanelRow({ level: 'TS', tsId });
-      } else if (parts[0] === 'tc') {
-        const tsId = parts[1]; const tcId = parts[2];
-        setDetailPanelRow({ level: 'TC', tsId, tcId });
-      } else if (parts[0] === 'tv') {
-        const tcId = parts[1] + '_' + parts[2];
-        const parentEdge = mockNetworkEdges.find(e => e.to === nodeId);
-        if (parentEdge) {
-          const tcParts = parentEdge.from.split('_');
-          setDetailPanelRow({ level: 'TC', tsId: tcParts[1], tcId: tcParts[2] });
-        }
+    // 그래프 노드 클릭 → detailPanelRow 갱신
+    const handleGraphNodeSelect = (id: string | null) => {
+      if (!id) { setDetailPanelRow(null); return; }
+      const parts = id.split('_');
+      if (parts.length === 1) {
+        setDetailPanelRow({ level: 'TS', tsId: parts[0] });
+      } else if (parts.length === 2) {
+        setDetailPanelRow({ level: 'TC', tsId: parts[0], tcId: parts[1] });
+      } else {
+        setDetailPanelRow({ level: 'TV', tsId: parts[0], tcId: parts[1], tvId: parts[2] });
       }
     };
 
@@ -1142,17 +1170,35 @@ export default function App() {
                 }`}>
                 <Sparkles className="w-3.5 h-3.5" />
               </button>
+              <button
+                onClick={() => { if (deferredAIIds.length > 0) setShowDeferredAIItems(prev => !prev); }}
+                title="보류 항목"
+                disabled={deferredAIIds.length === 0}
+                className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all relative ${
+                  showDeferredAIItems && deferredAIIds.length > 0
+                    ? 'bg-purple-100 text-purple-600 ring-1 ring-purple-200'
+                    : deferredAIIds.length > 0
+                      ? 'text-purple-500 hover:bg-purple-50'
+                      : 'text-[#c4c9d4] cursor-default'
+                }`}>
+                <Clock className="w-3.5 h-3.5" />
+                {deferredAIIds.length > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 bg-purple-500 text-white text-[8px] rounded-full flex items-center justify-center leading-none">
+                    {deferredAIIds.length}
+                  </span>
+                )}
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto py-1">
-              {/* 보류 항목 고정 영역 — aiItemActions 기반 */}
-              {Object.entries(aiItemActions).filter(([, v]) => v === 'deferred').length > 0 && (
+              {/* 보류 항목 — 시계 아이콘을 눌렀을 때만 표시 */}
+              {showDeferredAIItems && deferredAIIds.length > 0 && (
                 <div className="mx-2 mb-2 rounded-lg border border-purple-200 bg-purple-50/40">
                   <div className="px-2.5 py-1.5 border-b border-purple-100 flex items-center gap-1.5">
                     <Clock className="w-3 h-3 text-purple-500 flex-shrink-0" />
                     <span className="text-[10px] font-semibold text-purple-700">보류 항목</span>
                   </div>
-                  {Object.entries(aiItemActions).filter(([, v]) => v === 'deferred').map(([tsId]) => {
+                  {deferredAIIds.map((tsId) => {
                     const ai = dynamicAIItems[tsId];
                     const sc = dynamicScenarios.find(s => s.id === tsId);
                     if (!ai || !sc) return null;
@@ -1261,7 +1307,7 @@ export default function App() {
                         <div className="flex gap-1 flex-shrink-0">
                           <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'approved' }))}
                             className="px-2 py-0.5 bg-purple-500 text-white rounded text-[9px] font-medium hover:bg-purple-600">승인</button>
-                          <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'deferred' }))}
+                          <button onClick={() => { setAiItemActions(prev => ({ ...prev, [scenario.id]: 'deferred' })); setShowDeferredAIItems(true); }}
                             className="px-2 py-0.5 bg-white border border-purple-200 text-purple-600 rounded text-[9px] hover:bg-purple-50">보류</button>
                           <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'rejected' }))}
                             className="px-2 py-0.5 bg-white border border-red-200 text-red-500 rounded text-[9px] hover:bg-red-50">거절</button>
@@ -1329,7 +1375,7 @@ export default function App() {
                               <div key={tv.id}
                                 className={`group flex items-center gap-1.5 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/20 border-purple-100/30' : `${highlightedBotRow === `tv-${tvKey}` ? 'bg-[#f78ca0]/8' : 'bg-[#FAFAFA]'} border-[#f0f0f0]/30 hover:bg-gray-50`} cursor-pointer`}
                                 style={{ paddingLeft: '3.25rem' }}
-                                onClick={() => { setDetailPanelRow({ level: 'TC', tsId: scenario.id, tcId: tc.id }); setSelectedTvId(tv.id); }}>
+                                onClick={() => { setDetailPanelRow({ level: 'TV', tsId: scenario.id, tcId: tc.id, tvId: tv.id }); setSelectedTvId(tv.id); }}>
                                 <input type="checkbox" checked={selectedTCIds.includes(tvKey)}
                                   onChange={() => toggleTVSelection(tvKey)}
                                   className="w-3 h-3 accent-[#f78ca0] flex-shrink-0"
@@ -1382,108 +1428,19 @@ export default function App() {
           <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleLeftDragStart} />
 
           {/* ── [3] Center: Network Graph ── */}
-          <div className="flex-1 bg-[#F2F3F5] overflow-hidden relative"
-            onClick={() => { setSelectedNetworkNodeId(null); setDetailPanelRow(null); setOpenItemMenuId(null); }}>
-            <div className="absolute top-3 left-3 flex items-center gap-3 z-10 pointer-events-none">
-              <span className="text-[10px] text-[#9ca3af] font-medium bg-white/60 px-2 py-1 rounded-full">노드 클릭 → 연결 강조 + 상세 보기</span>
-            </div>
-            {selectedNetworkNodeId && (
-              <button
-                onClick={e => { e.stopPropagation(); setSelectedNetworkNodeId(null); setDetailPanelRow(null); }}
-                className="absolute top-3 right-3 z-10 text-[10px] text-[#f78ca0] bg-white/80 px-2 py-1 rounded-full border border-[#f78ca0]/30 hover:bg-white">
-                선택 해제 ×
-              </button>
-            )}
-
-            <svg width="100%" height="100%" viewBox="0 0 800 510" preserveAspectRatio="xMidYMid meet">
-              {/* 컬럼 배경 */}
-              {[
-                { x: 50,  w: 80,  color: 'rgba(247,140,160,0.04)', label: '시나리오 (TS)', lc: '#f78ca0' },
-                { x: 335, w: 90,  color: 'rgba(107,140,219,0.04)', label: '테스트케이스 (TC)', lc: '#6b8cdb' },
-                { x: 625, w: 90,  color: 'rgba(156,163,175,0.04)', label: '테스트변수 (TV)', lc: '#9ca3af' },
-              ].map(col => (
-                <g key={col.label}>
-                  <rect x={col.x} y={20} width={col.w} height={465} rx={12} fill={col.color} />
-                  <text x={col.x + col.w / 2} y={13} textAnchor="middle" fontSize={9} fill={col.lc} fontWeight="600">{col.label}</text>
-                </g>
-              ))}
-
-              {/* 범례 */}
-              <g transform="translate(12, 492)">
-                <circle cx={7} cy={7} r={5} fill="none" stroke="#f78ca0" strokeWidth={1.2} />
-                <text x={16} y={11} fontSize={8.5} fill="#9ca3af">완료</text>
-                <circle cx={65} cy={7} r={5} fill="none" stroke="#FF9A86" strokeWidth={1.2} />
-                <text x={74} y={11} fontSize={8.5} fill="#9ca3af">실패</text>
-                <circle cx={112} cy={7} r={5} fill="none" stroke="#BFC6C4" strokeWidth={1.2} />
-                <text x={121} y={11} fontSize={8.5} fill="#9ca3af">대기</text>
-                <circle cx={160} cy={7} r={8} fill="none" stroke="#f78ca0" strokeWidth={1.2} strokeDasharray="3 2" />
-                <text x={172} y={11} fontSize={8.5} fill="#9ca3af">변경감지</text>
-              </g>
-
-              {/* Edges */}
-              {mockNetworkEdges.map((edge, i) => {
-                const from = mockNetworkNodes.find(n => n.id === edge.from);
-                const to = mockNetworkNodes.find(n => n.id === edge.to);
-                if (!from || !to) return null;
-                const isHighlighted = !!(selectedNetworkNodeId && connectedIds.has(edge.from) && connectedIds.has(edge.to));
-                const isFaded = !!(selectedNetworkNodeId && !isHighlighted);
-                return (
-                  <line key={i}
-                    x1={from.x} y1={from.y} x2={to.x} y2={to.y}
-                    stroke={isHighlighted ? '#f78ca0' : '#D1D5DB'}
-                    strokeWidth={isHighlighted ? 2.5 : 1.2}
-                    strokeDasharray={to.type === 'TV' ? '5 3' : undefined}
-                    opacity={isFaded ? 0.12 : isHighlighted ? 1 : 0.65}
-                    style={{ transition: 'all 0.25s' }}
-                  />
-                );
-              })}
-
-              {/* Nodes */}
-              {mockNetworkNodes.map(node => {
-                const isSelected = selectedNetworkNodeId === node.id;
-                const isConnected = selectedNetworkNodeId ? connectedIds.has(node.id) : true;
-                const isFaded = !!(selectedNetworkNodeId && !isConnected);
-                const statusColor = nodeStatusColor(node.status);
-                const r = node.type === 'TS' ? 26 : node.type === 'TC' ? 18 : 12;
-                const strokeColor = node.type === 'TS' ? '#f78ca0' : node.type === 'TC' ? '#6b8cdb' : '#9ca3af';
-                const bgFill = isSelected ? strokeColor : (node.type === 'TS' ? 'rgba(247,140,160,0.15)' : node.type === 'TC' ? 'rgba(107,140,219,0.15)' : 'rgba(156,163,175,0.12)');
-                const hasChange = (node as any).hasChange;
-
-                return (
-                  <g key={node.id}
-                    style={{ cursor: 'pointer', transition: 'opacity 0.25s' }}
-                    opacity={isFaded ? 0.18 : 1}
-                    onClick={e => { e.stopPropagation(); handleNetworkNodeClick(node.id); }}>
-                    {/* Change ring */}
-                    {hasChange && (
-                      <circle cx={node.x} cy={node.y} r={r + 8}
-                        fill="none" stroke="#f78ca0" strokeWidth={1.5} strokeDasharray="5 3" opacity={0.55} />
-                    )}
-                    {/* Main circle */}
-                    <circle cx={node.x} cy={node.y} r={r}
-                      fill={bgFill} stroke={strokeColor}
-                      strokeWidth={isSelected ? 3 : 1.8}
-                    />
-                    {/* Status indicator */}
-                    <circle cx={node.x + r * 0.68} cy={node.y - r * 0.68} r={4.5}
-                      fill={statusColor} stroke="white" strokeWidth={1.5} />
-                    {/* Node label */}
-                    <text x={node.x} y={node.y + 1} textAnchor="middle" dominantBaseline="middle"
-                      fontSize={node.type === 'TS' ? 11 : 9.5}
-                      fontWeight="700"
-                      fill={isSelected ? 'white' : strokeColor}>
-                      {node.label}
-                    </text>
-                    {/* Sub-label below */}
-                    <text x={node.x} y={node.y + r + 13} textAnchor="middle"
-                      fontSize={8.5} fill={isSelected ? strokeColor : '#b0b7c0'}>
-                      {node.sub.length > 7 ? node.sub.slice(0, 7) + '…' : node.sub}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
+          <div
+            ref={graphContainerRef}
+            className="flex-1 bg-[#F2F3F5] overflow-hidden relative"
+            onClick={() => setOpenItemMenuId(null)}>
+            <ScenarioNetworkGraph
+              tsNodes={tsNodesForGraph}
+              tcNodes={tcNodesForGraph}
+              tvNodes={tvNodesForGraph}
+              width={graphSize.width}
+              height={graphSize.height}
+              selectedId={graphSelectedId}
+              onNodeSelect={handleGraphNodeSelect}
+            />
           </div>
 
           {/* Right drag handle — only when detail panel is open */}
@@ -1580,7 +1537,6 @@ export default function App() {
                           )}
                         </div>
                         <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">TC 수</span><span className="font-medium">{(dynamicTestCases[ts.id] || []).length}개</span></div>
-                        <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">상태</span>{statusIcon(ts.status, 'w-3.5 h-3.5')}</div>
                       </>)}
                       {level === 'TC' && tc && (<>
                         <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{tc.id}</span></div>
@@ -1599,7 +1555,6 @@ export default function App() {
                           )}
                         </div>
                         <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">상위 TS</span><span className="font-mono font-medium">{tsId}</span></div>
-                        <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">상태</span>{statusIcon(tc.status, 'w-3.5 h-3.5')}</div>
                       </>)}
                     </div>
                   </div>
