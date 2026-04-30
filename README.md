@@ -1,11 +1,10 @@
+# QApilot-UI
 
-  # QAsys
+This is a code bundle for QAsys. The original project is available at:
+https://www.figma.com/design/sOPWbDxmpMlkxhTmJoB2uL/QAsys
 
-  This is a code bundle for QAsys. The original project is available at https://www.figma.com/design/sOPWbDxmpMlkxhTmJoB2uL/QAsys.
+## Running the code
 
-  ## Running the code
+Run `npm i` to install dependencies.
 
-  Run `npm i` to install the dependencies.
-
-  Run `npm run dev` to start the development server.
-  
+Run `npm run dev` to start the development server.
