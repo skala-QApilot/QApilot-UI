@@ -524,37 +524,59 @@ setScheduledAlarms,
                   </div>
                   {/* merge connector */}
                   <div className="text-[#9ca3af] text-sm select-none flex-shrink-0">+</div>
-                  {/* Sequential pipeline — flex-1 so it fills remaining space */}
-                  <div className="flex items-center flex-1 min-w-0">
-                    {[
-                      { stage: 'Cross-check', label: 'Cross-check', short: 'Cr'  },
-                      { stage: '원인 분석',    label: '원인 분석',    short: '원인' },
-                      { stage: 'Report 생성', label: 'Report 생성', short: 'Re'  },
-                    ].map((node, i) => {
-                      const st = getNodeStatus(node.stage);
-                      const prevDone = i > 0 && completedAgentStages.includes(
-                        ['Cross-check', '원인 분석', 'Report 생성'][i - 1]
-                      );
-                      return (
-                        <React.Fragment key={node.stage}>
-                          {i > 0 && (
-                            <div className={`flex-1 h-0 mx-2 ${
-                              prevDone ? 'border-t-2 border-[#f78ca0]' : 'border-t-2 border-dashed border-gray-400'
-                            }`} />
-                          )}
-                          <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold transition-all ${
-                              st === 'complete' ? 'bg-[#9AB17A] text-white' :
-                              st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
-                              'bg-gray-200 text-gray-400'
-                            }`}>
-                              {st === 'complete' ? <CheckCircle className="w-3.5 h-3.5" /> : node.short}
+                  {/* Sequential pipeline */}
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <div className="h-2.5" />
+                    <div className="flex items-center w-full">
+                      {[
+                        { stage: 'Cross-check', label: 'Cross-check', short: 'Cr'  },
+                        { stage: '원인 분석',    label: '원인 분석',    short: '원인' },
+                        { stage: 'Report 생성', label: 'Report 생성', short: 'Re'  },
+                      ].map((node, i) => {
+                        const st = getNodeStatus(node.stage);
+                        const prevDone = i > 0 && completedAgentStages.includes(
+                          ['Cross-check', '원인 분석', 'Report 생성'][i - 1]
+                        );
+                        return (
+                          <React.Fragment key={node.stage}>
+                            {i > 0 && (
+                              <div
+                                className="flex-1 mx-2"
+                                style={{
+                                  height: '2px',
+                                  background: prevDone
+                                    ? '#f78ca0'
+                                    : 'repeating-linear-gradient(to right, #9ca3af 0, #9ca3af 4px, transparent 4px, transparent 10px)',
+                                }}
+                              />
+                            )}
+                            <div className="w-16 flex justify-center flex-shrink-0">
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold transition-all ${
+                                st === 'complete' ? 'bg-[#9AB17A] text-white' :
+                                st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
+                                'bg-gray-200 text-gray-400'
+                              }`}>
+                                {st === 'complete' ? <CheckCircle className="w-3.5 h-3.5" /> : node.short}
+                              </div>
                             </div>
-                            <span className="text-[8px] text-[#9ca3af] whitespace-nowrap leading-tight">{node.label}</span>
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-start mt-0.5 w-full">
+                      {[
+                        { stage: 'Cross-check', label: 'Cross-check' },
+                        { stage: '원인 분석',    label: '원인 분석'    },
+                        { stage: 'Report 생성', label: 'Report 생성'  },
+                      ].map((node, i) => (
+                        <React.Fragment key={node.stage}>
+                          {i > 0 && <div className="flex-1 mx-2" />}
+                          <div className="w-16 flex justify-center flex-shrink-0">
+                            <span className="text-[8px] text-[#9ca3af] text-center leading-tight">{node.label}</span>
                           </div>
                         </React.Fragment>
-                      );
-                    })}
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
