@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, History, Loader2, MessageCircle, Plus, Search, Sparkles, Star, Trash2, X } from 'lucide-react';
+import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, History, Loader2, MessageCircle, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, Users, X } from 'lucide-react';
 import ScenarioNetworkGraph from '../components/ScenarioNetworkGraph';
 import { PageTitle } from '../components/common/PageTitle';
 import { mockRTMData, mockScenarioHistory, mockScenarios, mockScenarioVersions, mockTestCases } from '../data/mockData';
@@ -53,6 +53,8 @@ setSelectedTvId,
 selectedScenarioNode,
 setSelectedScenarioNode,
 highlightedScenarioRow,
+highlightedBotRow,
+setHighlightedBotRow,
 detailPanelRow,
 setDetailPanelRow,
 expandedTSMain,

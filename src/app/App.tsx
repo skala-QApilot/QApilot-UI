@@ -619,6 +619,8 @@ export default function App() {
                 ScenarioManagerPanel={ScenarioManagerPanel}
                 setCurrentPage={setCurrentPage}
                 setTestDepth={setTestDepth}
+                highlightedBotRow={highlightedBotRow}
+                setHighlightedBotRow={setHighlightedBotRow}
               />
             )}
             {currentPage === '테스트그룹' && (
