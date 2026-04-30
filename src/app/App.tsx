@@ -126,6 +126,11 @@ export default function App() {
   const [retestCheckedIds, setRetestCheckedIds] = useState<Set<string>>(new Set());
   const [showRetestNavModal, setShowRetestNavModal] = useState(false);
 
+  // 시나리오 그룹 선택 & 예약 설정
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduledAlarms, setScheduledAlarms] = useState<Array<{ time: string; id: string }>>([]);
+
   // 테스트 결과
   const [historyFilter, setHistoryFilter] = useState<string>('ALL');
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
@@ -444,6 +449,15 @@ export default function App() {
       </div>
 
       <div className="flex items-center gap-4">
+        {/* 예약 알람 시간 표시 */}
+        {scheduledAlarms.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 rounded-lg border border-[#f78ca0]/20">
+            <Clock className="w-4 h-4 text-[#f78ca0]" />
+            <span className="text-sm font-medium text-[#f78ca0]">
+              {scheduledAlarms.map(a => a.time).join(', ')}
+            </span>
+          </div>
+        )}
         <div className="relative">
           <button onClick={() => setNotificationOpen(!notificationOpen)} className="p-2 hover:bg-gray-50 rounded-full relative">
             <Bell className="w-5 h-5 text-[#6b7280]" />
@@ -664,6 +678,12 @@ export default function App() {
                 setHistoryFilter={setHistoryFilter}
                 advanceAgentStage={advanceAgentStage}
                 getNodeStatus={getNodeStatus}
+                selectedGroupIds={selectedGroupIds}
+                setSelectedGroupIds={setSelectedGroupIds}
+                showScheduleModal={showScheduleModal}
+                setShowScheduleModal={setShowScheduleModal}
+                scheduledAlarms={scheduledAlarms}
+                setScheduledAlarms={setScheduledAlarms}
               />
             )}
             {currentPage === '테스트' && (
@@ -688,6 +708,7 @@ export default function App() {
                 highlightedLogIdx={highlightedLogIdx}
                 setHighlightedLogIdx={setHighlightedLogIdx}
                 testSubTab={testSubTab}
+                setTestSubTab={setTestSubTab}
                 historyFilter={historyFilter}
                 setHistoryFilter={setHistoryFilter}
                 selectedExecutionId={selectedExecutionId}
@@ -701,6 +722,8 @@ export default function App() {
                 setShowRetestNavModal={setShowRetestNavModal}
                 advanceAgentStage={advanceAgentStage}
                 getNodeStatus={getNodeStatus}
+                showCompletionModal={showCompletionModal}
+                setShowCompletionModal={setShowCompletionModal}
               />
             )}
             {currentPage === 'RTM' && <RTMPage />}

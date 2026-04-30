@@ -1,7 +1,7 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
-import { AlertCircle, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, Clock, Eye, Loader2, Pause, Play, RotateCcw } from 'lucide-react';
+import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Eye, Loader2, Pause, Play, RotateCcw } from 'lucide-react';
 import { StatusIcon } from '../components/common/StatusIcon';
-import { mockScenarios, mockTestCases, mockTestLogs } from '../data/mockData';
+import { mockScenarios, mockTestCases, mockTestLogs, mockExecutionHistory } from '../data/mockData';
 import { ExecutionHistoryPage as ExecutionHistoryPageView } from './ExecutionHistoryPage';
 
 type RunningTest = { id: string; name: string; groupId: string; startTime: string; status: 'running' | 'completed' };
@@ -30,6 +30,7 @@ interface TestPageProps {
   highlightedLogIdx: number | null;
   setHighlightedLogIdx: Dispatch<SetStateAction<number | null>>;
   testSubTab: TestSubTab;
+  setTestSubTab: Dispatch<SetStateAction<TestSubTab>>;
   historyFilter: string;
   setHistoryFilter: Dispatch<SetStateAction<string>>;
   selectedExecutionId: string | null;
@@ -42,7 +43,9 @@ interface TestPageProps {
   setRetestCheckedIds: Dispatch<SetStateAction<Set<string>>>;
   setShowRetestNavModal: Dispatch<SetStateAction<boolean>>;
   advanceAgentStage: () => void;
-  getNodeStatus: (stage: string) => 'pending' | 'running' | 'complete';
+  getNodeStatus: (stage: string) => 'inactive' | 'running' | 'complete';
+  showCompletionModal: boolean;
+  setShowCompletionModal: Dispatch<SetStateAction<boolean>>;
 }
 
 export const TestPage = ({
@@ -66,6 +69,7 @@ setExpandedTestCases,
 highlightedLogIdx,
 setHighlightedLogIdx,
 testSubTab,
+setTestSubTab,
 historyFilter,
 setHistoryFilter,
 selectedExecutionId,
@@ -79,6 +83,8 @@ setRetestCheckedIds,
 setShowRetestNavModal,
 advanceAgentStage,
 getNodeStatus,
+showCompletionModal,
+setShowCompletionModal,
 }: TestPageProps) => {
   // 진행중: 실행 중인 테스트 목록 + 실행 상세
   const InProgressView = () => {
@@ -249,7 +255,14 @@ getNodeStatus,
               </div>
               <div className="p-4 border-t border-[#f0f0f0] space-y-2">
                 <div className="flex gap-2 justify-center items-center">
-                  <button onClick={() => setIsTestRunning(!isTestRunning)}
+                  <button onClick={() => {
+                    if (isTestRunning) {
+                      setShowCompletionModal(true);
+                      setIsTestRunning(false);
+                    } else {
+                      setIsTestRunning(true);
+                    }
+                  }}
                     className="px-4 py-2 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded-lg text-sm font-medium flex items-center gap-1.5 shadow-sm hover:shadow-md transition-shadow">
                     {isTestRunning ? <><Pause className="w-4 h-4" /> 정지</> : <><Play className="w-4 h-4" /> 실행</>}
                   </button>
@@ -412,6 +425,39 @@ getNodeStatus,
           setRetestCheckedIds={setRetestCheckedIds}
           setShowRetestNavModal={setShowRetestNavModal}
         />
+      )}
+      
+      {/* 완료 팝업 */}
+      {showCompletionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
+            <CheckCircle2 className="w-12 h-12 text-[#9AB17A] mx-auto mb-4" />
+            <div className="font-semibold text-lg mb-2">테스트 실행이 완료되었습니다.</div>
+            <div className="text-sm text-[#6b7280] mb-6">결과 페이지로 이동하시겠습니까?</div>
+            <div className="flex gap-3">
+              <button onClick={() => {
+                setShowCompletionModal(false);
+                setRunningTests(prev => prev.map(t => t.id === selectedRunningTestId ? { ...t, status: 'completed' } : t));
+                // 실행이력 탭으로 이동 + 새로운 execution 항목으로 이동
+                setTestSubTab('HISTORY');
+                // 새로운 execution을 생성 (mock data에서 가장 최신 항목 사용)
+                const latestExecution = mockExecutionHistory[0];
+                if (latestExecution) {
+                  setSelectedExecutionId(latestExecution.id);
+                  setHistoryDetailTab('FAIL');
+                  setSelectedFailTC(null);
+                }
+              }}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg font-medium">
+                이동
+              </button>
+              <button onClick={() => setShowCompletionModal(false)}
+                className="flex-1 px-4 py-2 bg-white border border-[#f0f0f0] rounded-lg hover:bg-gray-50">
+                나중에
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

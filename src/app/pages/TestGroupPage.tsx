@@ -1,5 +1,5 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
-import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, History, Loader2, Pause, Play, Plus, RotateCcw, Search, X } from 'lucide-react';
+import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, History, Loader2, Pause, Play, Plus, RotateCcw, Search, X, Clock, Check } from 'lucide-react';
 import { PageTitle } from '../components/common/PageTitle';
 import { StatusIcon } from '../components/common/StatusIcon';
 import { mockScenarios, mockTestCases, mockTestGroups, mockTestLogs } from '../data/mockData';
@@ -47,7 +47,13 @@ interface TestGroupPageProps {
   setScenarioSubmenuExpanded: Dispatch<SetStateAction<boolean>>;
   setHistoryFilter: Dispatch<SetStateAction<string>>;
   advanceAgentStage: () => void;
-  getNodeStatus: (stage: string) => 'pending' | 'running' | 'complete';
+  getNodeStatus: (stage: string) => 'inactive' | 'running' | 'complete';
+  selectedGroupIds: Set<string>;
+  setSelectedGroupIds: Dispatch<SetStateAction<Set<string>>>;
+  showScheduleModal: boolean;
+  setShowScheduleModal: Dispatch<SetStateAction<boolean>>;
+  scheduledAlarms: Array<{ time: string; id: string }>;
+  setScheduledAlarms: Dispatch<SetStateAction<Array<{ time: string; id: string }>>>;
 }
 
 export const TestGroupPage = ({
@@ -90,6 +96,12 @@ setScenarioSubmenuExpanded,
 setHistoryFilter,
 advanceAgentStage,
 getNodeStatus,
+selectedGroupIds,
+setSelectedGroupIds,
+showScheduleModal,
+setShowScheduleModal,
+scheduledAlarms,
+setScheduledAlarms,
 }: TestGroupPageProps) => {
   // Depth 0 — Group List
   if (testDepth === 0) {
@@ -123,7 +135,17 @@ getNodeStatus,
           <span className="text-xs text-[#9ca3af]">
             {filteredGroups.length}개 그룹 · 총 {totalTCs}개 TC
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <button 
+              disabled={selectedGroupIds.size === 0}
+              onClick={() => setShowScheduleModal(true)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all ${
+                selectedGroupIds.size === 0
+                  ? 'bg-gray-100 text-[#9ca3af] cursor-not-allowed'
+                  : 'bg-white border border-[#f0f0f0] text-[#1a1a2e] hover:bg-gray-50 shadow-sm'
+              }`}>
+              <Clock className="w-4 h-4" /> 예약 설정
+            </button>
             <button className="px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg text-sm font-medium flex items-center gap-1.5 shadow-sm hover:shadow-md transition-shadow">
               <Plus className="w-4 h-4" /> 새 시나리오 그룹 생성
             </button>
@@ -144,8 +166,22 @@ getNodeStatus,
               return (
                 <div key={group.id} className="px-5 py-4 hover:bg-gray-50/70 transition-colors">
 
-                  {/* ── Row 1: ID · Name · Status · Run button ── */}
+                  {/* ── Row 1: Checkbox · ID · Name · Status · Run button ── */}
                   <div className="flex items-center gap-2.5 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedGroupIds.has(group.id)}
+                      onChange={(e) => {
+                        const newIds = new Set(selectedGroupIds);
+                        if (e.target.checked) {
+                          newIds.add(group.id);
+                        } else {
+                          newIds.delete(group.id);
+                        }
+                        setSelectedGroupIds(newIds);
+                      }}
+                      className="w-4 h-4 rounded cursor-pointer accent-[#f78ca0]"
+                    />
                     <span className="text-[10px] font-mono text-[#c4c9d4] flex-shrink-0 w-10">
                       {group.id}
                     </span>
@@ -201,7 +237,8 @@ getNodeStatus,
                         setCompletedAgentStages([]);
                         setCurrentAgentStage('');
                         setIsTestRunning(false);
-                        setCurrentPage('테스트');
+                        setTestDepth(1);
+                        setCurrentPage('테스트그룹');
                         setTestSubTab('INPROGRESS');
                         setTestSubmenuExpanded(true);
                         setScenarioSubmenuExpanded(false);
@@ -254,6 +291,50 @@ getNodeStatus,
             })}
           </div>
         </div>
+
+        {/* 예약 설정 팝업 */}
+        {showScheduleModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">테스트 실행 예약</h2>
+                <button onClick={() => setShowScheduleModal(false)} className="text-[#9ca3af] hover:text-[#6b7280]">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="text-sm text-[#6b7280] mb-4">
+                선택된 그룹: <span className="font-medium text-[#1a1a2e]">{selectedGroupIds.size}개</span>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">예약 시간</label>
+                <input 
+                  type="time"
+                  id="scheduleTime"
+                  className="w-full px-3 py-2 border border-[#f0f0f0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    const timeInput = document.getElementById('scheduleTime') as HTMLInputElement;
+                    const time = timeInput?.value || new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                    const alarmId = `alarm-${Date.now()}`;
+                    setScheduledAlarms(prev => [...prev, { time, id: alarmId }]);
+                    setShowScheduleModal(false);
+                    setSelectedGroupIds(new Set());
+                  }}
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg font-medium">
+                  예약 생성
+                </button>
+                <button 
+                  onClick={() => setShowScheduleModal(false)}
+                  className="flex-1 px-4 py-2 bg-white border border-[#f0f0f0] rounded-lg hover:bg-gray-50">
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -359,7 +440,16 @@ getNodeStatus,
             <div className="p-4 border-t border-[#f0f0f0] space-y-2">
               <div className="flex gap-2 justify-center items-center">
                 <button
-                  onClick={() => setIsTestRunning(!isTestRunning)}
+                  onClick={() => {
+                    // 정지 버튼 클릭일 때만 팝업
+                    if (isTestRunning) {
+                      setShowCompletionModal(true);
+                      setIsTestRunning(false);
+                    } else {
+                      // 실행 버튼 클릭
+                      setIsTestRunning(true);
+                    }
+                  }}
                   className="px-4 py-2 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded-lg text-sm font-medium flex items-center gap-1.5 shadow-sm hover:shadow-md transition-shadow">
                   {isTestRunning ? <><Pause className="w-4 h-4" /> 정지</> : <><Play className="w-4 h-4" /> 실행</>}
                 </button>
