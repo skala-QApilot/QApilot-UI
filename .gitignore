@@ -1,0 +1,10 @@
+/node_modules
+/.vscode
+/dist
+/build
+/.env
+.DS_Store
+*.log
+*.tmp
+*.bakgit 
+*.swp
