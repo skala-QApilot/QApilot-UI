@@ -1,12 +1,144 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
-import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, History, Loader2, Pause, Play, Plus, RotateCcw, Search, X, Clock, Check } from 'lucide-react';
+import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, History, Loader2, Pause, Play, Plus, RotateCcw, Search, X, Clock, Check, XCircle } from 'lucide-react';
 import { PageTitle } from '../components/common/PageTitle';
 import { StatusIcon } from '../components/common/StatusIcon';
 import { mockScenarios, mockTestCases, mockTestGroups, mockTestLogs } from '../data/mockData';
 
 type RunningTest = { id: string; name: string; groupId: string; startTime: string; status: 'running' | 'completed' };
 type TestSubTab = 'INPROGRESS' | 'HISTORY';
-type ScenarioSidebarTab = 'TOTAL' | 'FILTERED';
+type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED';
+
+// ── Schedule Modal ────────────────────────────────────────────────────────────
+function ScheduleModal({
+  onClose,
+  onSave,
+  selectedGroupCount,
+}: {
+  onClose: () => void;
+  onSave: (time: string) => void;
+  selectedGroupCount: number;
+}) {
+  const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
+  type RepeatType = '없음' | '매일' | '매주' | '매월';
+
+  const [time, setTime]               = React.useState('07:50');
+  const [repeat, setRepeat]           = React.useState<RepeatType>('매주');
+  const [selectedDays, setSelectedDays] = React.useState(new Set(['월', '화', '수', '목', '금']));
+
+  const toggleDay = (day: string) => {
+    setSelectedDays(prev => { const n = new Set(prev); n.has(day) ? n.delete(day) : n.add(day); return n; });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-2xl w-[420px] overflow-hidden">
+
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-[#f0f0f0] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-[#9ca3af]" />
+            <span className="font-semibold text-sm text-[#1a1a2e]">테스트 실행 예약</span>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded text-[#9ca3af] hover:text-[#6b7280]">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5">
+
+          {/* 선택 그룹 */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-[#f9f9fb] rounded-lg border border-[#f0f0f0] text-xs text-[#6b7280]">
+            <span className="text-[#9ca3af]">선택된 그룹</span>
+            <span className="font-semibold text-[#1a1a2e]">{selectedGroupCount}개</span>
+          </div>
+
+          {/* 실행 시간 */}
+          <div>
+            <label className="block text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-1.5">
+              실행 시간
+            </label>
+            <input
+              type="time"
+              value={time}
+              onChange={e => setTime(e.target.value)}
+              className="w-full px-3 py-2.5 border border-[#ebebeb] rounded-lg text-sm text-[#1a1a2e] bg-white focus:outline-none focus:ring-2 focus:ring-[#f78ca0]/20 focus:border-[#f78ca0]/40 transition-colors"
+            />
+          </div>
+
+          {/* 반복 */}
+          <div>
+            <label className="block text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-1.5">
+              반복
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {(['없음', '매일', '매주', '매월'] as RepeatType[]).map(opt => (
+                <button
+                  key={opt}
+                  onClick={() => setRepeat(opt)}
+                  className={`py-2 text-xs font-semibold rounded-lg border transition-all ${
+                    repeat === opt
+                      ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white border-transparent shadow-sm'
+                      : 'bg-white border-[#ebebeb] text-[#6b7280] hover:border-[#f78ca0]/40 hover:text-[#f78ca0]'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 요일 선택 (매주 only) */}
+          {repeat === '매주' && (
+            <div>
+              <label className="block text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-1.5">
+                요일
+              </label>
+              <div className="flex items-center gap-1.5">
+                {DAYS.map(day => {
+                  const sel = selectedDays.has(day);
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => toggleDay(day)}
+                      className={`flex-1 py-2 text-xs font-semibold rounded-lg border transition-all ${
+                        sel
+                          ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white border-transparent shadow-sm'
+                          : 'bg-white border-[#ebebeb] text-[#9ca3af] hover:border-[#f78ca0]/40 hover:text-[#f78ca0]'
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 반복 없음 안내 */}
+          {repeat === '없음' && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-700">
+              <Check className="w-3.5 h-3.5 flex-shrink-0" />
+              지정한 시간에 1회만 실행됩니다.
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-[#f0f0f0] flex items-center gap-3">
+          <button onClick={onClose}
+            className="flex-1 px-4 py-2.5 bg-white border border-[#ebebeb] rounded-lg text-sm text-[#6b7280] hover:bg-gray-50 transition-colors">
+            취소
+          </button>
+          <button onClick={() => onSave(time)}
+            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg text-sm font-medium hover:shadow-md transition-shadow">
+            예약 생성
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface TestGroupPageProps {
   testDepth: 0 | 1;
@@ -294,46 +426,15 @@ setScheduledAlarms,
 
         {/* 예약 설정 팝업 */}
         {showScheduleModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">테스트 실행 예약</h2>
-                <button onClick={() => setShowScheduleModal(false)} className="text-[#9ca3af] hover:text-[#6b7280]">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="text-sm text-[#6b7280] mb-4">
-                선택된 그룹: <span className="font-medium text-[#1a1a2e]">{selectedGroupIds.size}개</span>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">예약 시간</label>
-                <input 
-                  type="time"
-                  id="scheduleTime"
-                  className="w-full px-3 py-2 border border-[#f0f0f0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30"
-                />
-              </div>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => {
-                    const timeInput = document.getElementById('scheduleTime') as HTMLInputElement;
-                    const time = timeInput?.value || new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-                    const alarmId = `alarm-${Date.now()}`;
-                    setScheduledAlarms(prev => [...prev, { time, id: alarmId }]);
-                    setShowScheduleModal(false);
-                    setSelectedGroupIds(new Set());
-                  }}
-                  className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg font-medium">
-                  예약 생성
-                </button>
-                <button 
-                  onClick={() => setShowScheduleModal(false)}
-                  className="flex-1 px-4 py-2 bg-white border border-[#f0f0f0] rounded-lg hover:bg-gray-50">
-                  취소
-                </button>
-              </div>
-            </div>
-          </div>
+          <ScheduleModal
+            selectedGroupCount={selectedGroupIds.size}
+            onClose={() => setShowScheduleModal(false)}
+            onSave={time => {
+              setScheduledAlarms(prev => [...prev, { time, id: `alarm-${Date.now()}` }]);
+              setShowScheduleModal(false);
+              setSelectedGroupIds(new Set());
+            }}
+          />
         )}
       </div>
     );
@@ -376,65 +477,144 @@ setScheduledAlarms,
         <div className="flex flex-1 overflow-hidden">
           {/* Left Sidebar — resizable */}
           <div className="bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0" style={{ width: depth1SidebarWidth }}>
-            <div className="flex gap-2 px-4 pt-3 border-b border-[#f0f0f0]">
-              {(['TOTAL', 'FILTERED'] as const).map(tab => (
-                <button key={tab} onClick={() => setScenarioSidebarTab(tab)}
-                  className={`px-3 py-2 text-sm relative ${scenarioSidebarTab === tab ? 'text-[#1a1a2e] font-medium' : 'text-[#6b7280]'}`}>
-                  {tab === 'FILTERED' ? '⊗' : tab}
-                  {scenarioSidebarTab === tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]" />}
-                </button>
-              ))}
-            </div>
+            {/* Tabs: TOTAL / PASS / ⊗ */}
+            {(() => {
+              const allTCs = mockScenarios.flatMap(s =>
+                (mockTestCases[s.id] || []).map(tc => ({ sId: s.id, sName: s.name, tc }))
+              );
+              const passedTCs = allTCs.filter(({ tc }) => tc.status === 'passed');
+              const failedTCs = allTCs.filter(({ tc }) => tc.status === 'failed');
 
-            <div className="flex-1 overflow-y-auto p-3 space-y-1">
-              {selectedScenariosForTest.map(scenario => {
-                const isExpanded = expandedScenarios.includes(scenario.id);
-                const tcs = mockTestCases[scenario.id] || [];
-                return (
-                  <div key={scenario.id} className="border border-[#f0f0f0] rounded">
-                    <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => setExpandedScenarios(prev =>
-                        prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]
-                      )}>
-                      {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{scenario.id} {scenario.name}</div>
+              const scrollToLog = (logIdx: number) => {
+                setHighlightedLogIdx(logIdx);
+                setTimeout(() => {
+                  document.getElementById(`d1-log-${logIdx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 50);
+              };
+
+              return (
+                <>
+                  <div className="flex gap-1 px-3 pt-2.5 border-b border-[#f0f0f0] flex-shrink-0">
+                    {[
+                      { key: 'TOTAL',    label: 'TOTAL' },
+                      { key: 'PASS',     label: `✓ PASS${passedTCs.length ? ` (${passedTCs.length})` : ''}` },
+                      { key: 'FILTERED', label: `⊗ FAIL${failedTCs.length ? ` (${failedTCs.length})` : ''}` },
+                    ].map(tab => (
+                      <button key={tab.key} onClick={() => setScenarioSidebarTab(tab.key as ScenarioSidebarTab)}
+                        className={`px-2.5 py-2 text-xs relative whitespace-nowrap ${scenarioSidebarTab === tab.key ? 'text-[#1a1a2e] font-semibold' : 'text-[#6b7280]'}`}>
+                        {tab.label}
+                        {scenarioSidebarTab === tab.key && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]" />}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-2">
+                    {/* TOTAL tab */}
+                    {scenarioSidebarTab === 'TOTAL' && (
+                      <div className="space-y-1">
+                        {selectedScenariosForTest.map(scenario => {
+                          const isExpanded = expandedScenarios.includes(scenario.id);
+                          const tcs = mockTestCases[scenario.id] || [];
+                          return (
+                            <div key={scenario.id} className="border border-[#f0f0f0] rounded">
+                              <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
+                                onClick={() => {
+                                  setExpandedScenarios(prev =>
+                                    prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]
+                                  );
+                                  scrollToLog(0);
+                                }}>
+                                {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium truncate">{scenario.id} {scenario.name}</div>
+                                </div>
+                                <StatusIcon status={scenario.status} />
+                              </div>
+                              {isExpanded && tcs.map(tc => {
+                                const isTCExpanded = expandedTestCases.includes(`${scenario.id}_${tc.id}`);
+                                return (
+                                  <div key={tc.id} className="ml-6 border-l-2 border-gray-200">
+                                    <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
+                                      onClick={() => {
+                                        const key = `${scenario.id}_${tc.id}`;
+                                        setExpandedTestCases(prev =>
+                                          prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
+                                        );
+                                        const logIdx = tc.status === 'failed'
+                                          ? mockTestLogs.findIndex(l => l.isError)
+                                          : 0;
+                                        scrollToLog(Math.max(0, logIdx));
+                                      }}>
+                                      {isTCExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
+                                      </div>
+                                      <StatusIcon status={tc.status} size="w-3 h-3" />
+                                    </div>
+                                    {isTCExpanded && tc.testVariables.map(tv => (
+                                      <div key={tv.id} className="ml-5 flex items-center gap-2 p-1.5 text-xs text-[#6b7280] cursor-pointer hover:bg-gray-50"
+                                        onClick={() => scrollToLog(tv.status === 'failed' ? 4 : 0)}>
+                                        <div className="flex-1 truncate">{tv.id}: {tv.name}</div>
+                                        <StatusIcon status={tv.status} size="w-3 h-3" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
                       </div>
-                      <StatusIcon status={scenario.status} />
-                    </div>
-                    {isExpanded && tcs.map(tc => {
-                      const isTCExpanded = expandedTestCases.includes(`${scenario.id}_${tc.id}`);
-                      return (
-                        <div key={tc.id} className="ml-6 border-l-2 border-gray-200">
-                          <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
-                            onClick={() => {
-                              const key = `${scenario.id}_${tc.id}`;
-                              setExpandedTestCases(prev =>
-                                prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
-                              );
-                              const logIdx = mockTestLogs.findIndex(l => l.isError);
-                              if (tc.status === 'failed' && logIdx >= 0) setHighlightedLogIdx(logIdx);
-                            }}>
-                            {isTCExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    )}
+
+                    {/* PASS tab */}
+                    {scenarioSidebarTab === 'PASS' && (
+                      <div className="space-y-1 pt-1">
+                        {passedTCs.length === 0 && (
+                          <div className="text-center py-10 text-xs text-[#9ca3af]">완료된 테스트케이스 없음</div>
+                        )}
+                        {passedTCs.map(({ sId, tc }, idx) => (
+                          <div key={`${sId}_${tc.id}_${idx}`}
+                            className="flex items-center gap-2 p-2 bg-[#9AB17A]/5 rounded-lg border border-[#9AB17A]/20 cursor-pointer hover:bg-[#9AB17A]/10 transition-colors"
+                            onClick={() => scrollToLog(0)}>
+                            <CheckCircle className="w-3.5 h-3.5 text-[#9AB17A] flex-shrink-0" />
                             <div className="flex-1 min-w-0">
+                              <div className="text-[10px] text-[#9ca3af]">{sId}</div>
                               <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
                             </div>
-                            <StatusIcon status={tc.status} size="w-3 h-3" />
+                            <span className="text-[9px] font-bold bg-[#9AB17A]/10 text-[#9AB17A] px-1.5 py-0.5 rounded">PASS</span>
                           </div>
-                          {isTCExpanded && tc.testVariables.map(tv => (
-                            <div key={tv.id} className="ml-5 flex items-center gap-2 p-1.5 text-xs text-[#6b7280] cursor-pointer hover:bg-gray-50"
-                              onClick={() => { if (tv.status === 'failed') setHighlightedLogIdx(4); }}>
-                              <div className="flex-1 truncate">{tv.id}: {tv.name}</div>
-                              <StatusIcon status={tv.status} size="w-3 h-3" />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ⊗ FAIL tab */}
+                    {scenarioSidebarTab === 'FILTERED' && (
+                      <div className="space-y-1 pt-1">
+                        {failedTCs.length === 0 && (
+                          <div className="text-center py-10 text-xs text-[#9ca3af]">실패한 테스트케이스 없음</div>
+                        )}
+                        {failedTCs.map(({ sId, tc }, idx) => (
+                          <div key={`${sId}_${tc.id}_${idx}`}
+                            className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-100 cursor-pointer hover:bg-red-50/70 transition-colors"
+                            onClick={() => {
+                              const logIdx = mockTestLogs.findIndex(l => l.isError);
+                              scrollToLog(Math.max(0, logIdx));
+                            }}>
+                            <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[10px] text-[#9ca3af]">{sId}</div>
+                              <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
                             </div>
-                          ))}
-                        </div>
-                      );
-                    })}
+                            <span className="text-[9px] font-bold bg-red-50 text-red-500 px-1.5 py-0.5 rounded border border-red-100">FAIL</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                );
-              })}
-            </div>
+                </>
+              );
+            })()}
 
             {/* Execution Controls */}
             <div className="p-4 border-t border-[#f0f0f0] space-y-2">
@@ -586,7 +766,7 @@ setScheduledAlarms,
                 <div className="font-semibold mb-3 text-sm">Test Runtime Log</div>
                 <div className="space-y-2">
                   {mockTestLogs.map((log, idx) => (
-                    <div key={idx} className={`p-2.5 rounded text-xs ${
+                    <div key={idx} id={`d1-log-${idx}`} className={`p-2.5 rounded text-xs ${
                       idx === highlightedLogIdx ? 'bg-yellow-50 border-l-4 border-yellow-400' :
                       log.isError ? 'bg-red-50 border-l-4 border-red-400' :
                       'bg-gray-50'

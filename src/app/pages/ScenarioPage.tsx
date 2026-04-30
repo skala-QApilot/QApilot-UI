@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, History, Loader2, MessageCircle, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, Users, X } from 'lucide-react';
+import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, History, LayoutGrid, Loader2, MessageCircle, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, X } from 'lucide-react';
 import ScenarioNetworkGraph from '../components/ScenarioNetworkGraph';
 import { PageTitle } from '../components/common/PageTitle';
 import { mockRTMData, mockScenarioHistory, mockScenarios, mockScenarioVersions, mockTestCases } from '../data/mockData';
@@ -312,7 +312,7 @@ setTestDepth,
                 ? 'bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white shadow-sm hover:shadow-md'
                 : 'bg-white border border-[#f0f0f0] text-[#9ca3af] cursor-default'
             }`}>
-            <Users className="w-3.5 h-3.5" /> 시나리오 그룹 생성
+            <LayoutGrid className="w-3.5 h-3.5" /> 시나리오 그룹 생성
           </button>
           <button onClick={() => setCurrentPage('테스트그룹')}
             className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">

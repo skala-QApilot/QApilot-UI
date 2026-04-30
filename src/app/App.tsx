@@ -13,9 +13,9 @@ import {
   Bell, Play, ChevronDown, ChevronRight, Upload, FileText,
   CheckCircle2, XCircle, Clock, Loader2, Download, Plus, Trash2,
   Eye, AlertCircle, CheckCircle, X, Home, Layers, Settings,
-  RotateCcw, Pause, ChevronLeft, User, Users, Send, GitBranch,
+  RotateCcw, Pause, ChevronLeft, User, Send,
   History, CheckSquare, Search, Edit2, MessageCircle,
-  Sparkles, Star, FolderOpen,
+  Sparkles, Star, FolderOpen, LayoutGrid,
 } from 'lucide-react';
 import {
   mockAIItems,
@@ -324,10 +324,10 @@ export default function App() {
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
                     currentPage === '시나리오' ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] shadow-sm' : 'text-[#6b7280] hover:bg-gray-50 hover:text-[#1a1a2e]'
                   }`}><FileText className="w-4 h-4" /></button>
-                <button onClick={() => { setCurrentPage('테스트그룹'); setTestDepth(0); }} title="시나리오 그룹"
+                <button onClick={() => { setCurrentPage('테스트그룹'); setTestDepth(0); }} title="테스트그룹"
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
                     currentPage === '테스트그룹' ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] shadow-sm' : 'text-[#6b7280] hover:bg-gray-50 hover:text-[#1a1a2e]'
-                  }`}><Users className="w-4 h-4" /></button>
+                  }`}><LayoutGrid className="w-4 h-4" /></button>
               </div>
             )}
           </div>

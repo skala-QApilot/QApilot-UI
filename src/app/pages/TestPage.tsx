@@ -1,5 +1,5 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
-import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Eye, Loader2, Pause, Play, RotateCcw } from 'lucide-react';
+import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Eye, Loader2, Pause, Play, RotateCcw, XCircle } from 'lucide-react';
 import { StatusIcon } from '../components/common/StatusIcon';
 import { mockScenarios, mockTestCases, mockTestLogs, mockExecutionHistory } from '../data/mockData';
 import { ExecutionHistoryPage as ExecutionHistoryPageView } from './ExecutionHistoryPage';
@@ -7,7 +7,7 @@ import { ExecutionHistoryPage as ExecutionHistoryPageView } from './ExecutionHis
 type RunningTest = { id: string; name: string; groupId: string; startTime: string; status: 'running' | 'completed' };
 type TestSubTab = 'INPROGRESS' | 'HISTORY';
 type HistoryDetailTab = 'FAIL' | 'PASS';
-type ScenarioSidebarTab = 'TOTAL' | 'FILTERED';
+type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED';
 
 interface TestPageProps {
   runningTests: RunningTest[];
@@ -195,64 +195,141 @@ setShowCompletionModal,
           <div className="flex-1 flex overflow-hidden">
             {/* 시나리오 사이드바 — resizable */}
             <div className="bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0" style={{ width: innerSidebarWidth }}>
-              <div className="flex gap-2 px-4 pt-3 border-b border-[#f0f0f0]">
-                {(['TOTAL', 'FILTERED'] as const).map(tab => (
-                  <button key={tab} onClick={() => setScenarioSidebarTab(tab)}
-                    className={`px-3 py-2 text-sm relative ${scenarioSidebarTab === tab ? 'text-[#1a1a2e] font-medium' : 'text-[#6b7280]'}`}>
-                    {tab === 'FILTERED' ? '⊗' : tab}
-                    {scenarioSidebarTab === tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]" />}
-                  </button>
-                ))}
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-1">
-                {mockScenarios.map(scenario => {
-                  const isExpanded = expandedScenarios.includes(scenario.id);
-                  const tcs = mockTestCases[scenario.id] || [];
-                  return (
-                    <div key={scenario.id} className="border border-[#f0f0f0] rounded">
-                      <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
-                        onClick={() => setExpandedScenarios(prev =>
-                          prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]
-                        )}>
-                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">{scenario.id} {scenario.name}</div>
+              {/* Tabs: TOTAL / PASS / ⊗ */}
+              {(() => {
+                const allTCs = mockScenarios.flatMap(s =>
+                  (mockTestCases[s.id] || []).map(tc => ({ sId: s.id, tc }))
+                );
+                const passedTCs = allTCs.filter(({ tc }) => tc.status === 'passed');
+                const failedTCs = allTCs.filter(({ tc }) => tc.status === 'failed');
+
+                const scrollToLog = (logIdx: number) => {
+                  setHighlightedLogIdx(logIdx);
+                  setTimeout(() => {
+                    document.getElementById(`ip-log-${logIdx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 50);
+                };
+
+                return (
+                  <>
+                    <div className="flex gap-1 px-3 pt-2.5 border-b border-[#f0f0f0] flex-shrink-0">
+                      {[
+                        { key: 'TOTAL',    label: 'TOTAL' },
+                        { key: 'PASS',     label: `✓ PASS${passedTCs.length ? ` (${passedTCs.length})` : ''}` },
+                        { key: 'FILTERED', label: `⊗ FAIL${failedTCs.length ? ` (${failedTCs.length})` : ''}` },
+                      ].map(tab => (
+                        <button key={tab.key} onClick={() => setScenarioSidebarTab(tab.key as 'TOTAL' | 'PASS' | 'FILTERED')}
+                          className={`px-2.5 py-2 text-xs relative whitespace-nowrap ${scenarioSidebarTab === tab.key ? 'text-[#1a1a2e] font-semibold' : 'text-[#6b7280]'}`}>
+                          {tab.label}
+                          {scenarioSidebarTab === tab.key && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]" />}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-2">
+                      {scenarioSidebarTab === 'TOTAL' && (
+                        <div className="space-y-1">
+                          {mockScenarios.map(scenario => {
+                            const isExpanded = expandedScenarios.includes(scenario.id);
+                            const tcs = mockTestCases[scenario.id] || [];
+                            return (
+                              <div key={scenario.id} className="border border-[#f0f0f0] rounded">
+                                <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
+                                  onClick={() => {
+                                    setExpandedScenarios(prev =>
+                                      prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]
+                                    );
+                                    scrollToLog(0);
+                                  }}>
+                                  {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium truncate">{scenario.id} {scenario.name}</div>
+                                  </div>
+                                  <StatusIcon status={scenario.status} />
+                                </div>
+                                {isExpanded && tcs.map(tc => {
+                                  const isTCExpanded = expandedTestCases.includes(`${scenario.id}_${tc.id}`);
+                                  return (
+                                    <div key={tc.id} className="ml-6 border-l-2 border-gray-200">
+                                      <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
+                                        onClick={() => {
+                                          const key = `${scenario.id}_${tc.id}`;
+                                          setExpandedTestCases(prev =>
+                                            prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
+                                          );
+                                          const logIdx = tc.status === 'failed'
+                                            ? mockTestLogs.findIndex(l => l.isError)
+                                            : 0;
+                                          scrollToLog(Math.max(0, logIdx));
+                                        }}>
+                                        {isTCExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
+                                        </div>
+                                        <StatusIcon status={tc.status} size="w-3 h-3" />
+                                      </div>
+                                      {isTCExpanded && tc.testVariables.map(tv => (
+                                        <div key={tv.id} className="ml-5 flex items-center gap-2 p-1.5 text-xs text-[#6b7280] cursor-pointer hover:bg-gray-50"
+                                          onClick={() => scrollToLog(tv.status === 'failed' ? 4 : 0)}>
+                                          <div className="flex-1 truncate">{tv.id}: {tv.name}</div>
+                                          <StatusIcon status={tv.status} size="w-3 h-3" />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
                         </div>
-                        <StatusIcon status={scenario.status} />
-                      </div>
-                      {isExpanded && tcs.map(tc => {
-                        const isTCExpanded = expandedTestCases.includes(`${scenario.id}_${tc.id}`);
-                        return (
-                          <div key={tc.id} className="ml-6 border-l-2 border-gray-200">
-                            <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
-                              onClick={() => {
-                                const key = `${scenario.id}_${tc.id}`;
-                                setExpandedTestCases(prev =>
-                                  prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
-                                );
-                                const logIdx = mockTestLogs.findIndex(l => l.isError);
-                                if (tc.status === 'failed' && logIdx >= 0) setHighlightedLogIdx(logIdx);
-                              }}>
-                              {isTCExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      )}
+
+                      {scenarioSidebarTab === 'PASS' && (
+                        <div className="space-y-1 pt-1">
+                          {passedTCs.length === 0 && (
+                            <div className="text-center py-10 text-xs text-[#9ca3af]">완료된 테스트케이스 없음</div>
+                          )}
+                          {passedTCs.map(({ sId, tc }, idx) => (
+                            <div key={`${sId}_${tc.id}_${idx}`}
+                              className="flex items-center gap-2 p-2 bg-[#9AB17A]/5 rounded-lg border border-[#9AB17A]/20 cursor-pointer hover:bg-[#9AB17A]/10 transition-colors"
+                              onClick={() => scrollToLog(0)}>
+                              <CheckCircle className="w-3.5 h-3.5 text-[#9AB17A] flex-shrink-0" />
                               <div className="flex-1 min-w-0">
+                                <div className="text-[10px] text-[#9ca3af]">{sId}</div>
                                 <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
                               </div>
-                              <StatusIcon status={tc.status} size="w-3 h-3" />
+                              <span className="text-[9px] font-bold bg-[#9AB17A]/10 text-[#9AB17A] px-1.5 py-0.5 rounded">PASS</span>
                             </div>
-                            {isTCExpanded && tc.testVariables.map(tv => (
-                              <div key={tv.id} className="ml-5 flex items-center gap-2 p-1.5 text-xs text-[#6b7280] cursor-pointer hover:bg-gray-50"
-                                onClick={() => { if (tv.status === 'failed') setHighlightedLogIdx(4); }}>
-                                <div className="flex-1 truncate">{tv.id}: {tv.name}</div>
-                                <StatusIcon status={tv.status} size="w-3 h-3" />
+                          ))}
+                        </div>
+                      )}
+
+                      {scenarioSidebarTab === 'FILTERED' && (
+                        <div className="space-y-1 pt-1">
+                          {failedTCs.length === 0 && (
+                            <div className="text-center py-10 text-xs text-[#9ca3af]">실패한 테스트케이스 없음</div>
+                          )}
+                          {failedTCs.map(({ sId, tc }, idx) => (
+                            <div key={`${sId}_${tc.id}_${idx}`}
+                              className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-100 cursor-pointer hover:bg-red-50/70 transition-colors"
+                              onClick={() => {
+                                const logIdx = mockTestLogs.findIndex(l => l.isError);
+                                scrollToLog(Math.max(0, logIdx));
+                              }}>
+                              <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[10px] text-[#9ca3af]">{sId}</div>
+                                <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
                               </div>
-                            ))}
-                          </div>
-                        );
-                      })}
+                              <span className="text-[9px] font-bold bg-red-50 text-red-500 px-1.5 py-0.5 rounded border border-red-100">FAIL</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
+                  </>
+                );
+              })()}
               <div className="p-4 border-t border-[#f0f0f0] space-y-2">
                 <div className="flex gap-2 justify-center items-center">
                   <button onClick={() => {
@@ -391,7 +468,7 @@ setShowCompletionModal,
                   <div className="font-semibold mb-3 text-sm">Test Runtime Log</div>
                   <div className="space-y-2">
                     {mockTestLogs.map((log, idx) => (
-                      <div key={idx} className={`p-2.5 rounded text-xs ${
+                      <div key={idx} id={`ip-log-${idx}`} className={`p-2.5 rounded text-xs ${
                         idx === highlightedLogIdx ? 'bg-yellow-50 border-l-4 border-yellow-400' :
                         log.isError ? 'bg-red-50 border-l-4 border-red-400' :
                         'bg-gray-50'
