@@ -1,8 +1,7 @@
 import React from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, History, LayoutGrid, Loader2, MessageCircle, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, X } from 'lucide-react';
+import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, LayoutGrid, List, Loader2, Network, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, X } from 'lucide-react';
 import ScenarioNetworkGraph from '../components/ScenarioNetworkGraph';
-import { PageTitle } from '../components/common/PageTitle';
-import { mockRTMData, mockScenarioHistory, mockScenarios, mockScenarioVersions, mockTestCases } from '../data/mockData';
+import { mockRTMData, mockScenarios, mockScenarioVersions, mockTestCases } from '../data/mockData';
 
 interface ScenarioPageProps {
   [key: string]: any;
@@ -69,8 +68,12 @@ ScenarioManagerPanel,
 setCurrentPage,
 setTestDepth,
 }: ScenarioPageProps) => {
-  // Resizable left sidebar
-  const [leftSidebarWidth, setLeftSidebarWidth] = React.useState(256);
+
+  // View mode: table (full-width list) or graph
+  const [viewMode, setViewMode] = React.useState<'table' | 'graph'>('table');
+
+  // Resizable left sidebar (graph mode only)
+  const [leftSidebarWidth, setLeftSidebarWidth] = React.useState(300);
   const leftDragRef = React.useRef(false);
   const leftStartX = React.useRef(0);
   const leftStartW = React.useRef(0);
@@ -105,41 +108,41 @@ setTestDepth,
     document.addEventListener('mouseup', onUp);
   };
 
-  const tagColors: Record<string, string> = {
-    blue: 'bg-blue-100 text-blue-700',
-    purple: 'bg-purple-100 text-purple-700',
-    gradient: 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white',
-    orange: 'bg-orange-100 text-orange-700',
-  };
+  // typed aliases to suppress implicit-any from loose prop types
+  const _selectedTCIds: string[] = selectedTCIds as string[];
+  const _dynamicScenarios: Array<{ id: string; name: string; tags: string[] }> = dynamicScenarios as any[];
+  const _dynamicTestCases: Record<string, Array<{ id: string; name: string; testVariables: Array<{ id: string; name: string }> }>> = dynamicTestCases as any;
+  const _aiItemActions: Record<string, string> = aiItemActions as Record<string, string>;
+  const _dynamicAIItems: Record<string, { reason: string; trigger: string; timestamp: string }> = dynamicAIItems as any;
 
-  const selectedTCs = selectedTCIds
-    .filter(id => id.split('_').length === 2)
-    .map(id => {
+  const selectedTCs = _selectedTCIds
+    .filter((id: string) => id.split('_').length === 2)
+    .map((id: string) => {
       const [tsId, tcId] = id.split('_');
-      const ts = dynamicScenarios.find(s => s.id === tsId);
-      const tc = (dynamicTestCases[tsId] || []).find(t => t.id === tcId);
+      const ts = _dynamicScenarios.find((s) => s.id === tsId);
+      const tc = (_dynamicTestCases[tsId] || []).find(t => t.id === tcId);
       return { tsId, tcId, tsName: ts?.name, tcName: tc?.name };
     });
 
   const toggleTSSelection = (tsId: string) => {
-    const tsTCs = (dynamicTestCases[tsId] || []).map(tc => `${tsId}_${tc.id}`);
-    const allSelected = tsTCs.every(id => selectedTCIds.includes(id));
+    const tsTCs = (_dynamicTestCases[tsId] || []).map(tc => `${tsId}_${tc.id}`);
+    const allSelected = tsTCs.every((id: string) => _selectedTCIds.includes(id));
     if (allSelected) {
-      setSelectedTCIds(prev => prev.filter(id => !tsTCs.includes(id)));
+      setSelectedTCIds((prev: string[]) => prev.filter((id: string) => !tsTCs.includes(id)));
     } else {
-      setSelectedTCIds(prev => [...new Set([...prev, ...tsTCs])]);
+      setSelectedTCIds((prev: string[]) => [...new Set([...prev, ...tsTCs])]);
     }
   };
 
   const toggleTCSelection = (key: string) => {
-    setSelectedTCIds(prev =>
-      prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
+    setSelectedTCIds((prev: string[]) =>
+      prev.includes(key) ? prev.filter((id: string) => id !== key) : [...prev, key]
     );
   };
 
   const toggleTVSelection = (key: string) => {
-    setSelectedTCIds(prev =>
-      prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
+    setSelectedTCIds((prev: string[]) =>
+      prev.includes(key) ? prev.filter((id: string) => id !== key) : [...prev, key]
     );
   };
 
@@ -151,15 +154,14 @@ setTestDepth,
   };
 
   // ── 사이드바 필터링 ────────────────────────────────────────────
-  const filteredScenarios = dynamicScenarios.filter(s => {
-    const q = scenarioSearchQuery.toLowerCase();
+  const filteredScenarios = _dynamicScenarios.filter(s => {
+    const q = (scenarioSearchQuery as string).toLowerCase();
     const matchSearch = !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
-    // AI 필터: dynamicAIItems에 있고 아직 승인/거절 안 된 항목만
-    const isDeferred = aiItemActions[s.id] === 'deferred';
-    const matchChange = !scenarioChangeFilter || (!!dynamicAIItems[s.id] && aiItemActions[s.id] !== 'approved' && aiItemActions[s.id] !== 'rejected' && !isDeferred);
+    const isDeferred = _aiItemActions[s.id] === 'deferred';
+    const matchChange = !scenarioChangeFilter || (!!_dynamicAIItems[s.id] && _aiItemActions[s.id] !== 'approved' && _aiItemActions[s.id] !== 'rejected' && !isDeferred);
     return matchSearch && matchChange && !isDeferred;
   });
-  const deferredAIIds = Object.entries(aiItemActions)
+  const deferredAIIds = Object.entries(_aiItemActions)
     .filter(([, value]) => value === 'deferred')
     .map(([id]) => id);
 
@@ -206,14 +208,12 @@ setTestDepth,
   }, []);
 
   // ── 그래프 ↔ 우측 패널 연동 ──────────────────────────────────
-  // detailPanelRow → graphSelectedId (그래프에 전달)
   const graphSelectedId = detailPanelRow ? (
     detailPanelRow.level === 'TS' ? detailPanelRow.tsId :
     detailPanelRow.level === 'TC' ? `${detailPanelRow.tsId}_${detailPanelRow.tcId}` :
     `${detailPanelRow.tsId}_${detailPanelRow.tcId}_${detailPanelRow.tvId}`
   ) : null;
 
-  // 그래프 노드 클릭 → detailPanelRow 갱신
   const handleGraphNodeSelect = (id: string | null) => {
     if (!id) { setDetailPanelRow(null); return; }
     const parts = id.split('_');
@@ -225,9 +225,6 @@ setTestDepth,
       setDetailPanelRow({ level: 'TV', tsId: parts[0], tcId: parts[1], tvId: parts[2] });
     }
   };
-
-  // ── 사이드바 아이템 메뉴 ──────────────────────────────────────
-  const [openItemMenuId, setOpenItemMenuId] = React.useState<string | null>(null);
 
   // ── 버전 팝업 hover 유지 (timer) ──────────────────────────────
   const versionHoverTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -291,17 +288,104 @@ setTestDepth,
     </div>
   );
 
+  // ── TS 추가 ──────────────────────────────────────────────────
+  const addNewTS = () => {
+    const newId = `TS${_dynamicScenarios.length + 1}`;
+    setDynamicScenarios(prev => [...prev, { id: newId, name: '새 시나리오', tags: [] }]);
+    setDynamicTestCases(prev => ({ ...prev, [newId]: [] }));
+    setExpandedTSForTC(prev => [...prev, newId]);
+  };
+
+  // ── TC 추가 ──────────────────────────────────────────────────
+  const addNewTC = (tsId: string) => {
+    const existing = _dynamicTestCases[tsId] || [];
+    const newId = `TC${existing.length + 1}`;
+    setDynamicTestCases(prev => ({
+      ...prev,
+      [tsId]: [...existing, { id: newId, name: '새 테스트케이스', testVariables: [] }],
+    }));
+    setExpandedTSForTC(prev => prev.includes(tsId) ? prev : [...prev, tsId]);
+  };
+
+  // ── TV 추가 ──────────────────────────────────────────────────
+  const addNewTV = (tsId: string, tcId: string) => {
+    const tcKey = `${tsId}_${tcId}`;
+    setDynamicTestCases(prev => ({
+      ...prev,
+      [tsId]: (prev[tsId] || []).map(tc => {
+        if (tc.id !== tcId) return tc;
+        const newId = `TV${tc.testVariables.length + 1}`;
+        return { ...tc, testVariables: [...tc.testVariables, { id: newId, name: '새 테스트변수' }] };
+      }),
+    }));
+    setExpandedTCMain(prev => prev.includes(tcKey) ? prev : [...prev, tcKey]);
+  };
+
+  // ── TS 삭제 ──────────────────────────────────────────────────
+  const deleteTS = (tsId: string) => {
+    setDynamicScenarios(prev => prev.filter(s => s.id !== tsId));
+    if (detailPanelRow?.tsId === tsId) setDetailPanelRow(null);
+  };
+
+  // ── TC 삭제 ──────────────────────────────────────────────────
+  const deleteTC = (tsId: string, tcId: string) => {
+    setDynamicTestCases(prev => ({
+      ...prev,
+      [tsId]: (prev[tsId] || []).filter(t => t.id !== tcId),
+    }));
+    if (detailPanelRow?.tcId === tcId && detailPanelRow?.tsId === tsId) setDetailPanelRow(null);
+  };
+
+  // ── TV 삭제 ──────────────────────────────────────────────────
+  const deleteTV = (tsId: string, tcId: string, tvId: string) => {
+    setDynamicTestCases(prev => ({
+      ...prev,
+      [tsId]: (prev[tsId] || []).map(t =>
+        t.id === tcId ? { ...t, testVariables: t.testVariables.filter(v => v.id !== tvId) } : t
+      ),
+    }));
+  };
+
+  // 전체 TC ID 목록
+  const allTCIds = _dynamicScenarios.flatMap((s) =>
+    (_dynamicTestCases[s.id] || []).map(tc => `${s.id}_${tc.id}`)
+  );
+
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]" onClick={() => setOpenItemMenuId(null)}>
+    <div className="flex flex-col h-[calc(100vh-4rem)]">
 
       {/* ── Top Toolbar ── */}
       <div className="bg-white border-b border-[#f0f0f0] px-5 py-2.5 flex items-center gap-3 flex-shrink-0">
         <span className="font-semibold text-sm text-[#1a1a2e]">시나리오</span>
         {someSelected && (
           <span className="px-2 py-0.5 text-xs bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] rounded-full border border-[#f78ca0]/20">
-            {selectedTCIds.length}개 선택됨
+            {_selectedTCIds.length}개 선택됨
           </span>
         )}
+
+        {/* View mode toggle */}
+        <div className="flex items-center rounded-lg border border-[#f0f0f0] overflow-hidden">
+          <button
+            onClick={() => setViewMode('table')}
+            className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-all ${
+              viewMode === 'table'
+                ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] font-medium'
+                : 'text-[#9ca3af] hover:bg-gray-50'
+            }`}>
+            <List className="w-3.5 h-3.5" /> 목록
+          </button>
+          <div className="w-px h-5 bg-[#f0f0f0]" />
+          <button
+            onClick={() => setViewMode('graph')}
+            className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-all ${
+              viewMode === 'graph'
+                ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] font-medium'
+                : 'text-[#9ca3af] hover:bg-gray-50'
+            }`}>
+            <Network className="w-3.5 h-3.5" /> 그래프
+          </button>
+        </div>
+
         <div className="ml-auto flex items-center gap-2">
           <button className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
             <Download className="w-3.5 h-3.5" /> CSV
@@ -342,10 +426,8 @@ setTestDepth,
         {/* ── [1] Version Timeline — 맨 좌측 ── */}
         <div className="w-14 bg-[#F3F4F6] border-r border-[#e5e7eb] flex flex-col items-center py-4 flex-shrink-0" style={{ overflow: 'visible', zIndex: 20 }}>
           <div className="text-[9px] text-[#9ca3af] font-semibold uppercase tracking-wide mb-4">VER</div>
-          {/* 수직 연결선 */}
           <div className="relative flex flex-col items-center w-full" style={{ overflow: 'visible' }}>
             <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-[#e5e7eb]" style={{ zIndex: 0 }} />
-            {/* 변경 감지 시 맨 위에만 점선 동그라미 1개 */}
             {mockScenarioVersions.some(v => v.hasChange) && (() => {
               const latestChange = [...mockScenarioVersions].reverse().find(v => v.hasChange)!;
               const isSelected = selectedScenarioVersion === latestChange.id;
@@ -390,7 +472,6 @@ setTestDepth,
                 <div key={ver.id} className="relative flex flex-col items-center mb-5" style={{ zIndex: 10, overflow: 'visible' }}
                   onMouseEnter={() => handleVersionEnter(ver.id)}
                   onMouseLeave={handleVersionLeave}>
-                  {/* Dot */}
                   <button onClick={() => setSelectedScenarioVersion(ver.id)} className="relative flex items-center justify-center">
                     <div className={`w-5 h-5 rounded-full border-2 transition-all ${
                       isSelected ? 'bg-[#f78ca0] border-[#f78ca0] shadow-md shadow-pink-200' : 'bg-white border-[#d1d5db] hover:border-[#f78ca0]'
@@ -401,8 +482,6 @@ setTestDepth,
                     <span className={`text-[9px] mt-0.5 font-medium leading-none ${isSelected ? 'text-[#f78ca0]' : 'text-[#9ca3af]'}`}>{ver.label}</span>
                   )}
                   <span className="text-[8px] text-[#c4c9d4]">{ver.date}</span>
-
-                  {/* Popup — 오른쪽으로 열림 */}
                   {hoveredVersionId === ver.id && (
                     <div
                       className="absolute left-full ml-1 top-0 bg-white rounded-xl shadow-2xl border border-[#e5e7eb] p-3 w-52"
@@ -435,8 +514,12 @@ setTestDepth,
           </div>
         </div>
 
-        {/* ── [2] Left Sidebar — TS/TC/TV Tree ── */}
-        <div className="bg-white flex flex-col flex-shrink-0" style={{ width: leftSidebarWidth }}>
+        {/* ── [2] TS/TC/TV Tree — table mode: flex-1 / graph mode: fixed width ── */}
+        <div
+          className={`bg-white flex flex-col flex-shrink-0 ${viewMode === 'table' ? 'flex-1' : ''}`}
+          style={viewMode === 'graph' ? { width: leftSidebarWidth } : undefined}>
+
+          {/* Tree header */}
           <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#f0f0f0] bg-gray-50 flex-shrink-0">
             <input type="checkbox" checked={allTCsSelected}
               onChange={e => setSelectedTCIds(e.target.checked ? allTCIds : [])}
@@ -471,10 +554,18 @@ setTestDepth,
                 </span>
               )}
             </button>
+            {/* TS 추가 버튼 */}
+            <button
+              onClick={addNewTS}
+              title="시나리오 추가"
+              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[#9ca3af] hover:text-[#9AB17A] hover:bg-green-50 transition-all">
+              <Plus className="w-3.5 h-3.5" />
+            </button>
           </div>
 
+          {/* Tree body */}
           <div className="flex-1 overflow-y-auto py-1">
-            {/* 보류 항목 — 시계 아이콘을 눌렀을 때만 표시 */}
+            {/* 보류 항목 */}
             {showDeferredAIItems && deferredAIIds.length > 0 && (
               <div className="mx-2 mb-2 rounded-lg border border-purple-200 bg-purple-50/40">
                 <div className="px-2.5 py-1.5 border-b border-purple-100 flex items-center gap-1.5">
@@ -482,8 +573,8 @@ setTestDepth,
                   <span className="text-[10px] font-semibold text-purple-700">보류 항목</span>
                 </div>
                 {deferredAIIds.map((tsId) => {
-                  const ai = dynamicAIItems[tsId];
-                  const sc = dynamicScenarios.find(s => s.id === tsId);
+                  const ai = _dynamicAIItems[tsId];
+                  const sc = _dynamicScenarios.find((s) => s.id === tsId);
                   if (!ai || !sc) return null;
                   const triggerLabel = ai.trigger === 'chatbot' ? '챗봇 질의' : ai.trigger === 'file' ? '파일 업데이트' : '코드 변경 감지';
                   return (
@@ -505,27 +596,24 @@ setTestDepth,
                 })}
               </div>
             )}
+
             {filteredScenarios.map(scenario => {
-              const tcs = dynamicTestCases[scenario.id] || [];
+              const tcs = _dynamicTestCases[scenario.id] || [];
               const allTCKeys = tcs.map(tc => `${scenario.id}_${tc.id}`);
-              const tsAllSel = allTCKeys.length > 0 && allTCKeys.every(k => selectedTCIds.includes(k));
-              const tsSomeSel = allTCKeys.some(k => selectedTCIds.includes(k));
+              const tsAllSel = allTCKeys.length > 0 && allTCKeys.every((k: string) => _selectedTCIds.includes(k));
+              const tsSomeSel = allTCKeys.some((k: string) => _selectedTCIds.includes(k));
               const isExpanded = expandedTSForTC.includes(scenario.id);
-              const tsMenuId = `ts-${scenario.id}`;
               const tsEditKey = scenario.id;
               const isTSEditing = editingDetailItem?.type === 'ts' && editingDetailItem.key === tsEditKey;
 
-              // AI 생성 항목 여부 (코드 변경 감지 버튼으로 생성된 임시 항목 포함)
-              const isCodeChangeItem = codeChangeDetected && scenario.id === 'TS1' && !aiItemActions['TS1'] && !dynamicAIItems['TS1'];
+              const isCodeChangeItem = codeChangeDetected && scenario.id === 'TS1' && !_aiItemActions['TS1'] && !_dynamicAIItems['TS1'];
               const aiInfo = isCodeChangeItem
                 ? { reason: 'login.tsx 비밀번호 검증 로직 변경 감지', trigger: 'code' as const, timestamp: '2026-04-27 10:23' }
-                : dynamicAIItems[scenario.id];
-              const isAIItem = !!aiInfo && aiItemActions[scenario.id] !== 'approved' && aiItemActions[scenario.id] !== 'rejected';
-              const isDeferredItem = aiItemActions[scenario.id] === 'deferred';
+                : _dynamicAIItems[scenario.id];
+              const isAIItem = !!aiInfo && _aiItemActions[scenario.id] !== 'approved' && _aiItemActions[scenario.id] !== 'rejected';
+              const isDeferredItem = _aiItemActions[scenario.id] === 'deferred';
 
-              // 거절된 항목 스킵
-              if (aiItemActions[scenario.id] === 'rejected') return null;
-              // 보류된 항목은 위 섹션에 표시됨 — 여기선 렌더링 안 함
+              if (_aiItemActions[scenario.id] === 'rejected') return null;
               if (isDeferredItem) return null;
 
               const triggerLabel = aiInfo?.trigger === 'chatbot' ? '챗봇 질의' : aiInfo?.trigger === 'file' ? '파일 업데이트' : '코드 변경 감지';
@@ -558,35 +646,32 @@ setTestDepth,
                           : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-600' : 'text-[#6b7280]'}`}>{scenario.name}</span>}
                       </div>
                     </div>
+                    {/* TS 액션 아이콘 */}
                     {!isAIItem && (
-                      <div className="relative flex-shrink-0">
+                      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
                         <button
-                          onClick={e => { e.stopPropagation(); setOpenItemMenuId(openItemMenuId === tsMenuId ? null : tsMenuId); }}
-                          className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 text-[#9ca3af] text-xs font-bold transition-opacity">
-                          ···
+                          onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'ts', key: tsEditKey, value: scenario.name }); }}
+                          title="수정"
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-blue-50 text-[#9ca3af] hover:text-blue-500 transition-colors">
+                          <Edit2 className="w-3 h-3" />
                         </button>
-                        {openItemMenuId === tsMenuId && (
-                          <div className="absolute right-0 top-6 bg-white rounded-lg shadow-xl border border-[#e5e7eb] py-1 w-32 z-[200]"
-                            onClick={e => e.stopPropagation()}>
-                            <button onClick={() => { setEditingDetailItem({ type: 'ts', key: tsEditKey, value: scenario.name }); setOpenItemMenuId(null); }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-xs text-[#6b7280]">
-                              <Edit2 className="w-3 h-3" /> 수정
-                            </button>
-                            <button onClick={() => { setChatContextTag(`${scenario.id} — ${scenario.name}`); setChatbarActive(true); setChatPanelExpanded(true); setOpenItemMenuId(null); }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#f78ca0]/5 text-xs text-[#f78ca0]">
-                              <MessageCircle className="w-3 h-3" /> 컨텍스트 입력
-                            </button>
-                            <button onClick={() => { setOpenItemMenuId(null); }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-xs text-red-500">
-                              <Trash2 className="w-3 h-3" /> 삭제
-                            </button>
-                          </div>
-                        )}
+                        <button
+                          onClick={e => { e.stopPropagation(); addNewTC(scenario.id); }}
+                          title="TC 추가"
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-green-50 text-[#9ca3af] hover:text-green-500 transition-colors">
+                          <Plus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); deleteTS(scenario.id); }}
+                          title="삭제"
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-[#9ca3af] hover:text-red-500 transition-colors">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
                     )}
                   </div>
 
-                  {/* AI 항목 승인/보류/거절 버튼 */}
+                  {/* AI 항목 승인/보류/거절 */}
                   {isAIItem && (
                     <div className="px-2.5 py-1.5 bg-purple-50/40 border-b border-purple-100 flex items-center gap-1.5">
                       <span className="text-[9px] text-purple-500 flex-shrink-0">{triggerLabel}</span>
@@ -605,13 +690,12 @@ setTestDepth,
                   {/* TC 행 */}
                   {isExpanded && tcs.map(tc => {
                     const tcKey = `${scenario.id}_${tc.id}`;
-                    const tcMenuId = `tc-${tcKey}`;
                     const isTCExpanded = expandedTCMain.includes(tcKey);
                     const isTCEditing = editingDetailItem?.type === 'tc' && editingDetailItem.key === tcKey;
                     return (
                       <div key={tc.id}>
                         <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/30 border-purple-100/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#f78ca0]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
-                          <input type="checkbox" checked={selectedTCIds.includes(tcKey)}
+                          <input type="checkbox" checked={_selectedTCIds.includes(tcKey)}
                             onChange={() => toggleTCSelection(tcKey)}
                             className="w-3 h-3 accent-[#f78ca0] flex-shrink-0"
                             onClick={e => e.stopPropagation()} />
@@ -629,30 +713,27 @@ setTestDepth,
                                 : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-500' : 'text-[#6b7280]'}`}>{tc.name}</span>}
                             </div>
                           </div>
+                          {/* TC 액션 아이콘 */}
                           {!isAIItem && (
-                            <div className="relative flex-shrink-0">
+                            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
                               <button
-                                onClick={e => { e.stopPropagation(); setOpenItemMenuId(openItemMenuId === tcMenuId ? null : tcMenuId); }}
-                                className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 text-[#9ca3af] text-xs font-bold transition-opacity">
-                                ···
+                                onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tc', key: tcKey, value: tc.name }); }}
+                                title="수정"
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-blue-50 text-[#9ca3af] hover:text-blue-500 transition-colors">
+                                <Edit2 className="w-3 h-3" />
                               </button>
-                              {openItemMenuId === tcMenuId && (
-                                <div className="absolute right-0 top-6 bg-white rounded-lg shadow-xl border border-[#e5e7eb] py-1 w-32 z-[200]"
-                                  onClick={e => e.stopPropagation()}>
-                                  <button onClick={() => { setEditingDetailItem({ type: 'tc', key: tcKey, value: tc.name }); setOpenItemMenuId(null); }}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-xs text-[#6b7280]">
-                                    <Edit2 className="w-3 h-3" /> 수정
-                                  </button>
-                                  <button onClick={() => { setChatContextTag(`${scenario.id} › ${tc.id} — ${tc.name}`); setChatbarActive(true); setChatPanelExpanded(true); setOpenItemMenuId(null); }}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#f78ca0]/5 text-xs text-[#f78ca0]">
-                                    <MessageCircle className="w-3 h-3" /> 컨텍스트 입력
-                                  </button>
-                                  <button onClick={() => setOpenItemMenuId(null)}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-xs text-red-500">
-                                    <Trash2 className="w-3 h-3" /> 삭제
-                                  </button>
-                                </div>
-                              )}
+                              <button
+                                onClick={e => { e.stopPropagation(); addNewTV(scenario.id, tc.id); }}
+                                title="TV 추가"
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-green-50 text-[#9ca3af] hover:text-green-500 transition-colors">
+                                <Plus className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={e => { e.stopPropagation(); deleteTC(scenario.id, tc.id); }}
+                                title="삭제"
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-[#9ca3af] hover:text-red-500 transition-colors">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
                             </div>
                           )}
                         </div>
@@ -660,14 +741,13 @@ setTestDepth,
                         {/* TV 행 */}
                         {isTCExpanded && tc.testVariables.map(tv => {
                           const tvKey = `${scenario.id}_${tc.id}_${tv.id}`;
-                          const tvMenuId = `tv-${tvKey}`;
                           const isTVEditing = editingDetailItem?.type === 'tv' && editingDetailItem.key === tvKey;
                           return (
                             <div key={tv.id}
                               className={`group flex items-center gap-1.5 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/20 border-purple-100/30' : `${highlightedBotRow === `tv-${tvKey}` ? 'bg-[#f78ca0]/8' : 'bg-[#FAFAFA]'} border-[#f0f0f0]/30 hover:bg-gray-50`} cursor-pointer`}
                               style={{ paddingLeft: '3.25rem' }}
                               onClick={() => { if (!isTVEditing) { setDetailPanelRow({ level: 'TV', tsId: scenario.id, tcId: tc.id, tvId: tv.id }); setSelectedTvId(tv.id); } }}>
-                              <input type="checkbox" checked={selectedTCIds.includes(tvKey)}
+                              <input type="checkbox" checked={_selectedTCIds.includes(tvKey)}
                                 onChange={() => toggleTVSelection(tvKey)}
                                 className="w-3 h-3 accent-[#f78ca0] flex-shrink-0"
                                 onClick={e => e.stopPropagation()} />
@@ -677,33 +757,23 @@ setTestDepth,
                                   ? sidebarEditInput('text-[10px]')
                                   : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-500' : 'text-[#6b7280]'}`}>{tv.id}: {tv.name}</span>}
                               </div>
+                              {/* TV 액션 아이콘 */}
                               {!isAIItem && (
-                                <div className="relative flex-shrink-0">
+                                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
                                   <button
-                                    onClick={e => { e.stopPropagation(); setOpenItemMenuId(openItemMenuId === tvMenuId ? null : tvMenuId); }}
-                                    className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 text-[#9ca3af] text-xs font-bold transition-opacity">
-                                    ···
+                                    onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvKey, value: tv.name }); }}
+                                    title="수정"
+                                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-blue-50 text-[#9ca3af] hover:text-blue-500 transition-colors">
+                                    <Edit2 className="w-3 h-3" />
                                   </button>
-                                  {openItemMenuId === tvMenuId && (
-                                    <div className="absolute right-0 top-6 bg-white rounded-lg shadow-xl border border-[#e5e7eb] py-1 w-32 z-[200]"
-                                      onClick={e => e.stopPropagation()}>
-                                      <button onClick={() => { setEditingDetailItem({ type: 'tv', key: tvKey, value: tv.name }); setOpenItemMenuId(null); }}
-                                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-xs text-[#6b7280]">
-                                        <Edit2 className="w-3 h-3" /> 수정
-                                      </button>
-                                      <button onClick={() => { setChatContextTag(`${scenario.id} › ${tc.id} › ${tv.id}`); setChatbarActive(true); setChatPanelExpanded(true); setOpenItemMenuId(null); }}
-                                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#f78ca0]/5 text-xs text-[#f78ca0]">
-                                        <MessageCircle className="w-3 h-3" /> 컨텍스트 입력
-                                      </button>
-                                      <button onClick={() => setOpenItemMenuId(null)}
-                                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-xs text-red-500">
-                                        <Trash2 className="w-3 h-3" /> 삭제
-                                      </button>
-                                    </div>
-                                  )}
+                                  <button
+                                    onClick={e => { e.stopPropagation(); deleteTV(scenario.id, tc.id, tv.id); }}
+                                    title="삭제"
+                                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-[#9ca3af] hover:text-red-500 transition-colors">
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
                                 </div>
                               )}
-
                             </div>
                           );
                         })}
@@ -717,36 +787,35 @@ setTestDepth,
           </div>
         </div>
 
-        {/* Left drag handle */}
-        <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleLeftDragStart} />
-
-        {/* ── [3] Center: Network Graph ── */}
-        <div
-          ref={graphContainerRef}
-          className="flex-1 bg-[#F2F3F5] overflow-hidden relative"
-          onClick={() => setOpenItemMenuId(null)}>
-          <ScenarioNetworkGraph
-            tsNodes={tsNodesForGraph}
-            tcNodes={tcNodesForGraph}
-            tvNodes={tvNodesForGraph}
-            width={graphSize.width}
-            height={graphSize.height}
-            selectedId={graphSelectedId}
-            onNodeSelect={handleGraphNodeSelect}
-          />
-        </div>
-
-        {/* Right drag handle — only when detail panel is open */}
-        {detailPanelRow && (
-          <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleRightDragStart} />
+        {/* ── 그래프 모드: Left drag handle + Center graph ── */}
+        {viewMode === 'graph' && (
+          <>
+            <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleLeftDragStart} />
+            <div
+              ref={graphContainerRef}
+              className="flex-1 bg-[#F2F3F5] overflow-hidden relative">
+              <ScenarioNetworkGraph
+                tsNodes={tsNodesForGraph}
+                tcNodes={tcNodesForGraph}
+                tvNodes={tvNodesForGraph}
+                width={graphSize.width}
+                height={graphSize.height}
+                selectedId={graphSelectedId}
+                onNodeSelect={handleGraphNodeSelect}
+              />
+            </div>
+          </>
         )}
 
-        {/* ── [4] Right Detail Panel ── */}
-        {detailPanelRow && (() => {
-          const { level, tsId, tcId } = detailPanelRow;
-          const ts = dynamicScenarios.find(s => s.id === tsId);
-          const tc = tcId ? (dynamicTestCases[tsId] || []).find(t => t.id === tcId) : undefined;
-          const frMapped = mockRTMData.filter(r => r.ts === tsId);
+        {/* Right drag handle — always */}
+        <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleRightDragStart} />
+
+        {/* ── [4] Right Panel — 목차 / Detail ── */}
+        {(() => {
+          const { level, tsId, tcId } = detailPanelRow || { level: null, tsId: null, tcId: null };
+          const ts = tsId ? _dynamicScenarios.find((s) => s.id === tsId) : undefined;
+          const tc = tcId && tsId ? (_dynamicTestCases[tsId] || []).find(t => t.id === tcId) : undefined;
+          const frMapped = tsId ? mockRTMData.filter(r => r.ts === tsId) : [];
 
           const editKey = level === 'TS' ? tsId : `${tsId}_${tcId}`;
           const isEditingName = editingDetailItem?.key === editKey;
@@ -758,7 +827,6 @@ setTestDepth,
             setTimeout(() => {
               if (level === 'TS') {
                 setDynamicScenarios(prev => prev.map(s => s.id === tsId ? { ...s, name: newName } : s));
-                // 하위 TC 이름도 갱신 시뮬레이션
                 setDynamicTestCases(prev => ({ ...prev }));
               } else if (level === 'TC' && tcId) {
                 setDynamicTestCases(prev => ({
@@ -790,164 +858,245 @@ setTestDepth,
           return (
             <div className="bg-white border-l border-[#f0f0f0] flex flex-col flex-shrink-0" style={{ width: rightPanelWidth }}>
               {/* Header */}
-              <div className="p-4 border-b border-[#f0f0f0] flex justify-between items-center bg-gradient-to-r from-[#f78ca0]/5 to-[#fe9a8b]/5 flex-shrink-0">
-                <div className="font-semibold text-sm text-[#1a1a2e] truncate pr-2">
-                  {level === 'TC' ? `${tsId} › ${tcId}` : tsId}
-                </div>
-                <button onClick={() => { setDetailPanelRow(null); setSelectedNetworkNodeId(null); setSelectedTvId(null); }} className="p-1 hover:bg-gray-100 rounded flex-shrink-0">
-                  <X className="w-4 h-4 text-[#6b7280]" />
-                </button>
+              <div className="px-4 py-3 border-b border-[#f0f0f0] bg-gradient-to-r from-[#f78ca0]/5 to-[#fe9a8b]/5 flex-shrink-0">
+                <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-1">목차</div>
+                {detailPanelRow ? (
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-sm text-[#1a1a2e] truncate pr-2">
+                      {level === 'TC' ? `${tsId} › ${tcId}` : tsId}
+                    </div>
+                    <button onClick={() => { setDetailPanelRow(null); setSelectedNetworkNodeId(null); setSelectedTvId(null); }} className="p-1 hover:bg-gray-100 rounded flex-shrink-0">
+                      <X className="w-3.5 h-3.5 text-[#9ca3af]" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-xs text-[#9ca3af]">항목을 선택하세요</div>
+                )}
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-5">
-                {/* 기본 정보 + 인라인 수정 */}
-                <div>
-                  <div className="flex items-center justify-between mb-2.5">
-                    <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">기본 정보</div>
-                    {!isLoading && !isEditingName && (
-                      <button onClick={() => setEditingDetailItem({ type: level === 'TS' ? 'ts' : 'tc', key: editKey, value: (level === 'TS' ? ts?.name : tc?.name) ?? '' })}
-                        className="p-1 rounded hover:bg-gray-100">
-                        <Edit2 className="w-3 h-3 text-[#9ca3af]" />
+              {/* TOC nav — 항상 표시 */}
+              <div className="border-b border-[#f0f0f0] px-3 py-2 overflow-y-auto flex-shrink-0" style={{ maxHeight: '40%' }}>
+                {filteredScenarios.map(s => {
+                  const sTcs = _dynamicTestCases[s.id] || [];
+                  const isActive = detailPanelRow?.tsId === s.id;
+                  return (
+                    <div key={s.id} className="mb-0.5">
+                      <button
+                        onClick={() => { setSelectedScenario(s.id); setDetailPanelRow({ level: 'TS', tsId: s.id }); }}
+                        className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-colors ${
+                          isActive && !detailPanelRow?.tcId
+                            ? 'bg-[#f78ca0]/10 text-[#f78ca0] font-semibold'
+                            : 'text-[#4b5563] hover:bg-gray-50'
+                        }`}>
+                        <span className="px-1 py-0.5 text-[8px] rounded font-bold bg-[#f78ca0]/10 text-[#f78ca0]">TS</span>
+                        <span className="font-medium">{s.id}</span>
+                        <span className="truncate text-[10px] text-[#9ca3af]">{s.name}</span>
+                        <span className="ml-auto text-[9px] text-[#c4c9d4]">{sTcs.length}</span>
                       </button>
-                    )}
-                    {isLoading && <Loader2 className="w-3.5 h-3.5 text-[#f78ca0] animate-spin" />}
-                  </div>
-                  <div className="space-y-0 text-xs divide-y divide-[#f0f0f0]">
-                    {level === 'TS' && ts && (<>
-                      <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{ts.id}</span></div>
-                      <div className="flex justify-between items-start py-2 gap-2">
-                        <span className="text-[#9ca3af] flex-shrink-0">이름</span>
-                        {isEditingName ? (
-                          <div className="flex items-center gap-1 flex-1">
-                            <input autoFocus value={editingDetailItem!.value} onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
-                              onKeyDown={e => { if (e.key === 'Enter') saveName(editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                              className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 min-w-0" />
-                            <button onClick={() => saveName(editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                            <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
-                          </div>
-                        ) : (
-                          <span className={`font-medium text-right ${isLoading ? 'text-[#9ca3af] animate-pulse' : ''}`}>{ts.name}</span>
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">TC 수</span><span className="font-medium">{(dynamicTestCases[ts.id] || []).length}개</span></div>
-                    </>)}
-                    {level === 'TC' && tc && (<>
-                      <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{tc.id}</span></div>
-                      <div className="flex justify-between items-start py-2 gap-2">
-                        <span className="text-[#9ca3af] flex-shrink-0">이름</span>
-                        {isEditingName ? (
-                          <div className="flex items-center gap-1 flex-1">
-                            <input autoFocus value={editingDetailItem!.value} onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
-                              onKeyDown={e => { if (e.key === 'Enter') saveName(editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                              className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 min-w-0" />
-                            <button onClick={() => saveName(editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                            <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
-                          </div>
-                        ) : (
-                          <span className={`font-medium text-right ${isLoading ? 'text-[#9ca3af] animate-pulse' : ''}`}>{tc.name}</span>
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">상위 TS</span><span className="font-mono font-medium">{tsId}</span></div>
-                    </>)}
-                  </div>
-                </div>
-
-                {/* TV 목록 (TC 상세에서만) */}
-                {level === 'TC' && tc && tc.testVariables.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2.5">테스트 변수 (TV)</div>
-                    <div className="space-y-1.5">
-                      {tc.testVariables.map(tv => {
-                        const tvEditKey = `${tsId}_${tcId}_${tv.id}`;
-                        const isTVSelected = selectedTvId === tv.id;
-                        const isTVEditing = editingDetailItem?.key === tvEditKey;
-                        const isTVLoading = loadingItemKey === tvEditKey;
-                        const validKey = `${tsId}_${tcId}_${tv.id}`;
-                        const validations = mockValidationConditions[validKey] || [];
-                        return (
-                          <div key={tv.id}
-                            className={`rounded-lg border transition-all ${isTVSelected ? 'border-[#f78ca0]/40 bg-[#f78ca0]/5' : 'border-[#f0f0f0] bg-gray-50/50 hover:bg-gray-50'}`}>
-                            <div className="flex items-center gap-2 px-3 py-2 cursor-pointer"
-                              onClick={() => setSelectedTvId(isTVSelected ? null : tv.id)}>
-                              <span className="px-1 py-0.5 bg-gray-100 text-[#9ca3af] text-[9px] rounded font-medium flex-shrink-0">TV</span>
-                              <span className="text-xs font-medium text-[#1a1a2e] flex-1 truncate">{tv.id}: {isTVLoading ? <span className="text-[#9ca3af] animate-pulse">{tv.name}</span> : tv.name}</span>
-                              {isTVLoading && <Loader2 className="w-3 h-3 text-[#f78ca0] animate-spin flex-shrink-0" />}
-                              {!isTVLoading && !isTVEditing && (
-                                <button onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvEditKey, value: tv.name }); setSelectedTvId(tv.id); }}
-                                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-200 flex-shrink-0">
-                                  <Edit2 className="w-2.5 h-2.5 text-[#9ca3af]" />
-                                </button>
-                              )}
-                              {isTVSelected ? <ChevronDown className="w-3 h-3 text-[#9ca3af] flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af] flex-shrink-0" />}
-                            </div>
-                            {isTVSelected && (
-                              <div className="px-3 pb-2.5 space-y-2 border-t border-[#f0f0f0]/60">
-                                {/* TV 이름 인라인 수정 */}
-                                <div className="pt-2">
-                                  {isTVEditing ? (
-                                    <div className="flex items-center gap-1">
-                                      <input autoFocus value={editingDetailItem!.value}
-                                        onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
-                                        onKeyDown={e => { if (e.key === 'Enter') saveTVName(tv.id, editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                                        className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30" />
-                                      <button onClick={() => saveTVName(tv.id, editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                                      <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[10px] text-[#6b7280]">{tv.name}</span>
-                                      <button onClick={() => setEditingDetailItem({ type: 'tv', key: tvEditKey, value: tv.name })}
-                                        className="p-0.5 rounded hover:bg-gray-200">
-                                        <Edit2 className="w-2.5 h-2.5 text-[#9ca3af]" />
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                                {/* 검증 조건 */}
-                                {validations.length > 0 && (
-                                  <div className="space-y-1">
-                                    <div className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wide">검증 조건</div>
-                                    {validations.map((v, i) => (
-                                      <div key={i} className="flex gap-1.5 p-2 bg-white rounded border border-[#f0f0f0] text-[10px]">
-                                        <span className="text-[#f78ca0] flex-shrink-0 font-bold">•</span>
-                                        <span className="text-[#6b7280] leading-relaxed">{v}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {validations.length === 0 && (
-                                  <div className="text-[10px] text-[#9ca3af]">검증 조건 없음</div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {isActive && sTcs.map(t => (
+                        <button
+                          key={t.id}
+                          onClick={() => setDetailPanelRow({ level: 'TC', tsId: s.id, tcId: t.id })}
+                          className={`w-full text-left flex items-center gap-1.5 pl-6 pr-2 py-0.5 rounded text-[10px] transition-colors ${
+                            detailPanelRow?.tcId === t.id
+                              ? 'text-blue-600 font-semibold bg-blue-50'
+                              : 'text-[#6b7280] hover:bg-gray-50'
+                          }`}>
+                          <span className="px-1 py-0.5 text-[8px] rounded font-bold bg-blue-50 text-blue-500">TC</span>
+                          <span>{t.id}</span>
+                          <span className="truncate text-[9px] text-[#9ca3af]">{t.name}</span>
+                        </button>
+                      ))}
                     </div>
+                  );
+                })}
+              </div>
+
+              {/* Detail content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                {!detailPanelRow && (
+                  <div className="flex flex-col items-center justify-center h-full text-center gap-2 py-8">
+                    <FileText className="w-8 h-8 text-[#e5e7eb]" />
+                    <div className="text-xs text-[#9ca3af]">목록에서 항목을 선택하면<br />상세 정보가 표시됩니다.</div>
                   </div>
                 )}
 
-                {/* FR 매핑 */}
-                <div>
-                  <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2.5">FR 매핑</div>
-                  {frMapped.length === 0
-                    ? <div className="text-xs text-[#9ca3af]">매핑된 요구사항 없음</div>
-                    : (
-                      <div className="space-y-1.5">
-                        {frMapped.map(fr => (
-                          <div key={fr.frId} className="p-2.5 bg-gray-50 rounded-lg border border-[#f0f0f0]">
-                            <div className="flex items-center justify-between mb-0.5">
-                              <span className="font-mono text-[10px] font-bold">{fr.frId}</span>
-                              {fr.result === 'PASS' && <span className="text-[10px] text-[#9AB17A] font-semibold">PASS</span>}
-                              {fr.result === 'FAIL' && <span className="text-[10px] text-[#FF9A86] font-semibold">FAIL</span>}
-                              {fr.result === 'UNCOVERED' && <span className="text-[10px] text-[#9ca3af] font-semibold">미커버</span>}
-                            </div>
-                            <div className="text-[10px] text-[#6b7280] leading-relaxed">{fr.requirement}</div>
+                {detailPanelRow && (
+                  <>
+                    {/* 기본 정보 */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2.5">
+                        <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">기본 정보</div>
+                        {!isLoading && !isEditingName && (
+                          <button onClick={() => setEditingDetailItem({ type: level === 'TS' ? 'ts' : 'tc', key: editKey, value: (level === 'TS' ? ts?.name : tc?.name) ?? '' })}
+                            className="p-1 rounded hover:bg-gray-100">
+                            <Edit2 className="w-3 h-3 text-[#9ca3af]" />
+                          </button>
+                        )}
+                        {isLoading && <Loader2 className="w-3.5 h-3.5 text-[#f78ca0] animate-spin" />}
+                      </div>
+                      <div className="space-y-0 text-xs divide-y divide-[#f0f0f0]">
+                        {level === 'TS' && ts && (<>
+                          <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{ts.id}</span></div>
+                          <div className="flex justify-between items-start py-2 gap-2">
+                            <span className="text-[#9ca3af] flex-shrink-0">이름</span>
+                            {isEditingName ? (
+                              <div className="flex items-center gap-1 flex-1">
+                                <input autoFocus value={editingDetailItem!.value} onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveName(editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
+                                  className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 min-w-0" />
+                                <button onClick={() => saveName(editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
+                                <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
+                              </div>
+                            ) : (
+                              <span className={`font-medium text-right ${isLoading ? 'text-[#9ca3af] animate-pulse' : ''}`}>{ts.name}</span>
+                            )}
                           </div>
-                        ))}
+                          <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">TC 수</span><span className="font-medium">{(_dynamicTestCases[ts.id] || []).length}개</span></div>
+                        </>)}
+                        {level === 'TC' && tc && (<>
+                          <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{tc.id}</span></div>
+                          <div className="flex justify-between items-start py-2 gap-2">
+                            <span className="text-[#9ca3af] flex-shrink-0">이름</span>
+                            {isEditingName ? (
+                              <div className="flex items-center gap-1 flex-1">
+                                <input autoFocus value={editingDetailItem!.value} onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveName(editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
+                                  className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 min-w-0" />
+                                <button onClick={() => saveName(editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
+                                <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
+                              </div>
+                            ) : (
+                              <span className={`font-medium text-right ${isLoading ? 'text-[#9ca3af] animate-pulse' : ''}`}>{tc.name}</span>
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">상위 TS</span><span className="font-mono font-medium">{tsId}</span></div>
+                        </>)}
+                        {level === 'TV' && (() => {
+                          const tvRow = detailPanelRow;
+                          const tvTc = tvRow?.tcId ? (_dynamicTestCases[tvRow.tsId] || []).find(t => t.id === tvRow.tcId) : undefined;
+                          const tvItem = tvRow?.tvId ? tvTc?.testVariables.find(v => v.id === tvRow.tvId) : undefined;
+                          if (!tvItem) return null;
+                          const validKey = `${tvRow.tsId}_${tvRow.tcId}_${tvRow.tvId}`;
+                          const validations = mockValidationConditions[validKey] || [];
+                          return (<>
+                            <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{tvItem.id}</span></div>
+                            <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">이름</span><span className="font-medium">{tvItem.name}</span></div>
+                            <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">상위 TC</span><span className="font-mono font-medium">{tvRow.tcId}</span></div>
+                            {validations.length > 0 && (
+                              <div className="pt-2">
+                                <div className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-1.5">검증 조건</div>
+                                <div className="space-y-1">
+                                  {validations.map((v, i) => (
+                                    <div key={i} className="flex gap-1.5 p-2 bg-gray-50 rounded border border-[#f0f0f0] text-[10px]">
+                                      <span className="text-[#f78ca0] flex-shrink-0 font-bold">•</span>
+                                      <span className="text-[#6b7280] leading-relaxed">{v}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>);
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* TV 목록 (TC 상세에서만) */}
+                    {level === 'TC' && tc && tc.testVariables.length > 0 && (
+                      <div>
+                        <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2.5">테스트 변수 (TV)</div>
+                        <div className="space-y-1.5">
+                          {tc.testVariables.map(tv => {
+                            const tvEditKey = `${tsId}_${tcId}_${tv.id}`;
+                            const isTVSelected = selectedTvId === tv.id;
+                            const isTVEditing = editingDetailItem?.key === tvEditKey;
+                            const isTVLoading = loadingItemKey === tvEditKey;
+                            const validKey = `${tsId}_${tcId}_${tv.id}`;
+                            const validations = mockValidationConditions[validKey] || [];
+                            return (
+                              <div key={tv.id}
+                                className={`rounded-lg border transition-all ${isTVSelected ? 'border-[#f78ca0]/40 bg-[#f78ca0]/5' : 'border-[#f0f0f0] bg-gray-50/50 hover:bg-gray-50'}`}>
+                                <div className="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                                  onClick={() => setSelectedTvId(isTVSelected ? null : tv.id)}>
+                                  <span className="px-1 py-0.5 bg-gray-100 text-[#9ca3af] text-[9px] rounded font-medium flex-shrink-0">TV</span>
+                                  <span className="text-xs font-medium text-[#1a1a2e] flex-1 truncate">{tv.id}: {isTVLoading ? <span className="text-[#9ca3af] animate-pulse">{tv.name}</span> : tv.name}</span>
+                                  {isTVLoading && <Loader2 className="w-3 h-3 text-[#f78ca0] animate-spin flex-shrink-0" />}
+                                  {!isTVLoading && !isTVEditing && (
+                                    <button onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvEditKey, value: tv.name }); setSelectedTvId(tv.id); }}
+                                      className="p-0.5 rounded hover:bg-gray-200 flex-shrink-0">
+                                      <Edit2 className="w-2.5 h-2.5 text-[#9ca3af]" />
+                                    </button>
+                                  )}
+                                  {isTVSelected ? <ChevronDown className="w-3 h-3 text-[#9ca3af] flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af] flex-shrink-0" />}
+                                </div>
+                                {isTVSelected && (
+                                  <div className="px-3 pb-2.5 space-y-2 border-t border-[#f0f0f0]/60">
+                                    <div className="pt-2">
+                                      {isTVEditing ? (
+                                        <div className="flex items-center gap-1">
+                                          <input autoFocus value={editingDetailItem!.value}
+                                            onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
+                                            onKeyDown={e => { if (e.key === 'Enter') saveTVName(tv.id, editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
+                                            className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30" />
+                                          <button onClick={() => saveTVName(tv.id, editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
+                                          <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[10px] text-[#6b7280]">{tv.name}</span>
+                                          <button onClick={() => setEditingDetailItem({ type: 'tv', key: tvEditKey, value: tv.name })}
+                                            className="p-0.5 rounded hover:bg-gray-200">
+                                            <Edit2 className="w-2.5 h-2.5 text-[#9ca3af]" />
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                    {validations.length > 0 && (
+                                      <div className="space-y-1">
+                                        <div className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wide">검증 조건</div>
+                                        {validations.map((v, i) => (
+                                          <div key={i} className="flex gap-1.5 p-2 bg-white rounded border border-[#f0f0f0] text-[10px]">
+                                            <span className="text-[#f78ca0] flex-shrink-0 font-bold">•</span>
+                                            <span className="text-[#6b7280] leading-relaxed">{v}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {validations.length === 0 && (
+                                      <div className="text-[10px] text-[#9ca3af]">검증 조건 없음</div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
-                </div>
+
+                    {/* FR 매핑 */}
+                    <div>
+                      <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2.5">FR 매핑</div>
+                      {frMapped.length === 0
+                        ? <div className="text-xs text-[#9ca3af]">매핑된 요구사항 없음</div>
+                        : (
+                          <div className="space-y-1.5">
+                            {frMapped.map(fr => (
+                              <div key={fr.frId} className="p-2.5 bg-gray-50 rounded-lg border border-[#f0f0f0]">
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="font-mono text-[10px] font-bold">{fr.frId}</span>
+                                  {fr.result === 'PASS' && <span className="text-[10px] text-[#9AB17A] font-semibold">PASS</span>}
+                                  {fr.result === 'FAIL' && <span className="text-[10px] text-[#FF9A86] font-semibold">FAIL</span>}
+                                  {fr.result === 'UNCOVERED' && <span className="text-[10px] text-[#9ca3af] font-semibold">미커버</span>}
+                                </div>
+                                <div className="text-[10px] text-[#6b7280] leading-relaxed">{fr.requirement}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           );
@@ -985,4 +1134,3 @@ setTestDepth,
 };
 
 // ── TestPage (진행중 / 이력) ──────────────────────────────────────────────────
-
