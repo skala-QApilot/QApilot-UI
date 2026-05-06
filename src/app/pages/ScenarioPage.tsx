@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, LayoutGrid, List, Loader2, Network, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, X } from 'lucide-react';
-import ScenarioNetworkGraph from '../components/ScenarioNetworkGraph';
-import { mockRTMData, mockScenarios, mockScenarioVersions, mockTestCases } from '../data/mockData';
+import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
+import { mockRTMData, mockScenarioVersions, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
 
 interface ScenarioPageProps {
   [key: string]: any;
@@ -71,6 +71,11 @@ setTestDepth,
 
   // View mode: table (full-width list) or graph
   const [viewMode, setViewMode] = React.useState<'table' | 'graph'>('table');
+
+  // TV JSON editor state
+  const [tvEditingKey, setTvEditingKey] = React.useState<string | null>(null);
+  const [tvEditContent, setTvEditContent] = React.useState('');
+  const [tvCopied, setTvCopied] = React.useState<string | null>(null);
 
   // Resizable left sidebar (graph mode only)
   const [leftSidebarWidth, setLeftSidebarWidth] = React.useState(300);
@@ -153,6 +158,64 @@ setTestDepth,
     'TS1_TC2_TV2': ['입력: 잘못된 비밀번호 (5자 미만)', '기대: 오류 메시지 표시', '코드: 401 Unauthorized'],
   };
 
+  // ── TV 엔드포인트 헬퍼 ────────────────────────────────────────
+  const METHOD_STYLE: Record<HttpMethod, string> = {
+    GET:    'bg-emerald-50 text-emerald-700 border border-emerald-200',
+    POST:   'bg-blue-50   text-blue-700   border border-blue-200',
+    PUT:    'bg-amber-50  text-amber-700  border border-amber-200',
+    PATCH:  'bg-violet-50 text-violet-700 border border-violet-200',
+    DELETE: 'bg-red-50    text-red-600    border border-red-200',
+  };
+
+  const HTTP_STATUS_TEXT: Record<number, string> = {
+    200: 'OK', 201: 'Created', 204: 'No Content',
+    400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
+    404: 'Not Found', 422: 'Unprocessable Entity', 500: 'Internal Server Error',
+  };
+
+  // 라이트 테마 JSON 구문 강조
+  const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
+    const lines = JSON.stringify(obj, null, 2).split('\n');
+    return (
+      <code className="block font-mono text-[10.5px] leading-[1.7]">
+        {lines.map((line, i) => {
+          const m = line.match(/^(\s*)("[\w\s가-힣\-./[\]_]+")(\s*:\s*)(".*?"|[\d.]+|true|false|null)(,?)$/);
+          if (m) {
+            const isStr = m[4].startsWith('"');
+            return (
+              <div key={i}>
+                <span className="text-slate-400">{m[1]}</span>
+                <span className="text-blue-600">{m[2]}</span>
+                <span className="text-slate-400">{m[3]}</span>
+                <span className={isStr ? 'text-emerald-600' : 'text-orange-500'}>{m[4]}</span>
+                <span className="text-slate-400">{m[5]}</span>
+              </div>
+            );
+          }
+          return <div key={i}><span className="text-slate-500">{line}</span></div>;
+        })}
+      </code>
+    );
+  };
+
+  const handleTVCopy = (tvKey: string) => {
+    const ep = mockTVEndpoints[tvKey];
+    const text = ep
+      ? JSON.stringify({ method: ep.method, path: ep.path, requestBody: ep.requestBody ?? {}, statusCode: ep.statusCode, responseBody: ep.responseBody ?? {} }, null, 2)
+      : '{}';
+    navigator.clipboard.writeText(text).then(() => {
+      setTvCopied(tvKey);
+      setTimeout(() => setTvCopied(null), 1800);
+    });
+  };
+
+  const handleTVEditSave = (tvId: string, tsId_: string, tcId_: string) => {
+    // tvEditContent는 requestBody JSON이 들어있음
+    try { JSON.parse(tvEditContent); } catch { setTvEditingKey(null); return; }
+    // 이름 변경은 별도이므로 여기서는 편집 종료만 (실제 저장은 확장 가능)
+    setTvEditingKey(null);
+  };
+
   // ── 사이드바 필터링 ────────────────────────────────────────────
   const filteredScenarios = _dynamicScenarios.filter(s => {
     const q = (scenarioSearchQuery as string).toLowerCase();
@@ -165,33 +228,12 @@ setTestDepth,
     .filter(([, value]) => value === 'deferred')
     .map(([id]) => id);
 
-  // ── ScenarioNetworkGraph 노드 데이터 ─────────────────────────
-  const tsNodesForGraph = mockScenarios.map(s => ({
+  // ── TS 흐름 그래프 노드 데이터 ──────────────────────────────
+  const tsFlowNodes = _dynamicScenarios.map(s => ({
     id: s.id,
     label: s.id,
     name: s.name,
-    frs: mockRTMData.filter(r => r.ts === s.id).map(r => r.frId),
   }));
-  const tcNodesForGraph = Object.entries(mockTestCases).flatMap(([tsId, tcs]) =>
-    tcs.map(tc => ({
-      id: `${tsId}_${tc.id}`,
-      label: tc.id,
-      name: tc.name,
-      frs: mockRTMData.filter(r => r.ts === tsId && r.tc === tc.id).map(r => r.frId),
-      parent: tsId,
-    }))
-  );
-  const tvNodesForGraph = Object.entries(mockTestCases).flatMap(([tsId, tcs]) =>
-    tcs.flatMap(tc =>
-      tc.testVariables.map(tv => ({
-        id: `${tsId}_${tc.id}_${tv.id}`,
-        label: tv.id,
-        name: tv.name,
-        frs: mockRTMData.filter(r => r.ts === tsId && r.tc === tc.id).map(r => r.frId),
-        parent: `${tsId}_${tc.id}`,
-      }))
-    )
-  );
 
   // ResizeObserver로 center 컨테이너 크기를 캔버스에 전달
   const graphContainerRef = React.useRef<HTMLDivElement>(null);
@@ -620,7 +662,6 @@ setTestDepth,
 
               const tsBadge = isAIItem ? 'bg-purple-100 text-purple-700' : 'bg-[#f78ca0]/10 text-[#f78ca0]';
               const tcBadge = isAIItem ? 'bg-purple-50 text-purple-500' : 'bg-blue-50 text-blue-500';
-              const tvBadge = isAIItem ? 'bg-purple-50/60 text-purple-400' : 'bg-gray-100 text-[#9ca3af]';
 
               const tsRowContent = (
                 <>
@@ -738,40 +779,96 @@ setTestDepth,
                           )}
                         </div>
 
-                        {/* TV 행 */}
+                        {/* TV 행 — 엔드포인트 카드 */}
                         {isTCExpanded && tc.testVariables.map(tv => {
                           const tvKey = `${scenario.id}_${tc.id}_${tv.id}`;
+                          const ep = mockTVEndpoints[tvKey];
                           const isTVEditing = editingDetailItem?.type === 'tv' && editingDetailItem.key === tvKey;
+                          const isSelected = detailPanelRow?.tvId === tv.id && detailPanelRow?.tcId === tc.id;
+                          const isCopied = tvCopied === tvKey;
+                          const isOk = ep ? ep.statusCode < 400 : true;
+
                           return (
                             <div key={tv.id}
-                              className={`group flex items-center gap-1.5 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/20 border-purple-100/30' : `${highlightedBotRow === `tv-${tvKey}` ? 'bg-[#f78ca0]/8' : 'bg-[#FAFAFA]'} border-[#f0f0f0]/30 hover:bg-gray-50`} cursor-pointer`}
-                              style={{ paddingLeft: '3.25rem' }}
-                              onClick={() => { if (!isTVEditing) { setDetailPanelRow({ level: 'TV', tsId: scenario.id, tcId: tc.id, tvId: tv.id }); setSelectedTvId(tv.id); } }}>
-                              <input type="checkbox" checked={_selectedTCIds.includes(tvKey)}
-                                onChange={() => toggleTVSelection(tvKey)}
-                                className="w-3 h-3 accent-[#f78ca0] flex-shrink-0"
-                                onClick={e => e.stopPropagation()} />
-                              <div className="flex-1 min-w-0 flex items-center gap-1">
-                                <span className={`px-1 py-0.5 text-[9px] rounded font-medium ${tvBadge}`}>TV</span>
-                                {isTVEditing
-                                  ? sidebarEditInput('text-[10px]')
-                                  : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-500' : 'text-[#6b7280]'}`}>{tv.id}: {tv.name}</span>}
+                              className={`border-b ${isAIItem ? 'border-purple-100/30' : 'border-[#f0f0f0]/30'}`}
+                              style={{ paddingLeft: '3.25rem' }}>
+
+                              {/* ── TV 헤더 ── */}
+                              <div
+                                className={`group flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer transition-colors ${
+                                  isAIItem ? 'bg-purple-50/20 hover:bg-purple-50/40'
+                                  : isSelected ? 'bg-slate-50'
+                                  : 'bg-white hover:bg-slate-50'
+                                }`}
+                                onClick={() => { if (!isTVEditing) { setDetailPanelRow({ level: 'TV', tsId: scenario.id, tcId: tc.id, tvId: tv.id }); setSelectedTvId(tv.id); } }}>
+
+                                <input type="checkbox" checked={_selectedTCIds.includes(tvKey)}
+                                  onChange={() => toggleTVSelection(tvKey)}
+                                  className="w-3 h-3 accent-[#f78ca0] flex-shrink-0"
+                                  onClick={e => e.stopPropagation()} />
+
+                                {/* TV ID 배지 */}
+                                <span className={`px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 ${
+                                  isAIItem ? 'bg-purple-100/60 text-purple-500' : 'bg-slate-100 text-slate-500'
+                                }`}>{tv.id}</span>
+
+                                {/* Method + Path 또는 이름 */}
+                                {ep ? (
+                                  <div className="flex items-center gap-1 flex-1 min-w-0">
+                                    <span className={`text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
+                                    <span className="font-mono text-[9.5px] text-slate-500 truncate">{ep.path}</span>
+                                  </div>
+                                ) : (
+                                  isTVEditing ? (
+                                    <div className="flex items-center gap-1 flex-1 min-w-0" onClick={e => e.stopPropagation()}>
+                                      <input autoFocus value={editingDetailItem?.value ?? ''}
+                                        onChange={e => setEditingDetailItem((prev: any) => prev ? { ...prev, value: e.target.value } : null)}
+                                        onKeyDown={e => { if (e.key === 'Enter') saveSidebarEdit(); if (e.key === 'Escape') setEditingDetailItem(null); }}
+                                        className="flex-1 min-w-0 text-[10px] bg-white border border-[#f78ca0]/50 rounded px-1.5 py-0.5 focus:outline-none" />
+                                      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
+                                      <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-500 truncate flex-1">{tv.name}</span>
+                                  )
+                                )}
+
+                                {/* 액션 (호버 시 표시) */}
+                                {!isAIItem && !isTVEditing && (
+                                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
+                                    <button onClick={e => { e.stopPropagation(); handleTVCopy(tvKey); }}
+                                      title={isCopied ? '복사됨' : '복사'}
+                                      className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isCopied ? 'text-emerald-500' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
+                                      {isCopied ? <CheckCircle className="w-2.5 h-2.5" /> : <svg className="w-2.5 h-2.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h8"/></svg>}
+                                    </button>
+                                    <button onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvKey, value: tv.name }); }}
+                                      title="수정" className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-[#f78ca0] hover:bg-[#f78ca0]/10 transition-colors">
+                                      <Edit2 className="w-2.5 h-2.5" />
+                                    </button>
+                                    <button onClick={e => { e.stopPropagation(); deleteTV(scenario.id, tc.id, tv.id); }}
+                                      title="삭제" className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-red-400 hover:bg-red-50 transition-colors">
+                                      <Trash2 className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                )}
                               </div>
-                              {/* TV 액션 아이콘 */}
-                              {!isAIItem && (
-                                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
-                                  <button
-                                    onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvKey, value: tv.name }); }}
-                                    title="수정"
-                                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-blue-50 text-[#9ca3af] hover:text-blue-500 transition-colors">
-                                    <Edit2 className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    onClick={e => { e.stopPropagation(); deleteTV(scenario.id, tc.id, tv.id); }}
-                                    title="삭제"
-                                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-[#9ca3af] hover:text-red-500 transition-colors">
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+
+                              {/* ── 엔드포인트 인라인 프리뷰 ── */}
+                              {ep && !isTVEditing && (
+                                <div className="mx-2 mb-1.5 mt-0.5 rounded border border-slate-100 bg-slate-50 overflow-hidden">
+                                  {/* Request body */}
+                                  <div className="px-2 py-1.5 overflow-x-auto">
+                                    <LightJson obj={ep.requestBody ?? {}} />
+                                  </div>
+                                  {/* Status footer */}
+                                  <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                                    <span className={`font-mono text-[9px] font-bold ${isOk ? 'text-emerald-600' : 'text-red-500'}`}>
+                                      ← {ep.statusCode}
+                                    </span>
+                                    <span className={`text-[9px] ${isOk ? 'text-emerald-500' : 'text-red-400'}`}>
+                                      {HTTP_STATUS_TEXT[ep.statusCode] ?? ''}
+                                    </span>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -794,10 +891,9 @@ setTestDepth,
             <div
               ref={graphContainerRef}
               className="flex-1 bg-[#F2F3F5] overflow-hidden relative">
-              <ScenarioNetworkGraph
-                tsNodes={tsNodesForGraph}
-                tcNodes={tcNodesForGraph}
-                tvNodes={tvNodesForGraph}
+              <ScenarioFlowGraph
+                tsNodes={tsFlowNodes}
+                flowEdges={mockTSFlows}
                 width={graphSize.width}
                 height={graphSize.height}
                 selectedId={graphSelectedId}
@@ -836,23 +932,6 @@ setTestDepth,
               }
               setLoadingItemKey(null);
             }, 1200);
-          };
-
-          const saveTVName = (tvId: string, newName: string) => {
-            setEditingDetailItem(null);
-            const tvKey = `${tsId}_${tcId}_${tvId}`;
-            setLoadingItemKey(tvKey);
-            setTimeout(() => {
-              setDynamicTestCases(prev => ({
-                ...prev,
-                [tsId]: (prev[tsId] || []).map(t =>
-                  t.id === tcId
-                    ? { ...t, testVariables: t.testVariables.map(v => v.id === tvId ? { ...v, name: newName } : v) }
-                    : t
-                ),
-              }));
-              setLoadingItemKey(null);
-            }, 1000);
           };
 
           return (
@@ -1001,69 +1080,116 @@ setTestDepth,
                       </div>
                     </div>
 
-                    {/* TV 목록 (TC 상세에서만) */}
+                    {/* TV 목록 (TC 상세에서만) — 엔드포인트 카드 */}
                     {level === 'TC' && tc && tc.testVariables.length > 0 && (
                       <div>
-                        <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2.5">테스트 변수 (TV)</div>
-                        <div className="space-y-1.5">
+                        <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2">테스트 변수 (TV)</div>
+                        <div className="space-y-2">
                           {tc.testVariables.map(tv => {
-                            const tvEditKey = `${tsId}_${tcId}_${tv.id}`;
-                            const isTVSelected = selectedTvId === tv.id;
-                            const isTVEditing = editingDetailItem?.key === tvEditKey;
-                            const isTVLoading = loadingItemKey === tvEditKey;
-                            const validKey = `${tsId}_${tcId}_${tv.id}`;
-                            const validations = mockValidationConditions[validKey] || [];
+                            const tvKey = `${tsId}_${tcId}_${tv.id}`;
+                            const ep = mockTVEndpoints[tvKey];
+                            const isTVOpen = selectedTvId === tv.id;
+                            const isTVLoading = loadingItemKey === tvKey;
+                            const isEditing = tvEditingKey === tvKey;
+                            const isCopied = tvCopied === tvKey;
+                            const reqJson = ep?.requestBody ? JSON.stringify(ep.requestBody, null, 2) : '{}';
+                            const isOk = ep ? ep.statusCode < 400 : true;
+
                             return (
-                              <div key={tv.id}
-                                className={`rounded-lg border transition-all ${isTVSelected ? 'border-[#f78ca0]/40 bg-[#f78ca0]/5' : 'border-[#f0f0f0] bg-gray-50/50 hover:bg-gray-50'}`}>
-                                <div className="flex items-center gap-2 px-3 py-2 cursor-pointer"
-                                  onClick={() => setSelectedTvId(isTVSelected ? null : tv.id)}>
-                                  <span className="px-1 py-0.5 bg-gray-100 text-[#9ca3af] text-[9px] rounded font-medium flex-shrink-0">TV</span>
-                                  <span className="text-xs font-medium text-[#1a1a2e] flex-1 truncate">{tv.id}: {isTVLoading ? <span className="text-[#9ca3af] animate-pulse">{tv.name}</span> : tv.name}</span>
-                                  {isTVLoading && <Loader2 className="w-3 h-3 text-[#f78ca0] animate-spin flex-shrink-0" />}
-                                  {!isTVLoading && !isTVEditing && (
-                                    <button onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvEditKey, value: tv.name }); setSelectedTvId(tv.id); }}
-                                      className="p-0.5 rounded hover:bg-gray-200 flex-shrink-0">
-                                      <Edit2 className="w-2.5 h-2.5 text-[#9ca3af]" />
-                                    </button>
+                              <div key={tv.id} className="rounded-lg border border-slate-200 overflow-hidden">
+                                {/* ── 헤더 ── */}
+                                <div
+                                  className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 cursor-pointer select-none transition-colors"
+                                  onClick={() => setSelectedTvId(isTVOpen ? null : tv.id)}>
+                                  <span className="px-1.5 py-0.5 text-[8px] rounded font-bold bg-slate-100 text-slate-500 flex-shrink-0">TV</span>
+                                  <span className="font-mono text-[11px] font-semibold text-[#1a1a2e] flex-shrink-0">{tv.id}</span>
+                                  {ep ? (
+                                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
+                                      <span className="font-mono text-[10px] text-slate-500 truncate">{ep.path}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[11px] text-slate-400 truncate flex-1">{tv.name}</span>
                                   )}
-                                  {isTVSelected ? <ChevronDown className="w-3 h-3 text-[#9ca3af] flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af] flex-shrink-0" />}
+                                  {isTVLoading && <Loader2 className="w-3 h-3 text-[#f78ca0] animate-spin flex-shrink-0" />}
+                                  {/* 액션 버튼 */}
+                                  <div className="flex items-center gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                    <button
+                                      title={isCopied ? '복사됨!' : '복사'}
+                                      onClick={() => handleTVCopy(tvKey)}
+                                      className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${isCopied ? 'text-emerald-500' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
+                                      {isCopied
+                                        ? <CheckCircle className="w-3 h-3" />
+                                        : <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h8"/></svg>}
+                                    </button>
+                                    <button
+                                      title={isEditing ? '편집 중' : '편집'}
+                                      onClick={() => {
+                                        if (isEditing) { setTvEditingKey(null); }
+                                        else { setTvEditingKey(tvKey); setTvEditContent(reqJson); setSelectedTvId(tv.id); }
+                                      }}
+                                      className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${isEditing ? 'text-[#f78ca0] bg-[#f78ca0]/10' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  {isTVOpen ? <ChevronDown className="w-3 h-3 text-slate-400 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-slate-300 flex-shrink-0" />}
                                 </div>
-                                {isTVSelected && (
-                                  <div className="px-3 pb-2.5 space-y-2 border-t border-[#f0f0f0]/60">
-                                    <div className="pt-2">
-                                      {isTVEditing ? (
-                                        <div className="flex items-center gap-1">
-                                          <input autoFocus value={editingDetailItem!.value}
-                                            onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
-                                            onKeyDown={e => { if (e.key === 'Enter') saveTVName(tv.id, editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                                            className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30" />
-                                          <button onClick={() => saveTVName(tv.id, editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                                          <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
+
+                                {/* ── 엔드포인트 상세 (펼쳤을 때) ── */}
+                                {isTVOpen && (
+                                  <div className="border-t border-slate-100">
+                                    {/* Method + Path 헤더 */}
+                                    {ep && (
+                                      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-100">
+                                        <span className={`text-[9px] font-bold px-2 py-1 rounded ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
+                                        <span className="font-mono text-[11px] text-slate-700">{ep.path}</span>
+                                      </div>
+                                    )}
+
+                                    {/* Request Body */}
+                                    <div className="px-3 pt-2 pb-1">
+                                      <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Request Body</div>
+                                      {isEditing ? (
+                                        <div>
+                                          <textarea
+                                            autoFocus
+                                            value={tvEditContent}
+                                            onChange={e => setTvEditContent(e.target.value)}
+                                            spellCheck={false}
+                                            className="w-full bg-slate-50 text-slate-700 font-mono text-[10.5px] leading-[1.65] p-2.5 rounded border border-[#f78ca0]/40 focus:outline-none focus:border-[#f78ca0]/70 resize-none"
+                                            style={{ minHeight: `${Math.max(3, tvEditContent.split('\n').length + 1) * 17}px` }}
+                                          />
+                                          <div className="flex justify-end gap-1.5 mt-1.5 mb-1">
+                                            <button onClick={() => setTvEditingKey(null)}
+                                              className="px-2.5 py-1 rounded text-[10px] bg-slate-100 text-slate-500 hover:bg-slate-200">취소</button>
+                                            <button onClick={() => handleTVEditSave(tv.id, tsId!, tcId!)}
+                                              className="px-2.5 py-1 rounded text-[10px] bg-[#f78ca0] text-white hover:bg-[#f07090] font-medium">저장</button>
+                                          </div>
                                         </div>
                                       ) : (
-                                        <div className="flex items-center justify-between">
-                                          <span className="text-[10px] text-[#6b7280]">{tv.name}</span>
-                                          <button onClick={() => setEditingDetailItem({ type: 'tv', key: tvEditKey, value: tv.name })}
-                                            className="p-0.5 rounded hover:bg-gray-200">
-                                            <Edit2 className="w-2.5 h-2.5 text-[#9ca3af]" />
-                                          </button>
+                                        <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-2 overflow-x-auto">
+                                          <LightJson obj={ep?.requestBody ?? {}} />
                                         </div>
                                       )}
                                     </div>
-                                    {validations.length > 0 && (
-                                      <div className="space-y-1">
-                                        <div className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wide">검증 조건</div>
-                                        {validations.map((v, i) => (
-                                          <div key={i} className="flex gap-1.5 p-2 bg-white rounded border border-[#f0f0f0] text-[10px]">
-                                            <span className="text-[#f78ca0] flex-shrink-0 font-bold">•</span>
-                                            <span className="text-[#6b7280] leading-relaxed">{v}</span>
+
+                                    {/* Response */}
+                                    {ep && (
+                                      <div className="px-3 pt-1 pb-2.5">
+                                        <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Response</div>
+                                        <div className="rounded border border-slate-100 bg-slate-50 overflow-hidden">
+                                          {/* Status line */}
+                                          <div className={`flex items-center gap-2 px-2.5 py-1.5 border-b border-slate-100 ${isOk ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                                            <span className={`font-mono text-[11px] font-bold ${isOk ? 'text-emerald-600' : 'text-red-500'}`}>{ep.statusCode}</span>
+                                            <span className={`text-[10px] ${isOk ? 'text-emerald-500' : 'text-red-400'}`}>{HTTP_STATUS_TEXT[ep.statusCode] ?? ''}</span>
                                           </div>
-                                        ))}
+                                          {ep.responseBody && (
+                                            <div className="px-2.5 py-2 overflow-x-auto">
+                                              <LightJson obj={ep.responseBody} />
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
-                                    )}
-                                    {validations.length === 0 && (
-                                      <div className="text-[10px] text-[#9ca3af]">검증 조건 없음</div>
                                     )}
                                   </div>
                                 )}

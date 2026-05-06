@@ -138,6 +138,80 @@ export const mockScenarioVersions = [
   { id: 'change-2', label: '', date: '04-27', hasChange: true, isFavorite: false, changeDesc: 'FR-003 관련 TC#2 엣지 케이스 2건 추가' },
 ];
 
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export interface TVEndpoint {
+  method: HttpMethod;
+  path: string;
+  requestBody?: Record<string, unknown>;
+  statusCode: number;
+  responseBody?: Record<string, unknown>;
+}
+
+export const mockTVEndpoints: Record<string, TVEndpoint> = {
+  'TS1_TC1_TV1': {
+    method: 'POST', path: '/api/auth/login',
+    requestBody: { email: 'test@example.com', password: 'validPass123' },
+    statusCode: 200,
+    responseBody: { token: 'eyJhbGciOiJIUzI1NiJ9...', redirect: '/dashboard' },
+  },
+  'TS1_TC1_TV2': {
+    method: 'POST', path: '/api/auth/login',
+    requestBody: { email: 'test@example.com', password: 'validPass123!@' },
+    statusCode: 200,
+    responseBody: { token: 'eyJhbGciOiJIUzI1NiJ9...', userId: 42 },
+  },
+  'TS1_TC2_TV1': {
+    method: 'POST', path: '/api/auth/login',
+    requestBody: { email: 'test@example.com', password: 'bad' },
+    statusCode: 401,
+    responseBody: { code: 'INVALID_PASSWORD', message: '비밀번호는 8자 이상이어야 합니다' },
+  },
+  'TS1_TC2_TV2': {
+    method: 'POST', path: '/api/auth/login',
+    requestBody: { email: 'test@example.com', password: '123' },
+    statusCode: 401,
+    responseBody: { code: 'INVALID_PASSWORD', message: '비밀번호 오류' },
+  },
+  'TS2_TC1_TV1': {
+    method: 'GET', path: '/api/products/search',
+    requestBody: { q: '노트북', category: 'electronics', limit: 20 },
+    statusCode: 200,
+    responseBody: { total: 42, items: [{ id: 'P001', name: '맥북 프로' }] },
+  },
+  'TS3_TC1_TV1': {
+    method: 'POST', path: '/api/cart/items',
+    requestBody: { productId: 'P001', quantity: 1 },
+    statusCode: 201,
+    responseBody: { cartId: 'C100', itemCount: 1 },
+  },
+  'TS3_TC2_TV1': {
+    method: 'PATCH', path: '/api/cart/items/:id',
+    requestBody: { quantity: 3 },
+    statusCode: 200,
+    responseBody: { cartId: 'C100', itemCount: 3, subtotal: 3900000 },
+  },
+};
+
+export type TSFlowEdgeType = 'success' | 'failure' | 'branch' | 'default';
+
+export interface TSFlowEdge {
+  from: string;
+  to: string;
+  label?: string;
+  type: TSFlowEdgeType;
+}
+
+export const mockTSFlows: TSFlowEdge[] = [
+  { from: 'TS1', to: 'TS2', label: '로그인 성공',  type: 'success' },
+  { from: 'TS1', to: 'TS1', label: '인증 실패',    type: 'failure' },
+  { from: 'TS2', to: 'TS3', label: '상품 선택',    type: 'default' },
+  { from: 'TS2', to: 'TS1', label: '세션 만료',    type: 'failure' },
+  { from: 'TS3', to: 'TS4', label: '결제 진행',    type: 'success' },
+  { from: 'TS3', to: 'TS2', label: '검색 계속',    type: 'branch'  },
+  { from: 'TS4', to: 'TS2', label: '결제 후 쇼핑', type: 'branch'  },
+];
+
 export const mockRTMVersions = [
   { id: 'v1.1', label: 'RTM v1.1 (최신)', date: '2026-04-26', basedOn: 'PRD v1.1, 인터페이스 정의서 v1.1' },
   { id: 'v1.0', label: 'RTM v1.0', date: '2026-04-20', basedOn: 'PRD v1.0' },
