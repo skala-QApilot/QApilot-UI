@@ -15,10 +15,12 @@ import {
   Eye, AlertCircle, CheckCircle, X, Home, Layers, Settings,
   RotateCcw, Pause, ChevronLeft, User, Send,
   History, CheckSquare, Search, Edit2, MessageCircle,
-  Sparkles, Star, FolderOpen, LayoutGrid,
+  Sparkles, Star, FolderOpen, LayoutGrid, Zap,
 } from 'lucide-react';
+import AgentTracePanel from './components/AgentTracePanel';
 import {
   mockAIItems,
+  mockAgentTrace,
   mockFiles,
   mockNotifications,
   mockPipelineStages,
@@ -43,6 +45,7 @@ export default function App() {
 
   // pipeline header
   const [currentPipelineStage] = useState<number>(1);
+  const [showAgentTrace, setShowAgentTrace] = useState(false);
 
   // scenario page
   const [selectedScenario, setSelectedScenario] = useState('TS1');
@@ -431,22 +434,45 @@ export default function App() {
             const isCurrent = idx === currentPipelineStage;
             return (
               <div key={stage} className="flex items-center">
-                <div className="flex flex-col items-center">
-                  <div className={`w-3 h-3 rounded-full transition-all ${
+                <div className="flex flex-col items-center relative">
+                  {/* 에이전트 현재 위치 링 */}
+                  {isCurrent && (
+                    <span className="absolute -inset-1.5 rounded-full border-2 border-[#f78ca0]/40 animate-ping" />
+                  )}
+                  <div className={`w-3 h-3 rounded-full transition-all relative z-10 ${
                     isCompleted || isCurrent ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]' : 'bg-gray-300'
-                  } ${isCurrent ? 'animate-pulse shadow-lg shadow-pink-300' : ''}`} />
+                  } ${isCurrent ? 'shadow-lg shadow-pink-300' : ''}`} />
                   <span className={`text-xs mt-1 whitespace-nowrap ${isCompleted || isCurrent ? 'text-[#1a1a2e] font-medium' : 'text-[#9ca3af]'}`}>
                     {stage}
                   </span>
                 </div>
                 {idx < mockPipelineStages.length - 1 && (
-                  <div className={`w-16 h-0.5 mx-2 mb-4 ${isCompleted ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]' : 'border-t-2 border-dashed border-gray-300'}`} />
+                  <div className="relative w-16 h-0.5 mx-2 mb-4 overflow-hidden">
+                    <div className={`absolute inset-0 ${isCompleted ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]' : 'bg-gray-200'}`} />
+                    {/* 에이전트 플로우 애니메이션 — 완료 구간만 */}
+                    {isCompleted && (
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/70 to-transparent animate-[shimmer_1.4s_infinite]" />
+                    )}
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* Agent 활동 토글 버튼 */}
+      <button
+        onClick={() => setShowAgentTrace(v => !v)}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+          showAgentTrace
+            ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white border-transparent shadow-md shadow-pink-200'
+            : 'bg-white border-[#f0f0f0] text-[#6b7280] hover:border-[#f78ca0]/40 hover:text-[#f78ca0]'
+        }`}>
+        <Zap className="w-3.5 h-3.5" />
+        Agent 활동
+        <span className={`w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0 ${showAgentTrace ? 'bg-white' : 'bg-[#f78ca0]'}`} />
+      </button>
 
       <div className="flex items-center gap-4">
         {/* 예약 알람 시간 표시 */}
@@ -571,6 +597,12 @@ export default function App() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <NavBar />
+        {showAgentTrace && (
+          <AgentTracePanel
+            items={mockAgentTrace}
+            onClose={() => setShowAgentTrace(false)}
+          />
+        )}
         <div className="flex-1 overflow-hidden flex">
           <div className="flex-1 overflow-hidden">
             {currentPage === 'HOME' && <HomePage setCurrentPage={setCurrentPage} navigateToHistory={navigateToHistory} />}

@@ -1,6 +1,7 @@
 import React from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, LayoutGrid, List, Loader2, Network, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, X } from 'lucide-react';
+import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, LayoutGrid, List, Loader2, Network, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, X, Wand2 } from 'lucide-react';
 import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
+import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
 import { mockRTMData, mockScenarioVersions, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
 
 interface ScenarioPageProps {
@@ -71,6 +72,9 @@ setTestDepth,
 
   // View mode: table (full-width list) or graph
   const [viewMode, setViewMode] = React.useState<'table' | 'graph'>('table');
+
+  // 시나리오 생성 오버레이
+  const [showGeneratingOverlay, setShowGeneratingOverlay] = React.useState(false);
 
   // TV JSON editor state
   const [tvEditingKey, setTvEditingKey] = React.useState<string | null>(null);
@@ -429,6 +433,13 @@ setTestDepth,
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* AI 시나리오 생성 버튼 */}
+          <button
+            onClick={() => setShowGeneratingOverlay(true)}
+            className="px-4 py-1.5 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg text-xs font-medium shadow-sm hover:shadow-md transition-all flex items-center gap-1.5">
+            <Wand2 className="w-3.5 h-3.5" /> AI 시나리오 생성
+          </button>
+          <div className="w-px h-5 bg-[#f0f0f0]" />
           <button className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
             <Download className="w-3.5 h-3.5" /> CSV
           </button>
@@ -558,8 +569,13 @@ setTestDepth,
 
         {/* ── [2] TS/TC/TV Tree — table mode: flex-1 / graph mode: fixed width ── */}
         <div
-          className={`bg-white flex flex-col flex-shrink-0 ${viewMode === 'table' ? 'flex-1' : ''}`}
+          className={`bg-white flex flex-col flex-shrink-0 relative ${viewMode === 'table' ? 'flex-1' : ''}`}
           style={viewMode === 'graph' ? { width: leftSidebarWidth } : undefined}>
+
+          {/* AI 시나리오 생성 오버레이 — 이 패널 위에만 표시 */}
+          {showGeneratingOverlay && (
+            <ScenarioGeneratingOverlay onComplete={() => setShowGeneratingOverlay(false)} />
+          )}
 
           {/* Tree header */}
           <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#f0f0f0] bg-gray-50 flex-shrink-0">
