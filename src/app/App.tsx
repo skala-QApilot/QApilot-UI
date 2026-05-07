@@ -15,7 +15,7 @@ import {
   Eye, AlertCircle, CheckCircle, X, Home, Layers, Settings,
   RotateCcw, Pause, ChevronLeft, User, Send,
   History, CheckSquare, Search, Edit2, MessageCircle,
-  Sparkles, Star, FolderOpen, LayoutGrid, Zap,
+  Sparkles, Star, FolderOpen, LayoutGrid,
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
 import {
@@ -460,19 +460,6 @@ export default function App() {
           })}
         </div>
       </div>
-
-      {/* Agent 활동 토글 버튼 */}
-      <button
-        onClick={() => setShowAgentTrace(v => !v)}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-          showAgentTrace
-            ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white border-transparent shadow-md shadow-pink-200'
-            : 'bg-white border-[#f0f0f0] text-[#6b7280] hover:border-[#f78ca0]/40 hover:text-[#f78ca0]'
-        }`}>
-        <Zap className="w-3.5 h-3.5" />
-        Agent 활동
-        <span className={`w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0 ${showAgentTrace ? 'bg-white' : 'bg-[#f78ca0]'}`} />
-      </button>
 
       <div className="flex items-center gap-4">
         {/* 예약 알람 시간 표시 */}
