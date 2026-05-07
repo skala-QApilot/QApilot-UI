@@ -6,13 +6,12 @@ import { HomePage } from './pages/HomePage';
 import { ExecutionHistoryPage as ExecutionHistoryPageView } from './pages/ExecutionHistoryPage';
 import { RTMPage } from './pages/RTMPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { TestGroupPage } from './pages/TestGroupPage';
 import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import {
   Bell, Play, ChevronDown, ChevronRight, Upload, FileText,
   CheckCircle2, XCircle, Clock, Plus,
-  Eye, AlertCircle, CheckCircle, X, Home, Layers, Settings,
+  Eye, AlertCircle, CheckCircle, X, Home, Layers,
   RotateCcw, Pause, ChevronLeft, User, Send,
   History, CheckSquare, Search, Edit2, MessageCircle,
   Sparkles, Star, FolderOpen, LayoutGrid,
@@ -23,9 +22,6 @@ import {
   mockAgentTrace,
   mockFiles,
   mockNotifications,
-  mockPipelineStages,
-  mockRTMData,
-  mockRunningTestGroups,
   mockScenarioHistory,
   mockScenarios,
   mockScenarioVersions,
@@ -44,7 +40,6 @@ export default function App() {
   const [, setScenarioSubmenuExpanded] = useState(false);
 
   // pipeline header
-  const [currentPipelineStage] = useState<number>(1);
   const [showAgentTrace, setShowAgentTrace] = useState(false);
 
   // scenario page
@@ -95,7 +90,7 @@ export default function App() {
   const [completedAgentStages, setCompletedAgentStages] = useState<string[]>([]);
   const [currentAgentStage, setCurrentAgentStage] = useState<string>('');
   const [showCompletionModal, setShowCompletionModal] = useState(false);
-  const [scenarioSidebarTab, setScenarioSidebarTab] = useState<'TOTAL' | 'FILTERED'>('TOTAL');
+  const [scenarioSidebarTab, setScenarioSidebarTab] = useState<'TOTAL' | 'PASS' | 'FILTERED'>('TOTAL');
   const [scenarioFilter] = useState<string>('TOTAL');
   const [expandedScenarios, setExpandedScenarios] = useState<string[]>(['TS1']);
   const [expandedTestCases, setExpandedTestCases] = useState<string[]>(['TC1']);
@@ -130,6 +125,7 @@ export default function App() {
   const [showRetestNavModal, setShowRetestNavModal] = useState(false);
 
   // 시나리오 그룹 선택 & 예약 설정
+  const [selectedScenarioGroupId, setSelectedScenarioGroupId] = useState<string | null>(null);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduledAlarms, setScheduledAlarms] = useState<Array<{ time: string; id: string }>>([]);
@@ -285,42 +281,53 @@ export default function App() {
     }: { icon: React.ElementType; label: string; active: boolean; onClick: () => void; badge?: number }) => (
       <button
         onClick={onClick}
-        className="relative w-full flex flex-col items-center gap-1.5 py-3.5 px-1 transition-all group"
+        title={label}
+        className="relative w-full flex items-center justify-center h-[58px] transition-all group"
       >
-        <span className="relative flex items-center justify-center">
-          <Icon className={`w-[22px] h-[22px] transition-colors ${active ? 'text-[#3d35d0]' : 'text-[#9ca3af] group-hover:text-[#6b7280]'}`} />
+        {active && (
+          <>
+            <div className="absolute inset-0 bg-white rounded-l-2xl" />
+            <div className="absolute pointer-events-none z-10" style={{
+              top: -22, right: 0, width: 22, height: 22,
+              background: '#f2f3f5', borderBottomRightRadius: 22,
+            }} />
+            <div className="absolute pointer-events-none z-10" style={{
+              bottom: -22, right: 0, width: 22, height: 22,
+              background: '#f2f3f5', borderTopRightRadius: 22,
+            }} />
+          </>
+        )}
+        <span className="relative z-10 flex items-center justify-center">
+          <Icon className={`w-6 h-6 transition-colors ${active ? 'text-[#3615CF]' : 'text-[#9ca3af] group-hover:text-[#6b7280]'}`} />
           {badge !== undefined && badge > 0 && (
-            <span className="absolute -top-1.5 -right-2.5 min-w-[15px] h-[15px] px-0.5 bg-[#3d35d0] text-white text-[8px] font-bold rounded-full flex items-center justify-center leading-none">
+            <span className="absolute -top-1.5 -right-2.5 min-w-[18px] h-[18px] px-0.5 bg-[#3615CF] text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
               {badge}
             </span>
           )}
-        </span>
-        <span className={`text-[9px] font-medium leading-none transition-colors ${active ? 'text-[#3d35d0]' : 'text-[#9ca3af] group-hover:text-[#6b7280]'}`}>
-          {label}
         </span>
       </button>
     );
 
     return (
-      <div className="h-full w-[72px] bg-white flex flex-col py-5 flex-shrink-0">
-        <div className="flex flex-col flex-1 gap-2 px-2">
+      <div className="h-full w-[68px] bg-[#f2f3f5] border-r border-[#e5e7eb] flex flex-col pt-4 pb-2.5 flex-shrink-0">
+        <div className="flex-1 flex flex-col items-center justify-center gap-5 pb-16">
           <NavItem icon={Home} label="홈" active={currentPage === 'HOME'}
             onClick={() => setCurrentPage('HOME')} />
           <NavItem icon={Layers} label="시나리오" active={currentPage === '시나리오'}
             onClick={() => setCurrentPage('시나리오')} />
-          <NavItem icon={LayoutGrid} label="시나리오그룹" active={currentPage === '테스트그룹'}
-            onClick={() => { setCurrentPage('테스트그룹'); setTestDepth(0); }} />
-          <NavItem icon={Play} label="실행" active={isTestPage && testSubTab === 'INPROGRESS'}
+          <NavItem icon={RotateCcw} label="이력" active={isTestPage && testSubTab === 'HISTORY'}
             badge={runningCount}
-            onClick={() => { setCurrentPage('테스트'); setTestSubTab('INPROGRESS'); }} />
-          <NavItem icon={History} label="이력" active={isTestPage && testSubTab === 'HISTORY'}
             onClick={() => { setCurrentPage('테스트'); setTestSubTab('HISTORY'); }} />
           <NavItem icon={CheckSquare} label="RTM" active={currentPage === 'RTM'}
             onClick={() => setCurrentPage('RTM')} />
-          <div className="flex-1" />
-          <NavItem icon={Settings} label="설정" active={currentPage === '설정'}
-            onClick={() => setCurrentPage('설정')} />
         </div>
+        {/* 유저 아이콘 — 하단 고정 */}
+        <button
+          title="프로필"
+          className="w-full flex items-center justify-center h-12 text-[#9ca3af] hover:text-[#6b7280] transition-colors"
+        >
+          <User className="w-5 h-5" />
+        </button>
       </div>
     );
   };
@@ -328,97 +335,55 @@ export default function App() {
   // ── NavBar ──────────────────────────────────────────────────────────────────
 
   const NavBar = () => (
-    <div className="h-16 bg-[#1e1a3a] border-b border-white/8 flex items-center justify-between px-6 relative overflow-hidden">
-      {/* 무대 조명 — solid 블루 glow */}
-      <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse 70% 120% at 50% -10%, rgba(61,53,208,0.30), transparent 60%)' }} />
-      <div className="absolute bottom-0 left-0 right-0 h-px bg-[#3d35d0]/40 pointer-events-none" />
-
-      {/* 로고 — solid white */}
-      <div className="text-xl font-bold text-white tracking-tight relative z-10">
-        QApilot
+    <div className="h-[60px] bg-white border-b border-[#e5e7eb] flex items-center px-5 gap-4 z-10 flex-shrink-0">
+      {/* 로고 + 프로젝트 선택 */}
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <span className="text-[18px] font-extrabold text-[#3615CF] tracking-tight">QApilot</span>
+        <button className="flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-gray-50 transition-colors">
+          <span className="text-sm font-medium text-[#374151]">서비스 A</span>
+          <ChevronDown className="w-3.5 h-3.5 text-[#9ca3af]" />
+        </button>
       </div>
 
-      {/* 2-Layer Pipeline */}
-      <div className="flex flex-col items-center gap-1 relative z-10">
-        <div className="flex items-center gap-2 h-6">
-          {mockRunningTestGroups.map((group, idx) => (
-            <div key={group.groupNumber} className="flex flex-col items-center" style={{ marginLeft: idx === 0 ? '120px' : '0' }}>
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white transition-all ${
-                group.status === 'running'
-                  ? 'bg-[#3d35d0] animate-pulse shadow-[0_0_14px_rgba(61,53,208,0.6)]'
-                  : group.status === 'completed'
-                    ? 'bg-[#3d35d0] opacity-70'
-                    : 'bg-white/15 text-white/40'
-              }`}>
-                {group.groupNumber}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          {mockPipelineStages.map((stage, idx) => {
-            const isCompleted = idx < currentPipelineStage;
-            const isCurrent = idx === currentPipelineStage;
-            return (
-              <div key={stage} className="flex items-center">
-                <div className="flex flex-col items-center relative">
-                  {isCurrent && (
-                    <span className="absolute -inset-1.5 rounded-full border border-[#3d35d0]/50 animate-ping" />
-                  )}
-                  {isCurrent && (
-                    <div className="absolute -inset-3 rounded-full bg-[#3d35d0]/15 blur-sm" />
-                  )}
-                  <div className={`w-3 h-3 rounded-full transition-all relative z-10 ${
-                    isCompleted || isCurrent
-                      ? 'bg-[#3d35d0] shadow-[0_0_8px_rgba(61,53,208,0.6)]'
-                      : 'bg-white/20'
-                  }`} />
-                  <span className={`text-[11px] mt-1 whitespace-nowrap font-medium ${
-                    isCurrent ? 'text-white' : isCompleted ? 'text-white/55' : 'text-white/25'
-                  }`}>
-                    {stage}
-                  </span>
-                </div>
-                {idx < mockPipelineStages.length - 1 && (
-                  <div className="relative w-16 h-px mx-2 mb-4 overflow-hidden">
-                    <div className={`absolute inset-0 ${isCompleted ? 'bg-[#3d35d0]' : 'bg-white/12'}`} />
-                    {isCompleted && (
-                      <div className="absolute inset-0 bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.5),transparent)] animate-[shimmer_1.4s_infinite]" />
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <div className="flex-1" />
 
-      {/* 우측 컨트롤 */}
-      <div className="flex items-center gap-3 relative z-10">
+      {/* 우측: 예약알람 + pill + 캐릭터 + 벨 */}
+      <div className="flex items-center gap-3 flex-shrink-0">
         {scheduledAlarms.length > 0 && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#3d35d0]/20 rounded-lg border border-[#3d35d0]/40">
-            <Clock className="w-4 h-4 text-white/70" />
-            <span className="text-sm font-medium text-white/80">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3615CF]/8 rounded-lg border border-[#3615CF]/20">
+            <Clock className="w-3.5 h-3.5 text-[#3615CF]" />
+            <span className="text-xs font-medium text-[#3615CF]">
               {scheduledAlarms.map(a => a.time).join(', ')}
             </span>
           </div>
         )}
+        {/* 말풍선 + 캐릭터 */}
+        <div className="flex items-center">
+          <div className="flex items-center gap-2 px-5 py-1.5 bg-[#3615CF] rounded-full text-white text-sm font-semibold shadow-sm select-none">
+            QA 프로젝트 #1
+          </div>
+          {/* 말풍선 꼬리 */}
+          <div className="w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-l-[8px] border-l-[#3615CF] -ml-px flex-shrink-0" />
+        </div>
+        {/* 캐릭터 플레이스홀더 — 추후 이미지로 교체 */}
+        <div className="w-9 h-9 rounded-full bg-[#eee9ff] border-2 border-[#3615CF]/20 flex items-center justify-center text-[18px] select-none">
+          🐱
+        </div>
         <div className="relative">
-          <button onClick={() => setNotificationOpen(!notificationOpen)} className="p-2 hover:bg-white/10 rounded-full relative transition-colors">
-            <Bell className="w-5 h-5 text-white/60" />
+          <button onClick={() => setNotificationOpen(!notificationOpen)} className="p-2 hover:bg-gray-100 rounded-full relative transition-colors">
+            <Bell className="w-5 h-5 text-[#374151]" />
             {unreadNotifications > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#3d35d0] text-white text-xs rounded-full flex items-center justify-center font-bold shadow-[0_0_8px_rgba(61,53,208,0.5)]">
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-[#3615CF] text-white text-[9px] rounded-full flex items-center justify-center font-bold">
                 {unreadNotifications}
               </span>
             )}
           </button>
           {notificationOpen && (
-            <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-[#f0f0f0] z-50">
+            <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-[#e5e7eb] z-50">
               <div className="p-4 border-b border-[#f0f0f0] font-semibold text-[#1a1a2e]">알림</div>
               <div className="max-h-96 overflow-y-auto">
                 {mockNotifications.map(notif => (
-                  <div key={notif.id} className={`p-4 border-b border-[#f0f0f0] hover:bg-gray-50 ${!notif.read ? 'bg-[#3d35d0]/5' : ''}`}>
+                  <div key={notif.id} className={`p-4 border-b border-[#f0f0f0] hover:bg-gray-50 ${!notif.read ? 'bg-[#3615CF]/5' : ''}`}>
                     <div className="text-sm text-[#1a1a2e]">{notif.message}</div>
                     <div className="text-xs text-[#6b7280] mt-1">{notif.time}</div>
                   </div>
@@ -426,9 +391,6 @@ export default function App() {
               </div>
             </div>
           )}
-        </div>
-        <div className="w-8 h-8 rounded-full bg-[#3d35d0] flex items-center justify-center text-white shadow-[0_0_10px_rgba(61,53,208,0.4)]">
-          <User className="w-4 h-4" />
         </div>
       </div>
     </div>
@@ -512,19 +474,28 @@ export default function App() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-screen bg-gray-50 flex overflow-hidden">
-      <LeftNavigation />
+    <div className="h-screen flex flex-col overflow-hidden">
+      <NavBar />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <NavBar />
-        {showAgentTrace && (
-          <AgentTracePanel
-            items={mockAgentTrace}
-            onClose={() => setShowAgentTrace(false)}
-          />
-        )}
-        <div className="flex-1 overflow-hidden flex">
-          <div className="flex-1 overflow-hidden">
+      <div className="flex-1 flex overflow-hidden">
+        <LeftNavigation />
+
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {showAgentTrace && (
+            <AgentTracePanel
+              items={mockAgentTrace}
+              onClose={() => setShowAgentTrace(false)}
+            />
+          )}
+          {/* 페이지 타이틀 바 */}
+          <div className="flex-shrink-0 bg-[#f5f6fa] border-b border-[#e5e7eb] px-6 py-2">
+            <span className="text-sm font-semibold text-[#374151]">
+              {currentPage === 'HOME' ? '대시보드' : currentPage}
+            </span>
+          </div>
+
+          <div className="flex-1 overflow-hidden flex">
+            <div className="flex-1 overflow-hidden">
             {currentPage === 'HOME' && <HomePage setCurrentPage={setCurrentPage} navigateToHistory={navigateToHistory} />}
             {currentPage === '시나리오' && (
               <ScenarioPage
@@ -587,55 +558,12 @@ export default function App() {
                 setTestDepth={setTestDepth}
                 highlightedBotRow={highlightedBotRow}
                 setHighlightedBotRow={setHighlightedBotRow}
-              />
-            )}
-            {currentPage === '테스트그룹' && (
-              <TestGroupPage
-                testDepth={testDepth}
-                setTestDepth={setTestDepth}
-                selectedTestGroup={selectedTestGroup}
-                groupSearchQuery={groupSearchQuery}
-                setGroupSearchQuery={setGroupSearchQuery}
-                editingGroupId={editingGroupId}
-                setEditingGroupId={setEditingGroupId}
-                editingGroupName={editingGroupName}
-                setEditingGroupName={setEditingGroupName}
-                groupNames={groupNames}
-                setGroupNames={setGroupNames}
-                isTestRunning={isTestRunning}
-                setIsTestRunning={setIsTestRunning}
-                completedAgentStages={completedAgentStages}
-                setCompletedAgentStages={setCompletedAgentStages}
-                currentAgentStage={currentAgentStage}
-                setCurrentAgentStage={setCurrentAgentStage}
-                showCompletionModal={showCompletionModal}
-                setShowCompletionModal={setShowCompletionModal}
-                scenarioSidebarTab={scenarioSidebarTab}
-                setScenarioSidebarTab={setScenarioSidebarTab}
-                scenarioFilter={scenarioFilter}
-                expandedScenarios={expandedScenarios}
-                setExpandedScenarios={setExpandedScenarios}
-                expandedTestCases={expandedTestCases}
-                setExpandedTestCases={setExpandedTestCases}
-                highlightedLogIdx={highlightedLogIdx}
-                setHighlightedLogIdx={setHighlightedLogIdx}
+                selectedScenarioGroupId={selectedScenarioGroupId}
+                setSelectedScenarioGroupId={setSelectedScenarioGroupId}
                 setRunningTests={setRunningTests}
-                selectedRunningTestId={selectedRunningTestId}
+                setTestSubTab={setTestSubTab}
                 setSelectedRunningTestId={setSelectedRunningTestId}
                 setSelectedTestGroup={setSelectedTestGroup}
-                setCurrentPage={setCurrentPage}
-                setTestSubTab={setTestSubTab}
-                setTestSubmenuExpanded={setTestSubmenuExpanded}
-                setScenarioSubmenuExpanded={setScenarioSubmenuExpanded}
-                setHistoryFilter={setHistoryFilter}
-                advanceAgentStage={advanceAgentStage}
-                getNodeStatus={getNodeStatus}
-                selectedGroupIds={selectedGroupIds}
-                setSelectedGroupIds={setSelectedGroupIds}
-                showScheduleModal={showScheduleModal}
-                setShowScheduleModal={setShowScheduleModal}
-                scheduledAlarms={scheduledAlarms}
-                setScheduledAlarms={setScheduledAlarms}
               />
             )}
             {currentPage === '테스트' && (
@@ -683,8 +611,9 @@ export default function App() {
           </div>
         </div>
       </div>
+    </div>
 
-      {/* Files Modal */}
+    {/* Files Modal */}
       {showLinkedFiles && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowLinkedFiles(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
