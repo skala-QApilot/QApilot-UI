@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { RobotSVG, SpeechBubble } from './RobotNarrator';
 
 // ── 단계 정의 ─────────────────────────────────────────────────────────────────
 const STEPS = [
@@ -11,80 +12,7 @@ const STEPS = [
   { id: 'done',  message: '시나리오 생성이 완료됐어요!', detail: '총 4개 시나리오, 12개 TC가 생성되었습니다', duration: 1200 },
 ];
 
-// ── 로봇 SVG ──────────────────────────────────────────────────────────────────
-function RobotCharacter({ blinking, talking }: { blinking: boolean; talking: boolean }) {
-  return (
-    <svg viewBox="0 0 90 120" className="w-full h-full" fill="none">
-      {/* 안테나 */}
-      <line x1="45" y1="4" x2="45" y2="18" stroke="#f78ca0" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx="45" cy="3" r="4" fill="#f78ca0">
-        <animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite" />
-      </circle>
-      {/* 머리 */}
-      <rect x="14" y="18" width="62" height="48" rx="14" fill="white" stroke="#f78ca0" strokeWidth="2" />
-      {/* 눈 왼쪽 */}
-      <ellipse cx="32" cy="38" rx="7" ry={blinking ? 1 : 7} fill="#f78ca0">
-        <animate attributeName="ry" values={blinking ? '7;1;7' : '7'} dur="0.15s" begin="0s" />
-      </ellipse>
-      <circle cx="32" cy="38" r="3" fill="white" opacity={blinking ? 0 : 1} />
-      <circle cx="33.5" cy="36.5" r="1.5" fill="#1a1a2e" opacity={blinking ? 0 : 1} />
-      {/* 눈 오른쪽 */}
-      <ellipse cx="58" cy="38" rx="7" ry={blinking ? 1 : 7} fill="#f78ca0">
-        <animate attributeName="ry" values={blinking ? '7;1;7' : '7'} dur="0.15s" begin="0s" />
-      </ellipse>
-      <circle cx="58" cy="38" r="3" fill="white" opacity={blinking ? 0 : 1} />
-      <circle cx="59.5" cy="36.5" r="1.5" fill="#1a1a2e" opacity={blinking ? 0 : 1} />
-      {/* 입 */}
-      {talking ? (
-        <rect x="33" y="52" width="24" height="8" rx="4" fill="#f78ca0" opacity="0.7">
-          <animate attributeName="height" values="8;4;8" dur="0.4s" repeatCount="indefinite" />
-          <animate attributeName="y" values="52;54;52" dur="0.4s" repeatCount="indefinite" />
-        </rect>
-      ) : (
-        <path d="M 32 55 Q 45 64 58 55" stroke="#f78ca0" strokeWidth="2.5" strokeLinecap="round" />
-      )}
-      {/* 볼터치 */}
-      <ellipse cx="22" cy="50" rx="6" ry="4" fill="#f78ca0" opacity="0.18" />
-      <ellipse cx="68" cy="50" rx="6" ry="4" fill="#f78ca0" opacity="0.18" />
-      {/* 목 */}
-      <rect x="38" y="66" width="14" height="6" rx="3" fill="#f0f0f0" />
-      {/* 몸통 */}
-      <rect x="16" y="72" width="58" height="42" rx="12" fill="white" stroke="#f78ca0" strokeWidth="2" />
-      {/* 가슴 패널 */}
-      <rect x="26" y="82" width="38" height="22" rx="6" fill="#f78ca0" opacity="0.08" stroke="#f78ca0" strokeWidth="1" strokeDasharray="3 2" />
-      {/* 패널 LED */}
-      <circle cx="35" cy="91" r="3.5" fill="#f78ca0" opacity="0.7">
-        <animate attributeName="opacity" values="0.7;0.2;0.7" dur="0.9s" repeatCount="indefinite" />
-      </circle>
-      <circle cx="45" cy="91" r="3.5" fill="#9AB17A" opacity="0.7">
-        <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.1s" repeatCount="indefinite" />
-      </circle>
-      <circle cx="55" cy="91" r="3.5" fill="#60a5fa" opacity="0.7">
-        <animate attributeName="opacity" values="0.7;0.2;0.7" dur="0.7s" repeatCount="indefinite" />
-      </circle>
-      {/* 팔 왼쪽 */}
-      <rect x="2" y="74" width="14" height="32" rx="7" fill="white" stroke="#f78ca0" strokeWidth="2" />
-      {/* 팔 오른쪽 */}
-      <rect x="74" y="74" width="14" height="32" rx="7" fill="white" stroke="#f78ca0" strokeWidth="2" />
-    </svg>
-  );
-}
-
-// ── 말풍선 ────────────────────────────────────────────────────────────────────
-function SpeechBubble({ message, detail }: { message: string; detail: string }) {
-  return (
-    <div className="relative">
-      <div className="bg-white rounded-2xl rounded-bl-sm border-2 border-[#f78ca0]/30 px-5 py-3.5 shadow-xl shadow-[#f78ca0]/10 max-w-xs">
-        <p className="text-sm font-semibold text-[#1a1a2e] leading-snug">{message}</p>
-        <p className="text-[11px] text-[#9ca3af] mt-1 leading-relaxed">{detail}</p>
-        {/* 입력 커서 */}
-        <span className="inline-block w-0.5 h-3.5 bg-[#f78ca0] ml-0.5 align-middle animate-pulse" />
-      </div>
-      {/* 말풍선 꼬리 */}
-      <div className="absolute -bottom-2 left-6 w-4 h-4 bg-white border-r-2 border-b-2 border-[#f78ca0]/30 rotate-45" />
-    </div>
-  );
-}
+// RobotSVG, SpeechBubble → RobotNarrator.tsx에서 import
 
 // ── 아키텍처 노드 ─────────────────────────────────────────────────────────────
 function ArchNode({
@@ -273,13 +201,11 @@ export default function ScenarioGeneratingOverlay({ onComplete }: Props) {
 
       {/* ── 로봇 + 말풍선 ── */}
       <div className="flex items-end gap-4 mt-6">
-        {/* 말풍선 */}
         <div className="mb-3 transition-all duration-500">
           <SpeechBubble message={current.message} detail={current.detail} />
         </div>
-        {/* 로봇 */}
-        <div className={`w-20 h-[106px] transition-all duration-300 ${isDone ? 'scale-110' : ''}`}>
-          <RobotCharacter blinking={blinking} talking={!isDone && stepIdx > 0} />
+        <div className={`w-20 h-[106px] transition-all duration-300 flex-shrink-0 ${isDone ? 'scale-110' : ''}`}>
+          <RobotSVG blinking={blinking} talking={!isDone && stepIdx > 0} />
         </div>
       </div>
 
