@@ -2,7 +2,7 @@ import React from 'react';
 import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, LayoutGrid, List, Loader2, Network, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, X, Wand2 } from 'lucide-react';
 import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
 import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
-import { mockRTMData, mockScenarioVersions, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
+import { mockRTMData, mockScenarioVersions, mockTestGroups, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
 
 interface ScenarioPageProps {
   [key: string]: any;
@@ -68,6 +68,12 @@ triggerCodeChangeDetection,
 ScenarioManagerPanel,
 setCurrentPage,
 setTestDepth,
+selectedScenarioGroupId,
+setSelectedScenarioGroupId,
+setRunningTests,
+setTestSubTab,
+setSelectedRunningTestId,
+setSelectedTestGroup,
 }: ScenarioPageProps) => {
 
   // View mode: table (full-width list) or graph
@@ -226,7 +232,9 @@ setTestDepth,
     const matchSearch = !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
     const isDeferred = _aiItemActions[s.id] === 'deferred';
     const matchChange = !scenarioChangeFilter || (!!_dynamicAIItems[s.id] && _aiItemActions[s.id] !== 'approved' && _aiItemActions[s.id] !== 'rejected' && !isDeferred);
-    return matchSearch && matchChange && !isDeferred;
+    const activeGroup = selectedScenarioGroupId ? mockTestGroups.find(g => g.id === selectedScenarioGroupId) : null;
+    const matchGroup = !activeGroup || (activeGroup.scenarios as string[]).includes(s.id);
+    return matchSearch && matchChange && !isDeferred && matchGroup;
   });
   const deferredAIIds = Object.entries(_aiItemActions)
     .filter(([, value]) => value === 'deferred')
@@ -451,7 +459,7 @@ setTestDepth,
             }`}>
             <LayoutGrid className="w-3.5 h-3.5" /> 시나리오 그룹 생성
           </button>
-          <button onClick={() => setCurrentPage('테스트그룹')}
+          <button onClick={() => { setCurrentPage('테스트'); (setTestSubTab as any)?.('HISTORY'); }}
             className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
             <Play className="w-3.5 h-3.5" /> E2E TEST
           </button>
@@ -749,6 +757,7 @@ setTestDepth,
                     const tcKey = `${scenario.id}_${tc.id}`;
                     const isTCExpanded = expandedTCMain.includes(tcKey);
                     const isTCEditing = editingDetailItem?.type === 'tc' && editingDetailItem.key === tcKey;
+                    const frEntries = mockRTMData.filter(r => r.ts === scenario.id && r.tc === tc.id);
                     return (
                       <div key={tc.id}>
                         <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/30 border-purple-100/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#f78ca0]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
@@ -762,12 +771,21 @@ setTestDepth,
                               : <span className="w-3" />}
                           </button>
                           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTCEditing) setDetailPanelRow({ level: 'TC', tsId: scenario.id, tcId: tc.id }); }}>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 flex-wrap">
                               <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tcBadge}`}>TC</span>
-                              <span className={`text-[11px] font-medium ${isAIItem ? 'text-purple-800' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
+                              <span className={`text-[11px] font-medium flex-shrink-0 ${isAIItem ? 'text-purple-800' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
                               {isTCEditing
                                 ? sidebarEditInput('text-[10px]')
                                 : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-500' : 'text-[#6b7280]'}`}>{tc.name}</span>}
+                              {!isTCEditing && frEntries.map(fr => (
+                                <div key={fr.frId} className="relative group/fr flex-shrink-0">
+                                  <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-blue-50 text-blue-500 border border-blue-100 cursor-help">{fr.frId}</span>
+                                  <div className="absolute bottom-full left-0 mb-1 w-52 bg-[#1a1a2e] text-white text-[10px] rounded-lg px-2.5 py-2 shadow-xl leading-relaxed z-50 hidden group-hover/fr:block pointer-events-none whitespace-normal">
+                                    <div className="font-semibold mb-0.5 text-[9px] text-[#f78ca0]">{fr.frId}</div>
+                                    {fr.requirement}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                           {/* TC 액션 아이콘 */}
@@ -871,7 +889,7 @@ setTestDepth,
 
                               {/* ── 엔드포인트 인라인 프리뷰 ── */}
                               {ep && !isTVEditing && (
-                                <div className="mx-2 mb-1.5 mt-0.5 rounded border border-slate-100 bg-slate-50 overflow-hidden">
+                                <div className="mx-2 mb-1 mt-0.5 rounded border border-slate-100 bg-slate-50 overflow-hidden">
                                   {/* Request body */}
                                   <div className="px-2 py-1.5 overflow-x-auto">
                                     <LightJson obj={ep.requestBody ?? {}} />
@@ -887,6 +905,21 @@ setTestDepth,
                                   </div>
                                 </div>
                               )}
+                              {/* ── TV 검증 조건 인라인 ── */}
+                              {(() => {
+                                const validations = mockValidationConditions[tvKey] || [];
+                                if (validations.length === 0) return null;
+                                return (
+                                  <div className="mx-2 mb-1.5 space-y-0.5">
+                                    {validations.map((v, i) => (
+                                      <div key={i} className="flex gap-1.5 px-2 py-1 bg-amber-50/70 rounded border border-amber-100 text-[10px]">
+                                        <span className="text-amber-400 flex-shrink-0 font-bold">✓</span>
+                                        <span className="text-amber-700 leading-relaxed">{v}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           );
                         })}
@@ -922,326 +955,95 @@ setTestDepth,
         {/* Right drag handle — always */}
         <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleRightDragStart} />
 
-        {/* ── [4] Right Panel — 목차 / Detail ── */}
+        {/* ── [4] Right Panel — 시나리오 그룹 ── */}
         {(() => {
-          const { level, tsId, tcId } = detailPanelRow || { level: null, tsId: null, tcId: null };
-          const ts = tsId ? _dynamicScenarios.find((s) => s.id === tsId) : undefined;
-          const tc = tcId && tsId ? (_dynamicTestCases[tsId] || []).find(t => t.id === tcId) : undefined;
-          const frMapped = tsId ? mockRTMData.filter(r => r.ts === tsId) : [];
-
-          const editKey = level === 'TS' ? tsId : `${tsId}_${tcId}`;
-          const isEditingName = editingDetailItem?.key === editKey;
-          const isLoading = loadingItemKey === editKey;
-
-          const saveName = (newName: string) => {
-            setEditingDetailItem(null);
-            setLoadingItemKey(editKey);
-            setTimeout(() => {
-              if (level === 'TS') {
-                setDynamicScenarios(prev => prev.map(s => s.id === tsId ? { ...s, name: newName } : s));
-                setDynamicTestCases(prev => ({ ...prev }));
-              } else if (level === 'TC' && tcId) {
-                setDynamicTestCases(prev => ({
-                  ...prev,
-                  [tsId]: (prev[tsId] || []).map(t => t.id === tcId ? { ...t, name: newName } : t),
-                }));
-              }
-              setLoadingItemKey(null);
-            }, 1200);
-          };
-
+          void detailPanelRow; // keep alive for graph-mode sync
           return (
-            <div className="bg-white border-l border-[#f0f0f0] flex flex-col flex-shrink-0" style={{ width: rightPanelWidth }}>
+            <div className="bg-white border-l border-[#f0f0f0] flex flex-col flex-shrink-0 overflow-hidden" style={{ width: rightPanelWidth }}>
               {/* Header */}
-              <div className="px-4 py-3 border-b border-[#f0f0f0] bg-gradient-to-r from-[#f78ca0]/5 to-[#fe9a8b]/5 flex-shrink-0">
-                <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-1">목차</div>
-                {detailPanelRow ? (
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold text-sm text-[#1a1a2e] truncate pr-2">
-                      {level === 'TC' ? `${tsId} › ${tcId}` : tsId}
-                    </div>
-                    <button onClick={() => { setDetailPanelRow(null); setSelectedNetworkNodeId(null); setSelectedTvId(null); }} className="p-1 hover:bg-gray-100 rounded flex-shrink-0">
-                      <X className="w-3.5 h-3.5 text-[#9ca3af]" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-xs text-[#9ca3af]">항목을 선택하세요</div>
+              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0 bg-gradient-to-r from-[#f78ca0]/5 to-[#fe9a8b]/5">
+                <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">시나리오 그룹</div>
+                {selectedScenarioGroupId && (
+                  <button onClick={() => (setSelectedScenarioGroupId as any)(null)}
+                    className="flex items-center gap-1 text-[10px] text-[#9ca3af] hover:text-[#f78ca0] transition-colors">
+                    <X className="w-3 h-3" /> 필터 해제
+                  </button>
                 )}
               </div>
 
-              {/* TOC nav — 항상 표시 */}
-              <div className="border-b border-[#f0f0f0] px-3 py-2 overflow-y-auto flex-shrink-0" style={{ maxHeight: '40%' }}>
-                {filteredScenarios.map(s => {
-                  const sTcs = _dynamicTestCases[s.id] || [];
-                  const isActive = detailPanelRow?.tsId === s.id;
+              {/* Group cards */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {mockTestGroups.map(group => {
+                  const isSelected = selectedScenarioGroupId === group.id;
                   return (
-                    <div key={s.id} className="mb-0.5">
-                      <button
-                        onClick={() => { setSelectedScenario(s.id); setDetailPanelRow({ level: 'TS', tsId: s.id }); }}
-                        className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-colors ${
-                          isActive && !detailPanelRow?.tcId
-                            ? 'bg-[#f78ca0]/10 text-[#f78ca0] font-semibold'
-                            : 'text-[#4b5563] hover:bg-gray-50'
-                        }`}>
-                        <span className="px-1 py-0.5 text-[8px] rounded font-bold bg-[#f78ca0]/10 text-[#f78ca0]">TS</span>
-                        <span className="font-medium">{s.id}</span>
-                        <span className="truncate text-[10px] text-[#9ca3af]">{s.name}</span>
-                        <span className="ml-auto text-[9px] text-[#c4c9d4]">{sTcs.length}</span>
-                      </button>
-                      {isActive && sTcs.map(t => (
+                    <button key={group.id}
+                      onClick={() => (setSelectedScenarioGroupId as any)(isSelected ? null : group.id)}
+                      className={`w-full text-left p-3 rounded-lg border transition-all ${
+                        isSelected
+                          ? 'border-[#f78ca0] bg-gradient-to-br from-[#f78ca0]/8 to-[#fe9a8b]/8 shadow-sm'
+                          : 'border-[#e5e7eb] hover:border-[#f78ca0]/40 hover:bg-gray-50'
+                      }`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-xs font-semibold ${isSelected ? 'text-[#d9506b]' : 'text-[#1a1a2e]'}`}>{group.name}</span>
+                        <span className={`px-1.5 py-0.5 text-[9px] rounded-full font-medium flex-shrink-0 ${
+                          group.status === 'active' ? 'bg-[#9AB17A]/15 text-[#9AB17A]' : 'bg-gray-100 text-[#9ca3af]'
+                        }`}>{group.status === 'active' ? '활성' : '보관'}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {(group.scenarios as string[]).map(sid => (
+                          <span key={sid} className={`px-1.5 py-0.5 text-[9px] rounded font-mono font-bold ${
+                            isSelected ? 'bg-[#f78ca0]/15 text-[#f78ca0]' : 'bg-gray-100 text-[#6b7280]'
+                          }`}>{sid}</span>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] text-[#9ca3af]">TC {group.tcCount}개</span>
+                        <span className="text-[10px] text-[#c4c9d4]">·</span>
+                        {(group.tags as string[]).map(tag => (
+                          <span key={tag} className="px-1.5 py-0.5 bg-gray-100 text-[9px] text-[#6b7280] rounded-full">{tag}</span>
+                        ))}
+                      </div>
+                      {/* Run button */}
+                      <div className="mt-2.5 flex justify-end">
                         <button
-                          key={t.id}
-                          onClick={() => setDetailPanelRow({ level: 'TC', tsId: s.id, tcId: t.id })}
-                          className={`w-full text-left flex items-center gap-1.5 pl-6 pr-2 py-0.5 rounded text-[10px] transition-colors ${
-                            detailPanelRow?.tcId === t.id
-                              ? 'text-blue-600 font-semibold bg-blue-50'
-                              : 'text-[#6b7280] hover:bg-gray-50'
-                          }`}>
-                          <span className="px-1 py-0.5 text-[8px] rounded font-bold bg-blue-50 text-blue-500">TC</span>
-                          <span>{t.id}</span>
-                          <span className="truncate text-[9px] text-[#9ca3af]">{t.name}</span>
+                          onClick={e => {
+                            e.stopPropagation();
+                            const newRun = {
+                              id: `run-${Date.now()}`,
+                              name: group.name,
+                              groupId: group.id,
+                              startTime: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                              status: 'running' as const,
+                            };
+                            (setRunningTests as any)(prev => [...prev, newRun]);
+                            (setSelectedRunningTestId as any)(newRun.id);
+                            (setSelectedTestGroup as any)(group.name);
+                            setCurrentPage('테스트');
+                            (setTestSubTab as any)('HISTORY');
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded text-[10px] font-medium hover:shadow-md transition-shadow">
+                          <Play className="w-2.5 h-2.5" /> 실행
                         </button>
-                      ))}
-                    </div>
+                      </div>
+                    </button>
                   );
                 })}
-              </div>
 
-              {/* Detail content */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-5">
-                {!detailPanelRow && (
-                  <div className="flex flex-col items-center justify-center h-full text-center gap-2 py-8">
-                    <FileText className="w-8 h-8 text-[#e5e7eb]" />
-                    <div className="text-xs text-[#9ca3af]">목록에서 항목을 선택하면<br />상세 정보가 표시됩니다.</div>
-                  </div>
-                )}
-
-                {detailPanelRow && (
-                  <>
-                    {/* 기본 정보 */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2.5">
-                        <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">기본 정보</div>
-                        {!isLoading && !isEditingName && (
-                          <button onClick={() => setEditingDetailItem({ type: level === 'TS' ? 'ts' : 'tc', key: editKey, value: (level === 'TS' ? ts?.name : tc?.name) ?? '' })}
-                            className="p-1 rounded hover:bg-gray-100">
-                            <Edit2 className="w-3 h-3 text-[#9ca3af]" />
-                          </button>
-                        )}
-                        {isLoading && <Loader2 className="w-3.5 h-3.5 text-[#f78ca0] animate-spin" />}
-                      </div>
-                      <div className="space-y-0 text-xs divide-y divide-[#f0f0f0]">
-                        {level === 'TS' && ts && (<>
-                          <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{ts.id}</span></div>
-                          <div className="flex justify-between items-start py-2 gap-2">
-                            <span className="text-[#9ca3af] flex-shrink-0">이름</span>
-                            {isEditingName ? (
-                              <div className="flex items-center gap-1 flex-1">
-                                <input autoFocus value={editingDetailItem!.value} onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
-                                  onKeyDown={e => { if (e.key === 'Enter') saveName(editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                                  className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 min-w-0" />
-                                <button onClick={() => saveName(editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                                <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
-                              </div>
-                            ) : (
-                              <span className={`font-medium text-right ${isLoading ? 'text-[#9ca3af] animate-pulse' : ''}`}>{ts.name}</span>
-                            )}
-                          </div>
-                          <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">TC 수</span><span className="font-medium">{(_dynamicTestCases[ts.id] || []).length}개</span></div>
-                        </>)}
-                        {level === 'TC' && tc && (<>
-                          <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{tc.id}</span></div>
-                          <div className="flex justify-between items-start py-2 gap-2">
-                            <span className="text-[#9ca3af] flex-shrink-0">이름</span>
-                            {isEditingName ? (
-                              <div className="flex items-center gap-1 flex-1">
-                                <input autoFocus value={editingDetailItem!.value} onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
-                                  onKeyDown={e => { if (e.key === 'Enter') saveName(editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                                  className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 min-w-0" />
-                                <button onClick={() => saveName(editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                                <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
-                              </div>
-                            ) : (
-                              <span className={`font-medium text-right ${isLoading ? 'text-[#9ca3af] animate-pulse' : ''}`}>{tc.name}</span>
-                            )}
-                          </div>
-                          <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">상위 TS</span><span className="font-mono font-medium">{tsId}</span></div>
-                        </>)}
-                        {level === 'TV' && (() => {
-                          const tvRow = detailPanelRow;
-                          const tvTc = tvRow?.tcId ? (_dynamicTestCases[tvRow.tsId] || []).find(t => t.id === tvRow.tcId) : undefined;
-                          const tvItem = tvRow?.tvId ? tvTc?.testVariables.find(v => v.id === tvRow.tvId) : undefined;
-                          if (!tvItem) return null;
-                          const validKey = `${tvRow.tsId}_${tvRow.tcId}_${tvRow.tvId}`;
-                          const validations = mockValidationConditions[validKey] || [];
-                          return (<>
-                            <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{tvItem.id}</span></div>
-                            <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">이름</span><span className="font-medium">{tvItem.name}</span></div>
-                            <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">상위 TC</span><span className="font-mono font-medium">{tvRow.tcId}</span></div>
-                            {validations.length > 0 && (
-                              <div className="pt-2">
-                                <div className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-1.5">검증 조건</div>
-                                <div className="space-y-1">
-                                  {validations.map((v, i) => (
-                                    <div key={i} className="flex gap-1.5 p-2 bg-gray-50 rounded border border-[#f0f0f0] text-[10px]">
-                                      <span className="text-[#f78ca0] flex-shrink-0 font-bold">•</span>
-                                      <span className="text-[#6b7280] leading-relaxed">{v}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </>);
-                        })()}
-                      </div>
-                    </div>
-
-                    {/* TV 목록 (TC 상세에서만) — 엔드포인트 카드 */}
-                    {level === 'TC' && tc && tc.testVariables.length > 0 && (
-                      <div>
-                        <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2">테스트 변수 (TV)</div>
-                        <div className="space-y-2">
-                          {tc.testVariables.map(tv => {
-                            const tvKey = `${tsId}_${tcId}_${tv.id}`;
-                            const ep = mockTVEndpoints[tvKey];
-                            const isTVOpen = selectedTvId === tv.id;
-                            const isTVLoading = loadingItemKey === tvKey;
-                            const isEditing = tvEditingKey === tvKey;
-                            const isCopied = tvCopied === tvKey;
-                            const reqJson = ep?.requestBody ? JSON.stringify(ep.requestBody, null, 2) : '{}';
-                            const isOk = ep ? ep.statusCode < 400 : true;
-
-                            return (
-                              <div key={tv.id} className="rounded-lg border border-slate-200 overflow-hidden">
-                                {/* ── 헤더 ── */}
-                                <div
-                                  className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 cursor-pointer select-none transition-colors"
-                                  onClick={() => setSelectedTvId(isTVOpen ? null : tv.id)}>
-                                  <span className="px-1.5 py-0.5 text-[8px] rounded font-bold bg-slate-100 text-slate-500 flex-shrink-0">TV</span>
-                                  <span className="font-mono text-[11px] font-semibold text-[#1a1a2e] flex-shrink-0">{tv.id}</span>
-                                  {ep ? (
-                                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
-                                      <span className="font-mono text-[10px] text-slate-500 truncate">{ep.path}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-[11px] text-slate-400 truncate flex-1">{tv.name}</span>
-                                  )}
-                                  {isTVLoading && <Loader2 className="w-3 h-3 text-[#f78ca0] animate-spin flex-shrink-0" />}
-                                  {/* 액션 버튼 */}
-                                  <div className="flex items-center gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                                    <button
-                                      title={isCopied ? '복사됨!' : '복사'}
-                                      onClick={() => handleTVCopy(tvKey)}
-                                      className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${isCopied ? 'text-emerald-500' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
-                                      {isCopied
-                                        ? <CheckCircle className="w-3 h-3" />
-                                        : <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h8"/></svg>}
-                                    </button>
-                                    <button
-                                      title={isEditing ? '편집 중' : '편집'}
-                                      onClick={() => {
-                                        if (isEditing) { setTvEditingKey(null); }
-                                        else { setTvEditingKey(tvKey); setTvEditContent(reqJson); setSelectedTvId(tv.id); }
-                                      }}
-                                      className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${isEditing ? 'text-[#f78ca0] bg-[#f78ca0]/10' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
-                                      <Edit2 className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                  {isTVOpen ? <ChevronDown className="w-3 h-3 text-slate-400 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-slate-300 flex-shrink-0" />}
-                                </div>
-
-                                {/* ── 엔드포인트 상세 (펼쳤을 때) ── */}
-                                {isTVOpen && (
-                                  <div className="border-t border-slate-100">
-                                    {/* Method + Path 헤더 */}
-                                    {ep && (
-                                      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-100">
-                                        <span className={`text-[9px] font-bold px-2 py-1 rounded ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
-                                        <span className="font-mono text-[11px] text-slate-700">{ep.path}</span>
-                                      </div>
-                                    )}
-
-                                    {/* Request Body */}
-                                    <div className="px-3 pt-2 pb-1">
-                                      <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Request Body</div>
-                                      {isEditing ? (
-                                        <div>
-                                          <textarea
-                                            autoFocus
-                                            value={tvEditContent}
-                                            onChange={e => setTvEditContent(e.target.value)}
-                                            spellCheck={false}
-                                            className="w-full bg-slate-50 text-slate-700 font-mono text-[10.5px] leading-[1.65] p-2.5 rounded border border-[#f78ca0]/40 focus:outline-none focus:border-[#f78ca0]/70 resize-none"
-                                            style={{ minHeight: `${Math.max(3, tvEditContent.split('\n').length + 1) * 17}px` }}
-                                          />
-                                          <div className="flex justify-end gap-1.5 mt-1.5 mb-1">
-                                            <button onClick={() => setTvEditingKey(null)}
-                                              className="px-2.5 py-1 rounded text-[10px] bg-slate-100 text-slate-500 hover:bg-slate-200">취소</button>
-                                            <button onClick={() => handleTVEditSave(tv.id, tsId!, tcId!)}
-                                              className="px-2.5 py-1 rounded text-[10px] bg-[#f78ca0] text-white hover:bg-[#f07090] font-medium">저장</button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-2 overflow-x-auto">
-                                          <LightJson obj={ep?.requestBody ?? {}} />
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Response */}
-                                    {ep && (
-                                      <div className="px-3 pt-1 pb-2.5">
-                                        <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Response</div>
-                                        <div className="rounded border border-slate-100 bg-slate-50 overflow-hidden">
-                                          {/* Status line */}
-                                          <div className={`flex items-center gap-2 px-2.5 py-1.5 border-b border-slate-100 ${isOk ? 'bg-emerald-50' : 'bg-red-50'}`}>
-                                            <span className={`font-mono text-[11px] font-bold ${isOk ? 'text-emerald-600' : 'text-red-500'}`}>{ep.statusCode}</span>
-                                            <span className={`text-[10px] ${isOk ? 'text-emerald-500' : 'text-red-400'}`}>{HTTP_STATUS_TEXT[ep.statusCode] ?? ''}</span>
-                                          </div>
-                                          {ep.responseBody && (
-                                            <div className="px-2.5 py-2 overflow-x-auto">
-                                              <LightJson obj={ep.responseBody} />
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* FR 매핑 */}
-                    <div>
-                      <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2.5">FR 매핑</div>
-                      {frMapped.length === 0
-                        ? <div className="text-xs text-[#9ca3af]">매핑된 요구사항 없음</div>
-                        : (
-                          <div className="space-y-1.5">
-                            {frMapped.map(fr => (
-                              <div key={fr.frId} className="p-2.5 bg-gray-50 rounded-lg border border-[#f0f0f0]">
-                                <div className="flex items-center justify-between mb-0.5">
-                                  <span className="font-mono text-[10px] font-bold">{fr.frId}</span>
-                                  {fr.result === 'PASS' && <span className="text-[10px] text-[#9AB17A] font-semibold">PASS</span>}
-                                  {fr.result === 'FAIL' && <span className="text-[10px] text-[#FF9A86] font-semibold">FAIL</span>}
-                                  {fr.result === 'UNCOVERED' && <span className="text-[10px] text-[#9ca3af] font-semibold">미커버</span>}
-                                </div>
-                                <div className="text-[10px] text-[#6b7280] leading-relaxed">{fr.requirement}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                    </div>
-                  </>
-                )}
+                {/* Create group shortcut */}
+                <button
+                  onClick={() => someSelected && setShowTestGroupModal(true)}
+                  className={`w-full p-3 rounded-lg border border-dashed transition-all flex items-center justify-center gap-1.5 text-xs ${
+                    someSelected
+                      ? 'border-[#f78ca0]/40 text-[#f78ca0] hover:bg-[#f78ca0]/5'
+                      : 'border-[#e5e7eb] text-[#c4c9d4] cursor-default'
+                  }`}>
+                  <Plus className="w-3.5 h-3.5" />
+                  {someSelected ? `${_selectedTCIds.length}개 TC로 그룹 생성` : 'TC를 선택하면 그룹을 생성할 수 있어요'}
+                </button>
               </div>
             </div>
           );
+
         })()}
       </div>
 
@@ -1259,7 +1061,7 @@ setTestDepth,
               ))}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { setShowTestGroupModal(false); setSelectedTCIds([]); setCurrentPage('테스트그룹'); setTestDepth(0); }}
+              <button onClick={() => { setShowTestGroupModal(false); setSelectedTCIds([]); }}
                 className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg font-medium">
                 생성 확인
               </button>

@@ -549,6 +549,28 @@ setShowCompletionModal,
           retestCheckedIds={retestCheckedIds}
           setRetestCheckedIds={setRetestCheckedIds}
           setShowRetestNavModal={setShowRetestNavModal}
+          runningTests={runningTests}
+          setRunningTests={setRunningTests}
+          setSelectedRunningTestId={setSelectedRunningTestId}
+          setSelectedTestGroup={setSelectedTestGroup}
+          isTestRunning={isTestRunning}
+          setIsTestRunning={setIsTestRunning}
+          completedAgentStages={completedAgentStages}
+          setCompletedAgentStages={setCompletedAgentStages}
+          currentAgentStage={currentAgentStage}
+          setCurrentAgentStage={setCurrentAgentStage}
+          scenarioSidebarTab={scenarioSidebarTab}
+          setScenarioSidebarTab={setScenarioSidebarTab}
+          expandedScenarios={expandedScenarios}
+          setExpandedScenarios={setExpandedScenarios}
+          expandedTestCases={expandedTestCases}
+          setExpandedTestCases={setExpandedTestCases}
+          highlightedLogIdx={highlightedLogIdx}
+          setHighlightedLogIdx={setHighlightedLogIdx}
+          advanceAgentStage={advanceAgentStage}
+          getNodeStatus={getNodeStatus}
+          showCompletionModal={showCompletionModal}
+          setShowCompletionModal={setShowCompletionModal}
         />
       )}
       
