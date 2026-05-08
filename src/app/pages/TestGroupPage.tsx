@@ -322,7 +322,7 @@ setScheduledAlarms,
                           }}
                         />
                         <button onClick={() => { setGroupNames(prev => ({ ...prev, [group.id]: editingGroupName })); setEditingGroupId(null); }}
-                          className="p-0.5 bg-[#9AB17A] text-white rounded flex-shrink-0">
+                          className="p-0.5 bg-status-pass text-white rounded flex-shrink-0">
                           <CheckCircle className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => setEditingGroupId(null)} className="p-0.5 bg-gray-200 rounded flex-shrink-0">
@@ -561,14 +561,14 @@ setScheduledAlarms,
                         )}
                         {passedTCs.map(({ sId, tc }, idx) => (
                           <div key={`${sId}_${tc.id}_${idx}`}
-                            className="flex items-center gap-2 p-2 bg-[#9AB17A]/5 rounded-lg border border-[#9AB17A]/20 cursor-pointer hover:bg-[#9AB17A]/10 transition-colors"
+                            className="flex items-center gap-2 p-2 bg-status-pass/5 rounded-lg border border-status-pass/20 cursor-pointer hover:bg-status-pass/10 transition-colors"
                             onClick={() => scrollToLog(0)}>
-                            <CheckCircle className="w-3.5 h-3.5 text-[#9AB17A] flex-shrink-0" />
+                            <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <div className="text-[10px] text-[#9ca3af]">{sId}</div>
                               <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
                             </div>
-                            <span className="text-[9px] font-bold bg-[#9AB17A]/10 text-[#9AB17A] px-1.5 py-0.5 rounded">PASS</span>
+                            <span className="text-[9px] font-bold bg-status-pass/10 text-status-pass px-1.5 py-0.5 rounded">PASS</span>
                           </div>
                         ))}
                       </div>
@@ -677,7 +677,7 @@ setScheduledAlarms,
                       return (
                         <div key={n.stage} className="flex items-center gap-1.5">
                           <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 transition-all ${
-                            st === 'complete' ? 'bg-[#9AB17A] text-white' :
+                            st === 'complete' ? 'bg-status-pass text-white' :
                             st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
                             'bg-gray-200 text-gray-400'
                           }`}>
@@ -718,7 +718,7 @@ setScheduledAlarms,
                             )}
                             <div className="w-16 flex justify-center flex-shrink-0">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold transition-all ${
-                                st === 'complete' ? 'bg-[#9AB17A] text-white' :
+                                st === 'complete' ? 'bg-status-pass text-white' :
                                 st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
                                 'bg-gray-200 text-gray-400'
                               }`}>
@@ -762,7 +762,7 @@ setScheduledAlarms,
                         {log.apiMethod && (
                           <span>
                             <span className="font-semibold">{log.apiMethod}</span> {log.endpoint} ·{' '}
-                            <span className={log.status === 200 ? 'text-[#9AB17A]' : 'text-[#FF9A86]'}>{log.status}</span> · {log.responseTime}
+                            <span className={log.status === 200 ? 'text-status-pass' : 'text-status-fail'}>{log.status}</span> · {log.responseTime}
                           </span>
                         )}
                       </div>
@@ -784,7 +784,7 @@ setScheduledAlarms,
         {showCompletionModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-              <CheckCircle2 className="w-12 h-12 text-[#9AB17A] mx-auto mb-4" />
+              <CheckCircle2 className="w-12 h-12 text-status-pass mx-auto mb-4" />
               <div className="font-semibold text-lg mb-2">테스트 실행이 완료되었습니다.</div>
               <div className="text-sm text-[#6b7280] mb-6">결과 페이지로 이동하시겠습니까?</div>
               <div className="flex gap-3">

@@ -3,10 +3,10 @@ import {
   AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronRight,
   Eye, Loader2, Pause, Play, RotateCcw, XCircle,
 } from 'lucide-react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { PassRateChart } from '../components/common/PassRateChart';
 import RobotNarrator from '../components/RobotNarrator';
 import { StatusIcon } from '../components/common/StatusIcon';
-import { mockExecutionHistory, mockScenarios, mockTestCases, mockTestLogs } from '../data/mockData';
+import { mockExecutionHistory, mockPassHistory, mockScenarios, mockTestCases, mockTestLogs } from '../data/mockData';
 import { ExecutionHistoryPageDetail } from './ExecutionHistoryPageDetail';
 
 type HistoryDetailTab = 'FAIL' | 'PASS';
@@ -16,6 +16,7 @@ type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED';
 interface ExecutionHistoryPageProps {
   historyFilter: string;
   setHistoryFilter: Dispatch<SetStateAction<string>>;
+  historySearchQuery?: string;
   selectedExecutionId: string | null;
   setSelectedExecutionId: Dispatch<SetStateAction<string | null>>;
   selectedFailTC: string | null;
@@ -29,6 +30,8 @@ interface ExecutionHistoryPageProps {
   setRunningTests: Dispatch<SetStateAction<RunningTest[]>>;
   setSelectedRunningTestId: Dispatch<SetStateAction<string | null>>;
   setSelectedTestGroup: Dispatch<SetStateAction<string | null>>;
+  selectedRunningForDetail: string | null;
+  setSelectedRunningForDetail: Dispatch<SetStateAction<string | null>>;
   isTestRunning: boolean;
   setIsTestRunning: Dispatch<SetStateAction<boolean>>;
   completedAgentStages: string[];
@@ -52,6 +55,7 @@ interface ExecutionHistoryPageProps {
 export const ExecutionHistoryPage = ({
   historyFilter,
   setHistoryFilter: _setHistoryFilter,
+  historySearchQuery = '',
   selectedExecutionId,
   setSelectedExecutionId,
   selectedFailTC,
@@ -65,6 +69,8 @@ export const ExecutionHistoryPage = ({
   setRunningTests,
   setSelectedRunningTestId,
   setSelectedTestGroup,
+  selectedRunningForDetail,
+  setSelectedRunningForDetail,
   isTestRunning,
   setIsTestRunning,
   completedAgentStages,
@@ -85,7 +91,6 @@ export const ExecutionHistoryPage = ({
   setShowCompletionModal,
 }: ExecutionHistoryPageProps) => {
   // ── state ─────────────────────────────────────────────────────────────────
-  const [selectedRunningForDetail, setSelectedRunningForDetail] = React.useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = React.useState(288);
   const dragRef   = React.useRef(false);
   const startXRef = React.useRef(0);
@@ -135,11 +140,14 @@ export const ExecutionHistoryPage = ({
   const activeRunningTests = runningTests.filter(t => t.status === 'running');
 
   const filtered = mockExecutionHistory.filter(exec => {
-    if (historyFilter === 'ALL')   return true;
-    if (historyFilter === 'FAIL')  return exec.fail > 0;
-    if (historyFilter === 'HITL')  return exec.hitlPending > 0;
-    if (historyFilter === 'PASS')  return exec.pass > 0;
-    if (historyFilter === '미실행') return exec.notRun > 0;
+    if (historyFilter === 'FAIL'  && exec.fail === 0)        return false;
+    if (historyFilter === 'HITL'  && exec.hitlPending === 0) return false;
+    if (historyFilter === 'PASS'  && exec.pass === 0)        return false;
+    if (historyFilter === '미실행' && exec.notRun === 0)      return false;
+    if (historySearchQuery) {
+      const q = historySearchQuery.toLowerCase();
+      return exec.groupId.toLowerCase().includes(q) || String(exec.executionNumber).includes(q);
+    }
     return true;
   });
 
@@ -147,44 +155,6 @@ export const ExecutionHistoryPage = ({
     if (exec.fail > 0)        return 'fail';
     if (exec.hitlPending > 0) return 'hitl';
     return 'pass';
-  };
-
-  const groupColors: Record<string, string> = {
-    '시나리오 그룹 #1': '#f78ca0',
-    '시나리오 그룹 #2': '#6b8cdb',
-    '시나리오 그룹 #3': '#9AB17A',
-  };
-
-  const allGroups = [...new Set(mockExecutionHistory.map(e => e.groupId))];
-  const allDates  = [...new Set(mockExecutionHistory.map(e => e.startDate.slice(5, 10)))].sort();
-  const chartData = allDates.map(date => {
-    const point: Record<string, number | string | null> = { date };
-    allGroups.forEach(g => {
-      const exec = mockExecutionHistory.find(e => e.startDate.slice(5, 10) === date && e.groupId === g);
-      if (exec) {
-        const total = exec.pass + exec.fail + exec.hitlPending + exec.notRun;
-        point[g] = total > 0 ? Math.round((exec.pass / total) * 100) : 0;
-      } else {
-        point[g] = null;
-      }
-    });
-    return point;
-  });
-
-  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ dataKey: string; value: number | null; color: string }>; label?: string }) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div className="bg-white border border-[#f0f0f0] rounded-lg shadow-lg px-3 py-2 text-xs">
-        <div className="font-semibold text-[#1a1a2e] mb-1">{label}</div>
-        {payload.filter(p => p.value != null).map(p => (
-          <div key={p.dataKey} className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color }} />
-            <span className="text-[#6b7280]">{p.dataKey.replace('시나리오 그룹 ', 'SG')}</span>
-            <span className="font-semibold ml-auto pl-3 text-[#1a1a2e]">{p.value}%</span>
-          </div>
-        ))}
-      </div>
-    );
   };
 
   // ── depth 1: running test detail ─────────────────────────────────────────
@@ -274,14 +244,14 @@ export const ExecutionHistoryPage = ({
                   )}
                   {passedTCs.map(({ sId, tc }, idx) => (
                     <div key={`${sId}_${tc.id}_${idx}`}
-                      className="flex items-center gap-2 p-2 bg-[#9AB17A]/5 rounded-lg border border-[#9AB17A]/20 cursor-pointer hover:bg-[#9AB17A]/10 transition-colors"
+                      className="flex items-center gap-2 p-2 bg-status-pass/5 rounded-lg border border-status-pass/20 cursor-pointer hover:bg-status-pass/10 transition-colors"
                       onClick={() => scrollToLog(0)}>
-                      <CheckCircle className="w-3.5 h-3.5 text-[#9AB17A] flex-shrink-0" />
+                      <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="text-[10px] text-[#9ca3af]">{sId}</div>
                         <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
                       </div>
-                      <span className="text-[9px] font-bold bg-[#9AB17A]/10 text-[#9AB17A] px-1.5 py-0.5 rounded">PASS</span>
+                      <span className="text-[9px] font-bold bg-status-pass/10 text-status-pass px-1.5 py-0.5 rounded">PASS</span>
                     </div>
                   ))}
                 </div>
@@ -378,7 +348,7 @@ export const ExecutionHistoryPage = ({
                       return (
                         <div key={n.stage} className="flex items-center gap-1.5">
                           <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 transition-all ${
-                            st === 'complete' ? 'bg-[#9AB17A] text-white' :
+                            st === 'complete' ? 'bg-status-pass text-white' :
                             st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
                             'bg-gray-200 text-gray-400'
                           }`}>
@@ -414,7 +384,7 @@ export const ExecutionHistoryPage = ({
                             )}
                             <div className="w-16 flex justify-center flex-shrink-0">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold transition-all ${
-                                st === 'complete' ? 'bg-[#9AB17A] text-white' :
+                                st === 'complete' ? 'bg-status-pass text-white' :
                                 st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
                                 'bg-gray-200 text-gray-400'
                               }`}>
@@ -463,7 +433,7 @@ export const ExecutionHistoryPage = ({
                         {log.apiMethod && (
                           <span>
                             <span className="font-semibold">{log.apiMethod}</span> {log.endpoint} ·{' '}
-                            <span className={log.status === 200 ? 'text-[#9AB17A]' : 'text-[#FF9A86]'}>{log.status}</span> · {log.responseTime}
+                            <span className={log.status === 200 ? 'text-status-pass' : 'text-status-fail'}>{log.status}</span> · {log.responseTime}
                           </span>
                         )}
                       </div>
@@ -485,7 +455,7 @@ export const ExecutionHistoryPage = ({
         {showCompletionModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-              <CheckCircle2 className="w-12 h-12 text-[#9AB17A] mx-auto mb-4" />
+              <CheckCircle2 className="w-12 h-12 text-status-pass mx-auto mb-4" />
               <div className="font-semibold text-lg mb-2">테스트 실행이 완료되었습니다.</div>
               <div className="text-sm text-[#6b7280] mb-6">결과 페이지로 이동하시겠습니까?</div>
               <div className="flex gap-3">
@@ -537,33 +507,8 @@ export const ExecutionHistoryPage = ({
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-white">
 
       {/* Graph */}
-      <div className="border-b border-[#f0f0f0] px-6 pt-3 pb-2 flex-shrink-0 bg-white">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[10px] text-[#9ca3af] font-medium">일자별 PASS 비율 (%)</span>
-          <div className="flex items-center gap-3">
-            {allGroups.map(g => (
-              <div key={g} className="flex items-center gap-1.5 text-[10px] text-[#6b7280]">
-                <span className="w-5 h-0.5 rounded inline-block" style={{ background: groupColors[g] ?? '#9ca3af' }} />
-                {g.replace('시나리오 그룹 ', 'SG')}
-              </div>
-            ))}
-          </div>
-        </div>
-        <ResponsiveContainer width="100%" height={120}>
-          <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
-            <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false}
-              tickFormatter={v => `${v}%`} width={36} />
-            <Tooltip content={<CustomTooltip />} />
-            {allGroups.map(g => (
-              <Line key={g} type="monotone" dataKey={g}
-                stroke={groupColors[g] ?? '#9ca3af'} strokeWidth={2}
-                dot={{ r: 4, fill: groupColors[g] ?? '#9ca3af', strokeWidth: 2, stroke: 'white' }}
-                activeDot={{ r: 5 }} connectNulls={false} />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+      <div className="border-b border-[#f0f0f0] px-8 pt-3 pb-2 flex-shrink-0 bg-white">
+        <PassRateChart data={mockPassHistory} />
       </div>
 
       {/* 2-col body */}
@@ -600,63 +545,39 @@ export const ExecutionHistoryPage = ({
 
         {/* Right: Completed tests */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="grid items-center px-6 py-2 border-b border-[#f0f0f0] bg-gray-50 flex-shrink-0"
-            style={{ gridTemplateColumns: '24px 1fr 130px 90px 120px 80px' }}>
-            <div />
-            <div className="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide flex items-center gap-1">
-              실행 정보 <span className="text-[#c4c9d4]">⇅</span>
-            </div>
-            <div className="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide flex items-center gap-1">
-              실행 일시 <span className="text-[#c4c9d4]">⇅</span>
-            </div>
-            <div className="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide">상태</div>
-            <div className="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide flex items-center gap-1">
-              count <span className="text-[#c4c9d4]">⇅</span>
-            </div>
-            <div />
+          <div className="px-8 py-2 border-b border-[#f0f0f0] bg-white flex-shrink-0">
+            <div className="text-xs font-bold text-[#9ca3af] uppercase tracking-widest">이력</div>
           </div>
           <div className="flex-1 overflow-y-auto">
             {filtered.length === 0 && (
               <div className="py-16 text-center text-sm text-[#9ca3af]">조건에 맞는 실행 이력이 없습니다.</div>
             )}
             {filtered.map(exec => {
-              const st    = overallStatus(exec);
               const total = exec.pass + exec.fail + exec.hitlPending + exec.notRun;
+              const passPct  = total > 0 ? (exec.pass   / total) * 100 : 0;
+              const failPct  = total > 0 ? (exec.fail   / total) * 100 : 0;
               return (
-                <div key={exec.id}
-                  className="grid items-center px-6 py-3.5 border-b border-[#f5f5f5] hover:bg-gray-50/60 transition-colors cursor-pointer group"
-                  style={{ gridTemplateColumns: '24px 1fr 130px 90px 120px 80px' }}
-                  onClick={() => { setSelectedExecutionId(exec.id); setSelectedFailTC(null); }}>
-                  <div className="flex items-center">
-                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                      st === 'fail' ? 'bg-[#FF9A86]' :
-                      st === 'hitl' ? 'bg-[#B8860B]' :
-                      'bg-[#9AB17A]'
-                    }`} />
+                <button key={exec.id}
+                  onClick={() => { setSelectedExecutionId(exec.id); setSelectedFailTC(null); }}
+                  className="w-full flex items-center gap-5 py-3 px-8 hover:bg-gray-50 transition-colors text-left border-b border-[#f5f5f5]">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm text-[#374151]">{exec.groupId}</span>
+                    <span className="text-xs text-[#c4c9d4] ml-2">#{exec.executionNumber}</span>
                   </div>
-                  <div>
-                    <div className="font-mono text-sm text-[#1a1a2e]">
-                      {exec.groupId.replace('시나리오 그룹', 'SG')}
-                      <span className="text-[#9ca3af] font-sans"> · </span>
-                      <span className="text-[#6b7280] text-xs font-sans">{exec.executionNumber}번째 실행</span>
+                  <span className="text-xs text-[#c4c9d4] flex-shrink-0">{exec.startDate}</span>
+                  {exec.duration && (
+                    <span className="text-xs text-[#c4c9d4] flex-shrink-0">{exec.duration}</span>
+                  )}
+                  <div className="flex items-center gap-2.5 flex-shrink-0">
+                    <span className="text-xs font-medium text-status-pass">{exec.pass}P</span>
+                    <span className="text-xs font-medium text-status-fail">{exec.fail}F</span>
+                    <span className="text-xs font-medium text-[#9ca3af]">{exec.notRun}N</span>
+                    <div className="w-[70px] h-1.5 rounded-full overflow-hidden flex bg-[#f0f0f0]">
+                      <div style={{ width: `${passPct}%`, background: 'var(--status-pass)' }} />
+                      <div style={{ width: `${failPct}%`, background: 'var(--status-fail)' }} />
                     </div>
                   </div>
-                  <div className="text-xs text-[#6b7280] font-mono">{exec.startDate}</div>
-                  <div>
-                    {st === 'fail' && <span className="text-xs font-medium text-[#FF9A86]">FAIL {Math.round((exec.fail / total) * 100)}%</span>}
-                    {st === 'hitl' && <span className="text-xs font-medium text-[#B8860B]">HITL 대기</span>}
-                    {st === 'pass' && <span className="text-xs font-medium text-[#9AB17A]">PASS</span>}
-                  </div>
-                  <div className="text-xs text-[#9ca3af] font-mono space-x-2">
-                    <span className="text-[#9AB17A]">P{exec.pass}</span>
-                    <span className="text-[#FF9A86]">F{exec.fail}</span>
-                    <span className="text-[#B8860B]">H{exec.hitlPending}</span>
-                    <span>N{exec.notRun}</span>
-                  </div>
-                  <div className="flex justify-end">
-                    <ChevronRight className="w-4 h-4 text-[#c4c9d4] group-hover:text-[#9ca3af] transition-colors" />
-                  </div>
-                </div>
+                </button>
               );
             })}
           </div>

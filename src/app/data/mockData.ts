@@ -125,9 +125,20 @@ export const mockRunningTestGroups = [
 ];
 
 export const mockExecutionHistory = [
-  { id: 'exec-1', groupId: '시나리오 그룹 #1', executionNumber: 1, startDate: '2026-04-26 14:23', pass: 18, fail: 3, hitlPending: 2, notRun: 0 },
-  { id: 'exec-2', groupId: '시나리오 그룹 #1', executionNumber: 2, startDate: '2026-04-25 22:15', pass: 20, fail: 1, hitlPending: 0, notRun: 2 },
-  { id: 'exec-3', groupId: '시나리오 그룹 #2', executionNumber: 1, startDate: '2026-04-24 09:42', pass: 23, fail: 7, hitlPending: 1, notRun: 0 },
+  { id: 'exec-1', groupId: '시나리오 그룹 #1', executionNumber: 1, startDate: '2026-04-26 14:23', duration: '2m 34s', pass: 18, fail: 3, hitlPending: 2, notRun: 0 },
+  { id: 'exec-2', groupId: '시나리오 그룹 #1', executionNumber: 2, startDate: '2026-04-25 22:15', duration: '1m 58s', pass: 20, fail: 1, hitlPending: 0, notRun: 2 },
+  { id: 'exec-3', groupId: '시나리오 그룹 #2', executionNumber: 1, startDate: '2026-04-24 09:42', duration: '3m 12s', pass: 23, fail: 7, hitlPending: 1, notRun: 0 },
+];
+
+export const mockPassHistory = [
+  { date: '4/20', pass: 72, fail: 15, total: 87 },
+  { date: '4/21', pass: 75, fail: 14, total: 89 },
+  { date: '4/22', pass: 78, fail: 11, total: 89 },
+  { date: '4/23', pass: 80, fail: 10, total: 90 },
+  { date: '4/24', pass: 77, fail: 13, total: 90 },
+  { date: '4/25', pass: 83, fail: 7, total: 90 },
+  { date: '4/26', pass: 87, fail: 4, total: 91 },
+  { date: '4/27', pass: 85, fail: 6, total: 91 },
 ];
 
 export const mockScenarioVersions = [

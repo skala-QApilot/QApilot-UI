@@ -35,7 +35,7 @@ export const FileList = ({ showNewButton = true }: FileListProps) => (
                 시나리오 반영됨
               </span>
             ) : (
-              <span className="text-[10px] font-medium px-2.5 py-1 rounded-full bg-[#f43b47]/10 text-[#f43b47]">
+              <span className="text-[10px] font-medium px-2.5 py-1 rounded-full bg-[#f0f0f0] text-[#9ca3af]">
                 미반영
               </span>
             )}

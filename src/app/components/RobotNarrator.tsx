@@ -38,7 +38,7 @@ export function RobotSVG({ blinking = false, talking = false }: { blinking?: boo
       <circle cx="35" cy="91" r="3.5" fill="#f78ca0" opacity="0.7">
         <animate attributeName="opacity" values="0.7;0.2;0.7" dur="0.9s" repeatCount="indefinite" />
       </circle>
-      <circle cx="45" cy="91" r="3.5" fill="#9AB17A" opacity="0.7">
+      <circle cx="45" cy="91" r="3.5" fill="var(--status-pass)" opacity="0.7">
         <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.1s" repeatCount="indefinite" />
       </circle>
       <circle cx="55" cy="91" r="3.5" fill="#60a5fa" opacity="0.7">

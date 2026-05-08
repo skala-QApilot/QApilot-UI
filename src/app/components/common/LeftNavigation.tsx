@@ -55,7 +55,7 @@ export const LeftNavigation = ({
             active ? 'text-[#3615CF]' : 'text-[#9ca3af] group-hover:text-[#6b7280]'
           }`} />
           {badge !== undefined && badge > 0 && (
-            <span className="absolute -top-1.5 -right-2.5 min-w-[22px] h-[22px] px-1 bg-[#3615CF] text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+            <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 bg-[#3615CF] text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-sm">
               {badge}
             </span>
           )}

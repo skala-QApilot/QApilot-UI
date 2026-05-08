@@ -4,6 +4,7 @@ import { StatusIcon } from './components/common/StatusIcon';
 import { SubHeader } from './components/common/SubHeader';
 import { LeftNavigation } from './components/common/LeftNavigation';
 import { FileList } from './components/common/FileList';
+import { SearchBar } from './components/common/SearchBar';
 import { HomePage } from './pages/HomePage';
 import { ExecutionHistoryPage as ExecutionHistoryPageView } from './pages/ExecutionHistoryPage';
 import { RTMPage } from './pages/RTMPage';
@@ -17,7 +18,7 @@ import {
   RotateCcw, Pause, ChevronLeft, Send,
   History, BarChart2, Users, Settings,
   Network, GitBranch,
-  Sparkles, Star, FolderOpen,
+  Sparkles, Star, FolderOpen, Download,
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
 import {
@@ -26,6 +27,7 @@ import {
   mockNotifications,
   mockScenarioHistory,
   mockScenarios,
+  mockExecutionHistory,
   mockScenarioVersions,
   mockTestCases,
   mockTestGroups,
@@ -137,7 +139,10 @@ export default function App() {
 
   // 테스트 결과
   const [historyFilter, setHistoryFilter] = useState<string>('ALL');
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
+  const [selectedRunningForDetail, setSelectedRunningForDetail] = useState<string | null>(null);
+  const [runningElapsed, setRunningElapsed] = useState(0);
   const [selectedFailTC, setSelectedFailTC] = useState<string | null>(null);
   const [historyDetailTab, setHistoryDetailTab] = useState<'FAIL' | 'PASS'>('FAIL');
 
@@ -260,6 +265,19 @@ export default function App() {
     };
   }, []);
 
+  const isHistoryDetail = currentPage === '테스트' && testSubTab === 'HISTORY' && (!!selectedExecutionId || !!selectedRunningForDetail);
+  const selectedExec = selectedExecutionId ? mockExecutionHistory.find(e => e.id === selectedExecutionId) ?? null : null;
+  const selectedRunningTest = selectedExecutionId ? runningTests.find(r => r.id === selectedExecutionId) ?? null : null;
+  const isExecRunning = !!selectedRunningTest && selectedRunningTest.status === 'running';
+  const detailRunningTest = selectedRunningForDetail ? runningTests.find(r => r.id === selectedRunningForDetail) ?? null : null;
+  const isDetailRunning = !!detailRunningTest && detailRunningTest.status === 'running';
+
+  useEffect(() => {
+    if (!isExecRunning && !isDetailRunning) { setRunningElapsed(0); return; }
+    const interval = setInterval(() => setRunningElapsed(s => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [isExecRunning, isDetailRunning]);
+
   const advanceAgentStage = () => {
     const order = ['UI', 'API', 'DB', 'Cross-check', '원인 분석', 'Report 생성'];
     const nextIncomplete = order.find(s => !completedAgentStages.includes(s));
@@ -360,7 +378,7 @@ export default function App() {
     }
     return (
       <div className="w-80 h-full bg-white border-l border-[#f0f0f0] flex flex-col shadow-lg flex-shrink-0">
-        <div className="p-4 border-b border-[#f0f0f0] flex justify-between items-center bg-[#EBEBFA]">
+        <div className="p-4 border-b border-[#f0f0f0] flex justify-between items-center bg-[#EAE8F9]">
           <div className="font-semibold text-[#1a1a2e]">시나리오 관리봇</div>
           <button onClick={() => setAiPanelOpen(false)} className="p-1 hover:bg-white/50 rounded">
             <ChevronRight className="w-5 h-5 text-[#6b7280]" />
@@ -372,7 +390,7 @@ export default function App() {
               <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[85%] p-3 rounded-lg text-sm ${
                   msg.role === 'user'
-                    ? 'bg-[#EBEBFA] text-[#3615CF]'
+                    ? 'bg-[#EAE8F9] text-[#3615CF]'
                     : 'bg-gray-100 text-[#1a1a2e]'
                 }`}>{msg.text}</div>
               </div>
@@ -443,12 +461,42 @@ export default function App() {
           )}
           <SubHeader
             title={
+              isHistoryDetail ? '' :
               currentPage === 'HOME' ? '대시보드' :
               currentPage === '시나리오' ? '시나리오' :
               currentPage === '테스트' ? (testSubTab === 'HISTORY' ? '실행 이력' : '테스트 실행') :
               currentPage === 'RTM' ? 'RTM' :
               currentPage === '설정' ? '설정' : ''
             }
+            titleExtra={isHistoryDetail ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    if (selectedRunningForDetail) setSelectedRunningForDetail(null);
+                    else setSelectedExecutionId(null);
+                  }}
+                  className="flex items-center gap-0.5 text-[#9ca3af] hover:text-[#1a1a2e] transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span className="text-sm">이력</span>
+                </button>
+                <div className="w-px h-4 bg-[#e5e7eb]" />
+                <span className="text-[15px] font-bold text-[#1a1a2e]">
+                  {detailRunningTest?.name ?? selectedExec?.groupId ?? selectedRunningTest?.groupId ?? ''}
+                </span>
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#3615CF]/10 text-[#3615CF] ${(isExecRunning || isDetailRunning) ? 'animate-pulse' : ''}`}>
+                  {(isExecRunning || isDetailRunning) ? '실행 중' : `#${selectedExec?.executionNumber}번째 실행`}
+                </span>
+                <span className="text-xs text-[#9ca3af]">
+                  {detailRunningTest?.startTime ?? selectedExec?.startDate ?? selectedRunningTest?.startTime ?? ''}
+                </span>
+                <span className="text-xs text-[#9ca3af]">
+                  {(isExecRunning || isDetailRunning)
+                    ? `${Math.floor(runningElapsed / 60)}m ${runningElapsed % 60}s`
+                    : (selectedExec?.duration ?? '')}
+                </span>
+              </div>
+            ) : undefined}
             tabs={currentPage === 'HOME' ? [
               { key: 'overview', label: 'Overview', icon: BarChart2 },
               { key: 'people',   label: 'People',   icon: Users, count: 6 },
@@ -456,7 +504,24 @@ export default function App() {
             ] : undefined}
             activeTab={homeTab}
             onTabChange={setHomeTab}
-            rightContent={currentPage === '시나리오' ? (
+            rightContent={
+              (isHistoryDetail && !isExecRunning && !isDetailRunning) ? (
+                <div className="flex items-center gap-2">
+                  <button className="h-7 flex items-center gap-1.5 px-3 text-[11px] font-medium text-[#6b7280] rounded-lg border border-[#e5e7eb] hover:bg-gray-50 transition-colors">
+                    <Download className="w-3 h-3" /> CSV
+                  </button>
+                  <button className="h-7 flex items-center gap-1.5 px-3 text-[11px] font-medium text-[#6b7280] rounded-lg border border-[#e5e7eb] hover:bg-gray-50 transition-colors">
+                    <Download className="w-3 h-3" /> PDF
+                  </button>
+                </div>
+              ) : currentPage === '테스트' && testSubTab === 'HISTORY' && !selectedExecutionId ? (
+              <SearchBar
+                value={historySearchQuery}
+                onChange={setHistorySearchQuery}
+                placeholder="이력 검색..."
+                className="w-52"
+              />
+            ) : currentPage === '시나리오' ? (
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setScenarioViewMode(scenarioViewMode === 'table' ? 'graph' : 'table')}
@@ -587,6 +652,8 @@ export default function App() {
                 setTestSubTab={setTestSubTab}
                 historyFilter={historyFilter}
                 setHistoryFilter={setHistoryFilter}
+                historySearchQuery={historySearchQuery}
+                setHistorySearchQuery={setHistorySearchQuery}
                 selectedExecutionId={selectedExecutionId}
                 setSelectedExecutionId={setSelectedExecutionId}
                 selectedFailTC={selectedFailTC}
@@ -596,6 +663,8 @@ export default function App() {
                 retestCheckedIds={retestCheckedIds}
                 setRetestCheckedIds={setRetestCheckedIds}
                 setShowRetestNavModal={setShowRetestNavModal}
+                selectedRunningForDetail={selectedRunningForDetail}
+                setSelectedRunningForDetail={setSelectedRunningForDetail}
                 advanceAgentStage={advanceAgentStage}
                 getNodeStatus={getNodeStatus}
                 showCompletionModal={showCompletionModal}
@@ -636,7 +705,7 @@ export default function App() {
       {showRetestNavModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] flex items-center justify-center mx-auto mb-4">
+            <div className="w-12 h-12 rounded-full bg-[#3615CF] flex items-center justify-center mx-auto mb-4">
               <RotateCcw className="w-6 h-6 text-white" />
             </div>
             <div className="font-semibold text-[#1a1a2e] mb-2">재테스트 시나리오 그룹이 생성되었습니다</div>
@@ -667,7 +736,7 @@ export default function App() {
                   setTestSubmenuExpanded(true);
                   setScenarioSubmenuExpanded(false);
                 }}
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg font-medium text-sm"
+                className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium text-sm hover:shadow-md transition-shadow"
               >
                 이동
               </button>
@@ -752,7 +821,7 @@ export default function App() {
               }}
             >
               <style>{`@keyframes slideUpFade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }`}</style>
-              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0 bg-[#EBEBFA]/40">
+              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0 bg-[#EAE8F9]/40">
                 <span className="text-sm font-semibold text-[#1a1a2e]">시나리오 관리봇</span>
                 <button onClick={() => setChatPanelExpanded(false)} className="p-1 hover:bg-gray-100 rounded">
                   <ChevronDown className="w-4 h-4 text-[#9ca3af]" />
@@ -764,7 +833,7 @@ export default function App() {
                     <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed ${
                         msg.role === 'user'
-                          ? 'bg-[#EBEBFA] text-[#3615CF]'
+                          ? 'bg-[#EAE8F9] text-[#3615CF]'
                           : 'bg-gray-100 text-[#1a1a2e]'
                       }`}>{msg.text}</div>
                     </div>
@@ -842,7 +911,7 @@ export default function App() {
 
                 {/* Context tag (pink) — shown when clicking speech bubble on a row */}
                 {chatContextTag && (
-                  <div className="flex items-center gap-1 px-2.5 py-0.5 bg-[#EBEBFA] text-[#3615CF] rounded-full text-xs flex-shrink-0 max-w-[200px] border border-[#3615CF]/20">
+                  <div className="flex items-center gap-1 px-2.5 py-0.5 bg-[#EAE8F9] text-[#3615CF] rounded-full text-xs flex-shrink-0 max-w-[200px] border border-[#3615CF]/20">
                     <span className="truncate font-medium">{chatContextTag}</span>
                     <button onClick={() => setChatContextTag(null)} className="flex-shrink-0 ml-0.5 opacity-60 hover:opacity-100">
                       <X className="w-3 h-3" />

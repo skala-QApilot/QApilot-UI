@@ -99,8 +99,8 @@ export const ExecutionHistoryPageDetail = ({
         <div className="w-64 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
           <div className="px-4 border-b border-[#f0f0f0] flex items-center gap-0 flex-shrink-0">
             {([
-              { id: 'FAIL' as const, label: 'FAIL', count: exec.fail, color: 'text-[#FF9A86]' },
-              { id: 'PASS' as const, label: 'PASS', count: exec.pass, color: 'text-[#9AB17A]' },
+              { id: 'FAIL' as const, label: 'FAIL', count: exec.fail, color: 'text-status-fail' },
+              { id: 'PASS' as const, label: 'PASS', count: exec.pass, color: 'text-status-pass' },
             ] as const).map(tab => (
               <button
                 key={tab.id}
@@ -112,11 +112,11 @@ export const ExecutionHistoryPageDetail = ({
                 {tab.label}
                 <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
                   historyDetailTab === tab.id
-                    ? (tab.id === 'FAIL' ? 'bg-red-100 text-[#FF9A86]' : 'bg-green-100 text-[#9AB17A]')
+                    ? (tab.id === 'FAIL' ? 'bg-status-fail/15 text-status-fail' : 'bg-status-pass/15 text-status-pass')
                     : 'bg-gray-100 text-[#9ca3af]'
                 }`}>{tab.count}</span>
                 {historyDetailTab === tab.id && (
-                  <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${tab.id === 'FAIL' ? 'bg-[#FF9A86]' : 'bg-[#9AB17A]'}`} />
+                  <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${tab.id === 'FAIL' ? 'bg-status-fail' : 'bg-status-pass'}`} />
                 )}
               </button>
             ))}
@@ -133,11 +133,11 @@ export const ExecutionHistoryPageDetail = ({
                       errors.forEach(e => checked.target.checked ? next.add(e.id) : next.delete(e.id));
                       setRetestCheckedIds(next);
                     }}
-                    className="w-3.5 h-3.5 accent-[#f78ca0] flex-shrink-0"
+                    className="w-3.5 h-3.5 accent-[var(--status-fail)] flex-shrink-0"
                   />
-                  <XCircle className="w-3.5 h-3.5 text-[#FF9A86] flex-shrink-0" />
+                  <XCircle className="w-3.5 h-3.5 text-status-fail flex-shrink-0" />
                   <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
-                  <span className="ml-auto text-xs text-[#FF9A86]">FAIL {errors.length}</span>
+                  <span className="ml-auto text-xs text-status-fail">FAIL {errors.length}</span>
                 </div>
                 {errors.map(err => {
                   const isActive = (selectedFailTC ?? mockDetailErrors[0].id) === err.id;
@@ -158,9 +158,9 @@ export const ExecutionHistoryPageDetail = ({
                           e.target.checked ? next.add(err.id) : next.delete(err.id);
                           setRetestCheckedIds(next);
                         }}
-                        className="w-3.5 h-3.5 accent-[#f78ca0] flex-shrink-0"
+                        className="w-3.5 h-3.5 accent-[var(--status-fail)] flex-shrink-0"
                       />
-                      <XCircle className="w-3.5 h-3.5 text-[#FF9A86] flex-shrink-0" />
+                      <XCircle className="w-3.5 h-3.5 text-status-fail flex-shrink-0" />
                       <div className="min-w-0 flex-1">
                         <div className="text-xs font-medium text-[#1a1a2e] truncate">{err.testCase}</div>
                         <div className="text-[10px] text-[#9ca3af] truncate">{err.tcName}</div>
@@ -181,9 +181,9 @@ export const ExecutionHistoryPageDetail = ({
             {historyDetailTab === 'PASS' && Object.entries(passByTS).map(([tsId, passes]) => (
               <div key={tsId}>
                 <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
-                  <CheckCircle className="w-3.5 h-3.5 text-[#9AB17A] flex-shrink-0" />
+                  <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
                   <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
-                  <span className="ml-auto text-xs text-[#9AB17A]">PASS {passes.length}</span>
+                  <span className="ml-auto text-xs text-status-pass">PASS {passes.length}</span>
                 </div>
                 {passes.map(p => {
                   const isActive = selectedFailTC === p.id;
@@ -192,10 +192,10 @@ export const ExecutionHistoryPageDetail = ({
                       key={p.id}
                       onClick={() => setSelectedFailTC(p.id)}
                       className={`w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors border-b border-[#f0f0f0] cursor-pointer ${
-                        isActive ? 'bg-gradient-to-r from-[#9AB17A]/10 to-[#9AB17A]/5 border-l-2 border-l-[#9AB17A]' : 'hover:bg-gray-50'
+                        isActive ? 'bg-gradient-to-r from-status-pass/10 to-status-pass/5 border-l-2 border-l-status-pass' : 'hover:bg-gray-50'
                       }`}
                     >
-                      <CheckCircle className="w-3.5 h-3.5 text-[#9AB17A] flex-shrink-0" />
+                      <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
                       <div className="min-w-0">
                         <div className="text-xs font-medium text-[#1a1a2e] truncate">{p.testCase}</div>
                         <div className="text-[10px] text-[#9ca3af] truncate">{p.tcName}</div>
@@ -224,9 +224,8 @@ export const ExecutionHistoryPageDetail = ({
           {historyDetailTab === 'FAIL' && activeError && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <XCircle className="w-5 h-5 text-[#FF9A86]" />
+                <XCircle className="w-5 h-5 text-status-fail" />
                 <span className="font-semibold text-[#1a1a2e]">{activeError.scenario} › {activeError.testCase}</span>
-                <span className="px-2 py-0.5 text-xs rounded font-medium bg-red-100 text-red-700">{activeError.category}</span>
               </div>
               <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
                 <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">① 장애 분류</div>
@@ -248,7 +247,7 @@ export const ExecutionHistoryPageDetail = ({
                 <div className="space-y-2">
                   {activeError.solutions.map((sol, i) => (
                     <div key={i} className="flex gap-3 p-3 bg-gray-50 rounded border border-[#f0f0f0]">
-                      <span className="w-5 h-5 rounded-full bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="w-5 h-5 rounded-full bg-status-fail text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
                         {i + 1}
                       </span>
                       <div className="text-sm text-[#6b7280]">{sol.replace(/^\d+\.\s*/, '')}</div>
@@ -262,13 +261,13 @@ export const ExecutionHistoryPageDetail = ({
             activePass ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-[#9AB17A]" />
+                  <CheckCircle className="w-5 h-5 text-status-pass" />
                   <span className="font-semibold text-[#1a1a2e]">{activePass.scenario} › {activePass.testCase}</span>
-                  <span className="px-2 py-0.5 text-xs rounded font-medium bg-green-100 text-[#9AB17A]">PASS</span>
+                  <span className="px-2 py-0.5 text-xs rounded font-medium bg-green-100 text-status-pass">PASS</span>
                 </div>
                 <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
                   <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">테스트 결과</div>
-                  <div className="text-sm font-medium text-[#9AB17A]">모든 검증 항목 통과</div>
+                  <div className="text-sm font-medium text-status-pass">모든 검증 항목 통과</div>
                 </div>
               </div>
             ) : (
@@ -297,11 +296,11 @@ export const ExecutionHistoryPageDetail = ({
             <div className="bg-[#1e1e2e] rounded p-3 overflow-x-auto">
               {historyDetailTab === 'FAIL' && activeError && activeError.errorLog.split('\n').map((line, i) => (
                 <div key={i} className={`font-mono text-[10px] leading-5 ${
-                  i === 0 ? 'text-[#FF9A86] font-semibold' : 'text-[#9ca3af]'
+                  i === 0 ? 'text-status-fail font-semibold' : 'text-[#9ca3af]'
                 }`}>{line}</div>
               ))}
               {historyDetailTab === 'PASS' && activePass && activePass.runtimeLog.split('\n').map((line, i) => (
-                <div key={i} className="font-mono text-[10px] leading-5 text-[#9AB17A]">{line}</div>
+                <div key={i} className="font-mono text-[10px] leading-5 text-status-pass">{line}</div>
               ))}
               {historyDetailTab === 'PASS' && !activePass && (
                 <div className="text-[10px] text-[#6b7280]">항목을 선택하면 로그가 표시됩니다</div>

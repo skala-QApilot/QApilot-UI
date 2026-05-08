@@ -20,7 +20,7 @@ export const SubHeader = ({ title, titleExtra, tabs, activeTab, onTabChange, rig
   <div className={`bg-[#f7f8f9] px-8 flex-shrink-0 ${tabs ? 'pt-[11.5px] pb-0' : 'py-[11.5px]'}`}>
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <span className="text-[15px] font-bold text-[#1a1a2e] leading-none">{title}</span>
+        {title && <span className="text-[15px] font-bold text-[#1a1a2e] leading-none">{title}</span>}
         {titleExtra}
       </div>
       {rightContent && <div className="flex items-center gap-2">{rightContent}</div>}
@@ -46,7 +46,7 @@ export const SubHeader = ({ title, titleExtra, tabs, activeTab, onTabChange, rig
                 }`}>{count}</span>
               )}
               {active && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] rounded-full" />
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-blue rounded-full" />
               )}
             </button>
           );

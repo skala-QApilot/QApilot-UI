@@ -1,7 +1,8 @@
 import React from 'react';
-import { Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, Play, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Star, Trash2, X } from 'lucide-react';
+import { Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, Play, Plus, RotateCcw, Sparkles, Star, Trash2, X } from 'lucide-react';
 import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
 import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
+import { SearchBar } from '../components/common/SearchBar';
 import { mockRTMData, mockScenarioVersions, mockTestGroups, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
 
 interface ScenarioPageProps {
@@ -172,7 +173,7 @@ setViewMode: setViewModeProp,
 
   // ── TV 엔드포인트 헬퍼 ────────────────────────────────────────
   const METHOD_STYLE: Record<HttpMethod, string> = {
-    GET:    'bg-[#EBEBFA] text-[#3615CF] border border-[#3615CF]/20',
+    GET:    'bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/20',
     POST:   'bg-[#3615CF]/10 text-[#3615CF] border border-[#3615CF]/20',
     PUT:    'bg-gray-100 text-[#6b7280] border border-gray-200',
     PATCH:  'bg-gray-100 text-[#6b7280] border border-gray-200',
@@ -335,7 +336,7 @@ setViewMode: setViewModeProp,
         }}
         className={`min-w-0 flex-1 px-1.5 py-0.5 border border-[#3615CF]/50 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#3615CF]/30 ${className}`}
       />
-      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0">
+      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-status-pass flex-shrink-0">
         <CheckCircle className="w-3 h-3 text-white" />
       </button>
       <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0">
@@ -427,7 +428,7 @@ setViewMode: setViewModeProp,
                   <button onClick={() => setSelectedScenarioVersion(latestChange.id)} className="relative flex items-center justify-center">
                     <svg width={20} height={20} style={{ overflow: 'visible' }}>
                       <circle cx={10} cy={10} r={8}
-                        fill={isSelected ? '#EBEBFA' : 'white'}
+                        fill={isSelected ? '#EAE8F9' : 'white'}
                         stroke="#3615CF" strokeWidth={1.5} strokeDasharray="4 2.5" />
                     </svg>
                   </button>
@@ -463,7 +464,7 @@ setViewMode: setViewModeProp,
                   onMouseLeave={handleVersionLeave}>
                   <button onClick={() => setSelectedScenarioVersion(ver.id)} className="relative flex items-center justify-center">
                     <div className={`w-5 h-5 rounded-full border-2 transition-all ${
-                      isSelected ? 'bg-[#EBEBFA] border-[#3615CF] shadow-md shadow-[#3615CF]/20' : 'bg-white border-[#d1d5db] hover:border-[#3615CF]'
+                      isSelected ? 'bg-[#EAE8F9] border-[#3615CF] shadow-md shadow-[#3615CF]/20' : 'bg-white border-[#d1d5db] hover:border-[#3615CF]'
                     }`} />
                     {isFav && <Star className="absolute -right-3 -top-1 w-3 h-3 text-yellow-400 fill-yellow-400" />}
                   </button>
@@ -526,12 +527,12 @@ setViewMode: setViewModeProp,
             <button className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#6b7280] hover:text-[#1a1a2e] border border-[#e5e7eb] rounded hover:bg-white transition-colors flex-shrink-0">
               <Download className="w-3 h-3" /> CSV
             </button>
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#9ca3af]" />
-              <input type="text" value={scenarioSearchQuery} onChange={e => setScenarioSearchQuery(e.target.value)}
-                placeholder="검색..."
-                className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-[#f0f0f0] rounded-lg bg-[#f9f9fb] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3615CF]/20 transition-colors" />
-            </div>
+            <SearchBar
+              value={scenarioSearchQuery}
+              onChange={setScenarioSearchQuery}
+              placeholder="검색..."
+              className="flex-1"
+            />
             <button onClick={() => setScenarioChangeFilter(!scenarioChangeFilter)} title="변경사항 필터"
               className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
                 scenarioChangeFilter ? 'bg-[#3615CF] text-white' : 'text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10'
@@ -560,7 +561,7 @@ setViewMode: setViewModeProp,
             <button
               onClick={addNewTS}
               title="시나리오 추가"
-              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[#9ca3af] hover:text-[#9AB17A] hover:bg-green-50 transition-all">
+              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[#9ca3af] hover:text-status-pass hover:bg-green-50 transition-all">
               <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -653,7 +654,7 @@ setViewMode: setViewModeProp,
                         <button
                           onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'ts', key: tsEditKey, value: scenario.name }); }}
                           title="수정"
-                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EBEBFA] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EAE8F9] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
                           <Edit2 className="w-3 h-3" />
                         </button>
                         <button
@@ -715,7 +716,7 @@ setViewMode: setViewModeProp,
                                 : <span className={`text-[10px] truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{tc.name}</span>}
                               {!isTCEditing && frEntries.map(fr => (
                                 <div key={fr.frId} className="relative group/fr flex-shrink-0">
-                                  <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-[#EBEBFA] text-[#3615CF] border border-[#3615CF]/15 cursor-help">{fr.frId}</span>
+                                  <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/15 cursor-help">{fr.frId}</span>
                                   <div className="absolute bottom-full left-0 mb-1 w-52 bg-[#1a1a2e] text-white text-[10px] rounded-lg px-2.5 py-2 shadow-xl leading-relaxed z-50 hidden group-hover/fr:block pointer-events-none whitespace-normal">
                                     <div className="font-semibold mb-0.5 text-[9px] text-[#3615CF]">{fr.frId}</div>
                                     {fr.requirement}
@@ -730,7 +731,7 @@ setViewMode: setViewModeProp,
                               <button
                                 onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tc', key: tcKey, value: tc.name }); }}
                                 title="수정"
-                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EBEBFA] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EAE8F9] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
                                 <Edit2 className="w-3 h-3" />
                               </button>
                               <button
@@ -795,7 +796,7 @@ setViewMode: setViewModeProp,
                                         onChange={e => setEditingDetailItem((prev: any) => prev ? { ...prev, value: e.target.value } : null)}
                                         onKeyDown={e => { if (e.key === 'Enter') saveSidebarEdit(); if (e.key === 'Escape') setEditingDetailItem(null); }}
                                         className="flex-1 min-w-0 text-[10px] bg-white border border-[#3615CF]/50 rounded px-1.5 py-0.5 focus:outline-none" />
-                                      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
+                                      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-status-pass flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
                                       <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
                                     </div>
                                   ) : (
@@ -831,7 +832,7 @@ setViewMode: setViewModeProp,
                                     <LightJson obj={ep.requestBody ?? {}} />
                                   </div>
                                   {/* Status footer */}
-                                  <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-[#EBEBFA]' : 'bg-red-50'}`}>
+                                  <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-[#EAE8F9]' : 'bg-red-50'}`}>
                                     <span className={`font-mono text-[9px] font-bold ${isOk ? 'text-[#3615CF]/70' : 'text-red-500'}`}>
                                       ← {ep.statusCode}
                                     </span>
@@ -920,7 +921,7 @@ setViewMode: setViewModeProp,
                   onClick={() => someSelected && setShowTestGroupModal(true)}
                   className={`w-full py-2 rounded-lg border border-dashed flex items-center justify-center gap-1.5 text-xs transition-all ${
                     someSelected
-                      ? 'border-[#3615CF]/30 text-[#3615CF] hover:bg-[#EBEBFA]'
+                      ? 'border-[#3615CF]/30 text-[#3615CF] hover:bg-[#EAE8F9]'
                       : 'border-[#e5e7eb] text-[#c4c9d4] cursor-default'
                   }`}>
                   <Plus className="w-3 h-3" />
@@ -933,19 +934,11 @@ setViewMode: setViewModeProp,
               {/* Group cards */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {/* 검색바 */}
-                <div className="flex items-center gap-1.5 mb-3">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#9ca3af]" />
-                    <input
-                      type="text"
-                      placeholder="그룹 검색..."
-                      className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-[#f0f0f0] rounded-lg bg-[#f9f9fb] focus:outline-none focus:ring-1 focus:ring-[#3615CF]/20 focus:bg-white transition-colors"
-                    />
-                  </div>
-                  <button className="w-7 h-7 flex items-center justify-center rounded-lg text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/8 transition-colors flex-shrink-0">
-                    <SlidersHorizontal className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                <SearchBar
+                  placeholder="그룹 검색..."
+                  showFilterButton
+                  className="mb-3"
+                />
                 {mockTestGroups.map(group => {
                   const isSelected = selectedScenarioGroupId === group.id;
                   return (
@@ -953,7 +946,7 @@ setViewMode: setViewModeProp,
                       onClick={() => (setSelectedScenarioGroupId as any)(isSelected ? null : group.id)}
                       className={`w-full text-left p-3 rounded-lg border transition-all ${
                         isSelected
-                          ? 'border-[#3615CF] bg-[#EBEBFA] shadow-sm'
+                          ? 'border-[#3615CF] bg-[#EAE8F9] shadow-sm'
                           : 'border-[#e5e7eb] hover:border-[#3615CF]/40 hover:bg-gray-50'
                       }`}>
                       <div className="flex items-center justify-between mb-2">
@@ -962,7 +955,7 @@ setViewMode: setViewModeProp,
                       <div className="flex flex-wrap gap-1 mb-2">
                         {(group.scenarios as string[]).map(sid => (
                           <span key={sid} className={`px-1.5 py-0.5 text-[9px] rounded font-mono font-bold ${
-                            isSelected ? 'bg-[#EBEBFA] text-[#3615CF]' : 'bg-gray-100 text-[#6b7280]'
+                            isSelected ? 'bg-[#EAE8F9] text-[#3615CF]' : 'bg-gray-100 text-[#6b7280]'
                           }`}>{sid}</span>
                         ))}
                       </div>
@@ -996,7 +989,7 @@ setViewMode: setViewModeProp,
                             setCurrentPage('테스트');
                             (setTestSubTab as any)('HISTORY');
                           }}
-                          className="flex items-center gap-1 px-2.5 py-1 bg-[#EBEBFA] text-[#3615CF] rounded text-[10px] font-medium hover:bg-[#DDDDF5] transition-colors">
+                          className="flex items-center gap-1 px-2.5 py-1 bg-[#EAE8F9] text-[#3615CF] rounded text-[10px] font-medium hover:bg-[#DDDDF5] transition-colors">
                           <Play className="w-2.5 h-2.5" /> 실행
                         </button>
                       </div>
