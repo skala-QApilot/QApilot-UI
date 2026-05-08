@@ -7,7 +7,52 @@ import { PassRateChart } from '../components/common/PassRateChart';
 import { RuntimeTerminal, TerminalFrame } from '../components/common/RuntimeTerminal';
 import { AgentProgressStrip } from '../components/common/AgentProgressStrip';
 import { StatusIcon } from '../components/common/StatusIcon';
-import { mockExecutionHistory, mockPassHistory, mockScenarios, mockTestCases, mockTestLogs } from '../data/mockData';
+import { mockExecutionHistory, mockPassHistory, mockRTMData, mockScenarios, mockTestCases, mockTestLogs, mockTVEndpoints, type HttpMethod } from '../data/mockData';
+
+const METHOD_STYLE: Record<HttpMethod, string> = {
+  GET:    'bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/20',
+  POST:   'bg-[#3615CF]/10 text-[#3615CF] border border-[#3615CF]/20',
+  PUT:    'bg-gray-100 text-[#6b7280] border border-gray-200',
+  PATCH:  'bg-gray-100 text-[#6b7280] border border-gray-200',
+  DELETE: 'bg-[#f43b47]/10 text-[#f43b47] border border-[#f43b47]/20',
+};
+
+const HTTP_STATUS_TEXT: Record<number, string> = {
+  200: 'OK', 201: 'Created', 204: 'No Content',
+  400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
+  404: 'Not Found', 422: 'Unprocessable Entity', 500: 'Internal Server Error',
+};
+
+const mockValidationConditions: Record<string, string[]> = {
+  'TS1_TC1_TV1': ['입력: 유효한 이메일', '기대: 로그인 성공, 대시보드 이동'],
+  'TS1_TC1_TV2': ['입력: 유효한 비밀번호', '기대: 인증 성공 (200 OK)'],
+  'TS1_TC2_TV1': ['입력: 유효한 이메일', '기대: 입력 필드 유효성 통과'],
+  'TS1_TC2_TV2': ['입력: 잘못된 비밀번호 (5자 미만)', '기대: 오류 메시지 표시', '코드: 401 Unauthorized'],
+};
+
+const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
+  const lines = JSON.stringify(obj, null, 2).split('\n');
+  return (
+    <code className="block font-mono text-[10.5px] leading-[1.7]">
+      {lines.map((line, i) => {
+        const m = line.match(/^(\s*)("[\w\s가-힣\-./[\]_]+")(\s*:\s*)(".*?"|[\d.]+|true|false|null)(,?)$/);
+        if (m) {
+          const isStr = m[4].startsWith('"');
+          return (
+            <div key={i}>
+              <span className="text-slate-400">{m[1]}</span>
+              <span className="text-[#3615CF]">{m[2]}</span>
+              <span className="text-slate-400">{m[3]}</span>
+              <span className={isStr ? 'text-[#3615CF]/70' : 'text-[#f43b47]'}>{m[4]}</span>
+              <span className="text-slate-400">{m[5]}</span>
+            </div>
+          );
+        }
+        return <div key={i}><span className="text-slate-500">{line}</span></div>;
+      })}
+    </code>
+  );
+};
 import { ExecutionHistoryPageDetail } from './ExecutionHistoryPageDetail';
 
 type HistoryDetailTab = 'FAIL' | 'PASS';
@@ -178,7 +223,7 @@ export const ExecutionHistoryPage = ({
         <div className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* Scenario sidebar — resizable */}
-          <div ref={sidebarRef} className="bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0 min-h-0" style={{ width: sidebarWidth ?? '50%' }}>
+          <div ref={sidebarRef} className="bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0 min-h-0" style={{ width: sidebarWidth ?? '66.67%' }}>
             <div className="flex items-center gap-1 px-3 pt-2.5 border-b border-[#f0f0f0] flex-shrink-0">
               <div className="flex min-w-0 flex-1 gap-1">
                 {[
@@ -209,120 +254,135 @@ export const ExecutionHistoryPage = ({
               </div>
             </div>
 
-            <div className={`flex-1 min-h-0 overflow-y-auto ${scenarioSidebarTab === 'TOTAL' ? 'p-2' : ''}`}>
-              {scenarioSidebarTab === 'TOTAL' && (
-                <div className="space-y-1">
-                  {mockScenarios.map(scenario => {
-                    const isExpanded = expandedScenarios.includes(scenario.id);
-                    const tcs = mockTestCases[scenario.id] || [];
-                    return (
-                      <div key={scenario.id} className="border border-[#f0f0f0] rounded">
-                        <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
+            <div className="flex-1 min-h-0 overflow-y-auto py-1">
+              <div>
+                {mockScenarios.map(scenario => {
+                  const isExpanded = expandedScenarios.includes(scenario.id);
+                  const allTcs = mockTestCases[scenario.id] || [];
+                  const tcs = scenarioSidebarTab === 'PASS'
+                    ? allTcs.filter(tc => tc.status === 'passed' || tc.status === 'completed')
+                    : scenarioSidebarTab === 'FILTERED'
+                    ? allTcs.filter(tc => tc.status === 'failed')
+                    : allTcs;
+                  if (scenarioSidebarTab !== 'TOTAL' && tcs.length === 0) return null;
+                  return (
+                      <div key={scenario.id}>
+                        {/* TS 행 */}
+                        <div className="group flex items-center gap-1.5 px-2 py-2 border-b border-[#f0f0f0]/60 hover:bg-gray-50 cursor-pointer"
                           onClick={() => {
                             setExpandedScenarios(prev =>
                               prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]
                             );
                             scrollToLog(0);
                           }}>
-                          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                          <button className="flex-shrink-0" onClick={e => e.stopPropagation()}>
+                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-[#9ca3af]" /> : <ChevronRight className="w-3.5 h-3.5 text-[#9ca3af]" />}
+                          </button>
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">{scenario.id} {scenario.name}</div>
+                            <div className="flex items-center gap-1">
+                              <span className="px-1 py-0.5 text-[9px] rounded font-bold bg-[#3615CF]/10 text-[#3615CF]">TS</span>
+                              <span className="text-xs font-semibold text-[#1a1a2e]">{scenario.id}</span>
+                              <span className="text-[10px] truncate text-[#6b7280]">{scenario.name}</span>
+                            </div>
                           </div>
-                          <StatusIcon status={scenario.status} />
+                          <StatusIcon status={scenario.status} size="w-3.5 h-3.5" />
                         </div>
+
+                        {/* TC 행 */}
                         {isExpanded && tcs.map(tc => {
-                          const isTCExpanded = expandedTestCases.includes(`${scenario.id}_${tc.id}`);
+                          const tcKey = `${scenario.id}_${tc.id}`;
+                          const isTCExpanded = expandedTestCases.includes(tcKey);
+                          const frEntries = mockRTMData.filter(r => r.ts === scenario.id && r.tc === tc.id);
                           return (
-                            <div key={tc.id} className="ml-6 border-l-2 border-gray-200">
-                              <div className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
+                            <div key={tc.id}>
+                              <div className="group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b border-[#f0f0f0]/40 bg-[#F9FAFB] hover:bg-opacity-80 cursor-pointer"
                                 onClick={() => {
-                                  const key = `${scenario.id}_${tc.id}`;
                                   setExpandedTestCases(prev =>
-                                    prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
+                                    prev.includes(tcKey) ? prev.filter(id => id !== tcKey) : [...prev, tcKey]
                                   );
                                   const logIdx = tc.status === 'failed' ? mockTestLogs.findIndex(l => l.isError) : 0;
                                   scrollToLog(Math.max(0, logIdx));
                                 }}>
-                                {isTCExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                <button className="flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                  {tc.testVariables.length > 0
+                                    ? (isTCExpanded ? <ChevronDown className="w-3 h-3 text-[#9ca3af]" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af]" />)
+                                    : <span className="w-3" />}
+                                </button>
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    <span className="px-1 py-0.5 text-[9px] rounded font-bold bg-[#3615CF]/8 text-[#3615CF]">TC</span>
+                                    <span className="text-[11px] font-medium text-[#1a1a2e]">{tc.id}</span>
+                                    <span className="text-[10px] truncate text-[#6b7280]">{tc.name}</span>
+                                    {frEntries.map(fr => (
+                                      <div key={fr.frId} className="relative group/fr flex-shrink-0">
+                                        <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/15 cursor-help">{fr.frId}</span>
+                                        <div className="absolute bottom-full left-0 mb-1 w-52 bg-[#1a1a2e] text-white text-[10px] rounded-lg px-2.5 py-2 shadow-xl leading-relaxed z-50 hidden group-hover/fr:block pointer-events-none whitespace-normal">
+                                          <div className="font-semibold mb-0.5 text-[9px] text-[#3615CF]">{fr.frId}</div>
+                                          {fr.requirement}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                                 <StatusIcon status={tc.status} size="w-3 h-3" />
                               </div>
-                              {isTCExpanded && tc.testVariables.map(tv => (
-                                <div key={tv.id} className="ml-5 flex items-center gap-2 p-1.5 text-xs text-[#6b7280] cursor-pointer hover:bg-gray-50"
-                                  onClick={() => scrollToLog(tv.status === 'failed' ? 4 : 0)}>
-                                  <div className="flex-1 truncate">{tv.id}: {tv.name}</div>
-                                  <StatusIcon status={tv.status} size="w-3 h-3" />
-                                </div>
-                              ))}
+
+                              {/* TV 행 */}
+                              {isTCExpanded && tc.testVariables.map(tv => {
+                                const tvKey = `${scenario.id}_${tc.id}_${tv.id}`;
+                                const ep = mockTVEndpoints[tvKey];
+                                const validations = mockValidationConditions[tvKey] || [];
+                                const isOk = ep ? ep.statusCode < 400 : true;
+                                return (
+                                  <div key={tv.id} className="border-b border-[#f0f0f0]/30" style={{ paddingLeft: '3.25rem' }}>
+                                    <div className="group flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer transition-colors bg-white hover:bg-slate-50"
+                                      onClick={() => scrollToLog(tv.status === 'failed' ? 4 : 0)}>
+                                      <span className="px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 bg-slate-100 text-slate-500">{tv.id}</span>
+                                      {ep ? (
+                                        <div className="flex items-center gap-1 flex-1 min-w-0">
+                                          <span className={`text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
+                                          <span className="font-mono text-[9.5px] text-slate-500 truncate">{ep.path}</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-500 truncate flex-1">{tv.name}</span>
+                                      )}
+                                      <StatusIcon status={tv.status} size="w-3 h-3" />
+                                    </div>
+                                    {ep && (
+                                      <div className="mx-2 mb-1 mt-0.5 rounded border border-slate-100 bg-slate-50 overflow-hidden">
+                                        <div className="px-2 py-1.5 overflow-x-auto">
+                                          <LightJson obj={ep.requestBody ?? {}} />
+                                        </div>
+                                        <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-[#EAE8F9]' : 'bg-red-50'}`}>
+                                          <span className={`font-mono text-[9px] font-bold ${isOk ? 'text-[#3615CF]/70' : 'text-red-500'}`}>
+                                            ← {ep.statusCode}
+                                          </span>
+                                          <span className={`text-[9px] ${isOk ? 'text-[#3615CF]' : 'text-red-400'}`}>
+                                            {HTTP_STATUS_TEXT[ep.statusCode] ?? ''}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {validations.length > 0 && (
+                                      <div className="mx-2 mb-1.5 space-y-0.5">
+                                        {validations.map((v, i) => (
+                                          <div key={i} className="flex gap-1.5 px-2 py-1 bg-gray-50 rounded border border-[#e5e7eb] text-[10px]">
+                                            <span className="text-[#3615CF] flex-shrink-0 font-bold">✓</span>
+                                            <span className="text-[#6b7280] leading-relaxed">{v}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })}
                       </div>
                     );
                   })}
-                </div>
-              )}
-
-              {scenarioSidebarTab === 'PASS' && (
-                <div>
-                  {passedTCs.length === 0 && (
-                    <div className="text-center py-10 text-xs text-[#9ca3af]">완료된 테스트케이스 없음</div>
-                  )}
-                  {Object.entries(passedByTS).map(([sId, items]) => (
-                    <div key={sId}>
-                      <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
-                        <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
-                        <span className="text-xs font-semibold text-[#1a1a2e]">{sId}</span>
-                        <span className="ml-auto text-xs text-status-pass">PASS {items.length}</span>
-                      </div>
-                      {items.map(({ tc }, idx) => (
-                        <div key={`${sId}_${tc.id}_${idx}`}
-                          className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors border-b border-[#f0f0f0] cursor-pointer hover:bg-gray-50"
-                          onClick={() => scrollToLog(0)}>
-                          <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs font-medium text-[#1a1a2e] truncate">{tc.id}</div>
-                            <div className="text-[10px] text-[#9ca3af] truncate">{tc.name}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {scenarioSidebarTab === 'FILTERED' && (
-                <div>
-                  {failedTCs.length === 0 && (
-                    <div className="text-center py-10 text-xs text-[#9ca3af]">실패한 테스트케이스 없음</div>
-                  )}
-                  {Object.entries(failedByTS).map(([sId, items]) => (
-                    <div key={sId}>
-                      <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
-                        <XCircle className="w-3.5 h-3.5 text-status-fail flex-shrink-0" />
-                        <span className="text-xs font-semibold text-[#1a1a2e]">{sId}</span>
-                        <span className="ml-auto text-xs text-status-fail">FAIL {items.length}</span>
-                      </div>
-                      {items.map(({ tc }, idx) => (
-                        <div key={`${sId}_${tc.id}_${idx}`}
-                          className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors border-b border-[#f0f0f0] cursor-pointer hover:bg-gray-50"
-                          onClick={() => {
-                            const logIdx = mockTestLogs.findIndex(l => l.isError);
-                            scrollToLog(Math.max(0, logIdx));
-                          }}>
-                          <XCircle className="w-3.5 h-3.5 text-status-fail flex-shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs font-medium text-[#1a1a2e] truncate">{tc.id}</div>
-                            <div className="text-[10px] text-[#9ca3af] truncate">{tc.name}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              )}
+              </div>
             </div>
 
             {/* Execution controls */}

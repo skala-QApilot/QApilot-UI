@@ -4,7 +4,6 @@ import { StatusIcon } from './components/common/StatusIcon';
 import { SubHeader } from './components/common/SubHeader';
 import { LeftNavigation } from './components/common/LeftNavigation';
 import { FileList } from './components/common/FileList';
-import { SearchBar } from './components/common/SearchBar';
 import { HomePage } from './pages/HomePage';
 import { ExecutionHistoryPage as ExecutionHistoryPageView } from './pages/ExecutionHistoryPage';
 import { RTMPage } from './pages/RTMPage';
@@ -514,14 +513,7 @@ export default function App() {
                     <Download className="w-3 h-3" /> PDF
                   </button>
                 </div>
-              ) : currentPage === '테스트' && testSubTab === 'HISTORY' && !selectedExecutionId ? (
-              <SearchBar
-                value={historySearchQuery}
-                onChange={setHistorySearchQuery}
-                placeholder="이력 검색..."
-                className="w-52"
-              />
-            ) : currentPage === '시나리오' ? (
+              ) : currentPage === '시나리오' ? (
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setScenarioViewMode(scenarioViewMode === 'table' ? 'graph' : 'table')}
