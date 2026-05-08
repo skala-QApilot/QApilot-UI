@@ -243,12 +243,6 @@ setScheduledAlarms,
 
     const totalTCs = filteredGroups.reduce((sum, g) => sum + g.tcCount, 0);
 
-    const statusConfig = {
-      active:   { label: '활성',  bg: 'bg-green-50',  text: 'text-[#9AB17A]',  border: 'border-green-200' },
-      inactive: { label: '비활성', bg: 'bg-gray-100',  text: 'text-[#9ca3af]',  border: 'border-gray-200' },
-      archived: { label: '보관',  bg: 'bg-amber-50',  text: 'text-amber-600',   border: 'border-amber-200' },
-    };
-
     return (
       <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50">
 
@@ -291,7 +285,6 @@ setScheduledAlarms,
             {filteredGroups.map(group => {
               const isEditing = editingGroupId === group.id;
               const displayName = groupNames[group.id] || group.name;
-              const sc = statusConfig[group.status] ?? statusConfig.inactive;
 
               return (
                 <div key={group.id} className="px-5 py-4 hover:bg-gray-50/70 transition-colors">
@@ -345,11 +338,6 @@ setScheduledAlarms,
                         <Edit2 className="w-3 h-3 text-[#c4c9d4] flex-shrink-0 opacity-0 group-hover/name:opacity-100 transition-opacity" />
                       </button>
                     )}
-
-                    {/* Status badge */}
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-medium border flex-shrink-0 ${sc.bg} ${sc.text} ${sc.border}`}>
-                      {sc.label}
-                    </span>
 
                     {/* Run button */}
                     <button

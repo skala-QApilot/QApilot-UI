@@ -172,11 +172,11 @@ setViewMode: setViewModeProp,
 
   // ── TV 엔드포인트 헬퍼 ────────────────────────────────────────
   const METHOD_STYLE: Record<HttpMethod, string> = {
-    GET:    'bg-emerald-50 text-emerald-700 border border-emerald-200',
-    POST:   'bg-blue-50   text-blue-700   border border-blue-200',
-    PUT:    'bg-amber-50  text-amber-700  border border-amber-200',
-    PATCH:  'bg-violet-50 text-violet-700 border border-violet-200',
-    DELETE: 'bg-red-50    text-red-600    border border-red-200',
+    GET:    'bg-[#EBEBFA] text-[#3615CF] border border-[#3615CF]/20',
+    POST:   'bg-[#3615CF]/10 text-[#3615CF] border border-[#3615CF]/20',
+    PUT:    'bg-gray-100 text-[#6b7280] border border-gray-200',
+    PATCH:  'bg-gray-100 text-[#6b7280] border border-gray-200',
+    DELETE: 'bg-[#f43b47]/10 text-[#f43b47] border border-[#f43b47]/20',
   };
 
   const HTTP_STATUS_TEXT: Record<number, string> = {
@@ -197,9 +197,9 @@ setViewMode: setViewModeProp,
             return (
               <div key={i}>
                 <span className="text-slate-400">{m[1]}</span>
-                <span className="text-blue-600">{m[2]}</span>
+                <span className="text-[#3615CF]">{m[2]}</span>
                 <span className="text-slate-400">{m[3]}</span>
-                <span className={isStr ? 'text-emerald-600' : 'text-orange-500'}>{m[4]}</span>
+                <span className={isStr ? 'text-[#3615CF]/70' : 'text-[#f43b47]'}>{m[4]}</span>
                 <span className="text-slate-400">{m[5]}</span>
               </div>
             );
@@ -517,7 +517,7 @@ setViewMode: setViewModeProp,
           <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#f0f0f0] bg-white flex-shrink-0">
             <input type="checkbox" checked={allTCsSelected}
               onChange={e => setSelectedTCIds(e.target.checked ? allTCIds : [])}
-              className="w-3.5 h-3.5 accent-[#3615CF] flex-shrink-0" />
+              className="scenario-checkbox w-3.5 h-3.5 flex-shrink-0" />
             {someSelected && (
               <span className="px-1.5 py-0.5 text-[9px] bg-[#3615CF]/10 text-[#3615CF] rounded-full font-medium flex-shrink-0">
                 {_selectedTCIds.length}개
@@ -530,7 +530,7 @@ setViewMode: setViewModeProp,
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#9ca3af]" />
               <input type="text" value={scenarioSearchQuery} onChange={e => setScenarioSearchQuery(e.target.value)}
                 placeholder="검색..."
-                className="w-full pl-6 pr-2 py-1 text-[11px] border border-[#f0f0f0] rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#3615CF]/30" />
+                className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-[#f0f0f0] rounded-lg bg-[#f9f9fb] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3615CF]/20 transition-colors" />
             </div>
             <button onClick={() => setScenarioChangeFilter(!scenarioChangeFilter)} title="변경사항 필터"
               className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
@@ -544,14 +544,14 @@ setViewMode: setViewModeProp,
               disabled={deferredAIIds.length === 0}
               className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all relative ${
                 showDeferredAIItems && deferredAIIds.length > 0
-                  ? 'bg-purple-100 text-purple-600 ring-1 ring-purple-200'
+                  ? 'bg-[#fef3c7] text-[#d97706] ring-1 ring-[#fcd34d]'
                   : deferredAIIds.length > 0
-                    ? 'text-purple-500 hover:bg-purple-50'
+                    ? 'text-[#d97706] hover:bg-[#fffbeb]'
                     : 'text-[#c4c9d4] cursor-default'
               }`}>
               <Clock className="w-3.5 h-3.5" />
               {deferredAIIds.length > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 bg-purple-500 text-white text-[8px] rounded-full flex items-center justify-center leading-none">
+                <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 bg-[#d97706] text-white text-[8px] rounded-full flex items-center justify-center leading-none">
                   {deferredAIIds.length}
                 </span>
               )}
@@ -569,10 +569,10 @@ setViewMode: setViewModeProp,
           <div className="flex-1 overflow-y-auto py-1">
             {/* 보류 항목 */}
             {showDeferredAIItems && deferredAIIds.length > 0 && (
-              <div className="mx-2 mb-2 rounded-lg border border-purple-200 bg-purple-50/40">
-                <div className="px-2.5 py-1.5 border-b border-purple-100 flex items-center gap-1.5">
-                  <Clock className="w-3 h-3 text-purple-500 flex-shrink-0" />
-                  <span className="text-[10px] font-semibold text-purple-700">보류 항목</span>
+              <div className="mx-2 mb-2 rounded-lg border border-[#fcd34d] bg-[#fffbeb]/60">
+                <div className="px-2.5 py-1.5 border-b border-[#fde68a] flex items-center gap-1.5">
+                  <Clock className="w-3 h-3 text-[#d97706] flex-shrink-0" />
+                  <span className="text-[10px] font-semibold text-[#b45309]">보류 항목</span>
                 </div>
                 {deferredAIIds.map((tsId) => {
                   const ai = _dynamicAIItems[tsId];
@@ -580,18 +580,18 @@ setViewMode: setViewModeProp,
                   if (!ai || !sc) return null;
                   const triggerLabel = ai.trigger === 'chatbot' ? '챗봇 질의' : ai.trigger === 'file' ? '파일 업데이트' : '코드 변경 감지';
                   return (
-                    <div key={`deferred-${tsId}`} className="px-2.5 py-1.5 border-b border-purple-100/60 last:border-0 text-[10px]">
+                    <div key={`deferred-${tsId}`} className="px-2.5 py-1.5 border-b border-[#fde68a]/60 last:border-0 text-[10px]">
                       <div className="flex items-center gap-1 mb-0.5">
-                        <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
-                        <span className="font-semibold text-purple-700">{tsId} · {sc.name}</span>
+                        <Sparkles className="w-3 h-3 text-[#f59e0b] flex-shrink-0" />
+                        <span className="font-semibold text-[#b45309]">{tsId} · {sc.name}</span>
                         <span className="ml-auto text-[#9ca3af]">{ai.timestamp.split(' ')[0]}</span>
                       </div>
-                      <div className="text-purple-800 mb-1 leading-relaxed">{triggerLabel} · {ai.reason}</div>
+                      <div className="text-[#92400e] mb-1 leading-relaxed">{triggerLabel} · {ai.reason}</div>
                       <div className="flex gap-1">
                         <button onClick={() => setAiItemActions(prev => ({ ...prev, [tsId]: 'approved' }))}
-                          className="px-2 py-0.5 bg-purple-500 text-white rounded text-[9px] font-medium">승인</button>
+                          className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium">승인</button>
                         <button onClick={() => setAiItemActions(prev => ({ ...prev, [tsId]: 'rejected' }))}
-                          className="px-2 py-0.5 bg-white border border-purple-200 text-purple-600 rounded text-[9px] hover:bg-red-50 hover:text-red-500 hover:border-red-200">거절</button>
+                          className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-red-50 hover:text-red-500 hover:border-red-200">거절</button>
                       </div>
                     </div>
                   );
@@ -620,31 +620,31 @@ setViewMode: setViewModeProp,
 
               const triggerLabel = aiInfo?.trigger === 'chatbot' ? '챗봇 질의' : aiInfo?.trigger === 'file' ? '파일 업데이트' : '코드 변경 감지';
 
-              const tsBadge = isAIItem ? 'bg-purple-100 text-purple-700' : 'bg-[#3615CF]/10 text-[#3615CF]';
-              const tcBadge = isAIItem ? 'bg-purple-50 text-purple-500' : 'bg-[#3615CF]/8 text-[#3615CF]';
+              const tsBadge = isAIItem ? 'bg-[#fef3c7] text-[#b45309]' : 'bg-[#3615CF]/10 text-[#3615CF]';
+              const tcBadge = isAIItem ? 'bg-[#fffbeb] text-[#d97706]' : 'bg-[#3615CF]/8 text-[#3615CF]';
 
               const tsRowContent = (
                 <>
                   {/* TS 행 */}
-                  <div className={`group flex items-center gap-1.5 px-2 py-2 ${isAIItem ? 'bg-purple-50/60' : 'hover:bg-gray-50'} border-b ${isAIItem ? 'border-purple-100' : 'border-[#f0f0f0]/60'} ${
+                  <div className={`group flex items-center gap-1.5 px-2 py-2 ${isAIItem ? 'bg-[#fffbeb]' : 'hover:bg-gray-50'} border-b ${isAIItem ? 'border-[#fde68a]' : 'border-[#f0f0f0]/60'} ${
                     !isAIItem && selectedScenario === scenario.id ? 'bg-[#3615CF]/5 border-l-2 border-l-[#3615CF]' : ''
                   }`}>
-                    {isAIItem && <Sparkles className="w-3 h-3 text-purple-500 flex-shrink-0" />}
+                    {isAIItem && <Sparkles className="w-3 h-3 text-[#d97706] flex-shrink-0" />}
                     <input type="checkbox" checked={tsAllSel}
                       ref={el => { if (el) el.indeterminate = tsSomeSel && !tsAllSel; }}
                       onChange={() => toggleTSSelection(scenario.id)}
-                      className="w-3.5 h-3.5 accent-[#3615CF] flex-shrink-0"
+                      className="scenario-checkbox w-3.5 h-3.5 flex-shrink-0"
                       onClick={e => e.stopPropagation()} />
                     <button onClick={e => { e.stopPropagation(); setExpandedTSForTC(prev => prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]); }} className="flex-shrink-0">
-                      {isExpanded ? <ChevronDown className={`w-3.5 h-3.5 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3.5 h-3.5 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} />}
+                      {isExpanded ? <ChevronDown className={`w-3.5 h-3.5 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3.5 h-3.5 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} />}
                     </button>
                     <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTSEditing) { setSelectedScenario(scenario.id); setDetailPanelRow({ level: 'TS', tsId: scenario.id }); } }}>
                       <div className="flex items-center gap-1">
                         <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tsBadge}`}>TS</span>
-                        <span className={`text-xs font-semibold ${isAIItem ? 'text-purple-800' : 'text-[#1a1a2e]'}`}>{scenario.id}</span>
+                        <span className={`text-xs font-semibold ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{scenario.id}</span>
                         {isTSEditing
                           ? sidebarEditInput('text-[10px]')
-                          : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-600' : 'text-[#6b7280]'}`}>{scenario.name}</span>}
+                          : <span className={`text-[10px] truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{scenario.name}</span>}
                       </div>
                     </div>
                     {/* TS 액션 아이콘 */}
@@ -653,7 +653,7 @@ setViewMode: setViewModeProp,
                         <button
                           onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'ts', key: tsEditKey, value: scenario.name }); }}
                           title="수정"
-                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-blue-50 text-[#9ca3af] hover:text-blue-500 transition-colors">
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EBEBFA] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
                           <Edit2 className="w-3 h-3" />
                         </button>
                         <button
@@ -674,14 +674,14 @@ setViewMode: setViewModeProp,
 
                   {/* AI 항목 승인/보류/거절 */}
                   {isAIItem && (
-                    <div className="px-2.5 py-1.5 bg-purple-50/40 border-b border-purple-100 flex items-center gap-1.5">
-                      <span className="text-[9px] text-purple-500 flex-shrink-0">{triggerLabel}</span>
-                      <span className="text-[9px] text-purple-400 truncate flex-1">{aiInfo!.reason}</span>
+                    <div className="px-2.5 py-1.5 bg-[#fffbeb]/60 border-b border-[#fde68a] flex items-center gap-1.5">
+                      <span className="text-[9px] text-[#d97706] flex-shrink-0">{triggerLabel}</span>
+                      <span className="text-[9px] text-[#f59e0b] truncate flex-1">{aiInfo!.reason}</span>
                       <div className="flex gap-1 flex-shrink-0">
                         <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'approved' }))}
-                          className="px-2 py-0.5 bg-purple-500 text-white rounded text-[9px] font-medium hover:bg-purple-600">승인</button>
+                          className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium hover:bg-[#b45309]">승인</button>
                         <button onClick={() => { setAiItemActions(prev => ({ ...prev, [scenario.id]: 'deferred' })); setShowDeferredAIItems(true); }}
-                          className="px-2 py-0.5 bg-white border border-purple-200 text-purple-600 rounded text-[9px] hover:bg-purple-50">보류</button>
+                          className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-[#fffbeb]">보류</button>
                         <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'rejected' }))}
                           className="px-2 py-0.5 bg-white border border-red-200 text-red-500 rounded text-[9px] hover:bg-red-50">거절</button>
                       </div>
@@ -696,26 +696,26 @@ setViewMode: setViewModeProp,
                     const frEntries = mockRTMData.filter(r => r.ts === scenario.id && r.tc === tc.id);
                     return (
                       <div key={tc.id}>
-                        <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/30 border-purple-100/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#3615CF]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
+                        <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-[#fffbeb]/50 border-[#fde68a]/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#3615CF]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
                           <input type="checkbox" checked={_selectedTCIds.includes(tcKey)}
                             onChange={() => toggleTCSelection(tcKey)}
-                            className="w-3 h-3 accent-[#3615CF] flex-shrink-0"
+                            className="scenario-checkbox w-3 h-3 flex-shrink-0"
                             onClick={e => e.stopPropagation()} />
                           <button onClick={e => { e.stopPropagation(); setExpandedTCMain(prev => prev.includes(tcKey) ? prev.filter(id => id !== tcKey) : [...prev, tcKey]); }} className="flex-shrink-0">
                             {tc.testVariables.length > 0
-                              ? (isTCExpanded ? <ChevronDown className={`w-3 h-3 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3 h-3 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} />)
+                              ? (isTCExpanded ? <ChevronDown className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} />)
                               : <span className="w-3" />}
                           </button>
                           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTCEditing) setDetailPanelRow({ level: 'TC', tsId: scenario.id, tcId: tc.id }); }}>
                             <div className="flex items-center gap-1 flex-wrap">
                               <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tcBadge}`}>TC</span>
-                              <span className={`text-[11px] font-medium flex-shrink-0 ${isAIItem ? 'text-purple-800' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
+                              <span className={`text-[11px] font-medium flex-shrink-0 ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
                               {isTCEditing
                                 ? sidebarEditInput('text-[10px]')
-                                : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-500' : 'text-[#6b7280]'}`}>{tc.name}</span>}
+                                : <span className={`text-[10px] truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{tc.name}</span>}
                               {!isTCEditing && frEntries.map(fr => (
                                 <div key={fr.frId} className="relative group/fr flex-shrink-0">
-                                  <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-blue-50 text-blue-500 border border-blue-100 cursor-help">{fr.frId}</span>
+                                  <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-[#EBEBFA] text-[#3615CF] border border-[#3615CF]/15 cursor-help">{fr.frId}</span>
                                   <div className="absolute bottom-full left-0 mb-1 w-52 bg-[#1a1a2e] text-white text-[10px] rounded-lg px-2.5 py-2 shadow-xl leading-relaxed z-50 hidden group-hover/fr:block pointer-events-none whitespace-normal">
                                     <div className="font-semibold mb-0.5 text-[9px] text-[#3615CF]">{fr.frId}</div>
                                     {fr.requirement}
@@ -730,7 +730,7 @@ setViewMode: setViewModeProp,
                               <button
                                 onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tc', key: tcKey, value: tc.name }); }}
                                 title="수정"
-                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-blue-50 text-[#9ca3af] hover:text-blue-500 transition-colors">
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EBEBFA] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
                                 <Edit2 className="w-3 h-3" />
                               </button>
                               <button
@@ -760,13 +760,13 @@ setViewMode: setViewModeProp,
 
                           return (
                             <div key={tv.id}
-                              className={`border-b ${isAIItem ? 'border-purple-100/30' : 'border-[#f0f0f0]/30'}`}
+                              className={`border-b ${isAIItem ? 'border-[#fde68a]/30' : 'border-[#f0f0f0]/30'}`}
                               style={{ paddingLeft: '3.25rem' }}>
 
                               {/* ── TV 헤더 ── */}
                               <div
                                 className={`group flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer transition-colors ${
-                                  isAIItem ? 'bg-purple-50/20 hover:bg-purple-50/40'
+                                  isAIItem ? 'bg-[#fffbeb]/40 hover:bg-[#fffbeb]/40'
                                   : isSelected ? 'bg-slate-50'
                                   : 'bg-white hover:bg-slate-50'
                                 }`}
@@ -774,12 +774,12 @@ setViewMode: setViewModeProp,
 
                                 <input type="checkbox" checked={_selectedTCIds.includes(tvKey)}
                                   onChange={() => toggleTVSelection(tvKey)}
-                                  className="w-3 h-3 accent-[#3615CF] flex-shrink-0"
+                                  className="scenario-checkbox w-3 h-3 flex-shrink-0"
                                   onClick={e => e.stopPropagation()} />
 
                                 {/* TV ID 배지 */}
                                 <span className={`px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 ${
-                                  isAIItem ? 'bg-purple-100/60 text-purple-500' : 'bg-slate-100 text-slate-500'
+                                  isAIItem ? 'bg-[#fef3c7] text-[#d97706]' : 'bg-slate-100 text-slate-500'
                                 }`}>{tv.id}</span>
 
                                 {/* Method + Path 또는 이름 */}
@@ -808,7 +808,7 @@ setViewMode: setViewModeProp,
                                   <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
                                     <button onClick={e => { e.stopPropagation(); handleTVCopy(tvKey); }}
                                       title={isCopied ? '복사됨' : '복사'}
-                                      className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isCopied ? 'text-emerald-500' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
+                                      className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isCopied ? 'text-[#3615CF]' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
                                       {isCopied ? <CheckCircle className="w-2.5 h-2.5" /> : <svg className="w-2.5 h-2.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h8"/></svg>}
                                     </button>
                                     <button onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvKey, value: tv.name }); }}
@@ -831,11 +831,11 @@ setViewMode: setViewModeProp,
                                     <LightJson obj={ep.requestBody ?? {}} />
                                   </div>
                                   {/* Status footer */}
-                                  <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-emerald-50' : 'bg-red-50'}`}>
-                                    <span className={`font-mono text-[9px] font-bold ${isOk ? 'text-emerald-600' : 'text-red-500'}`}>
+                                  <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-[#EBEBFA]' : 'bg-red-50'}`}>
+                                    <span className={`font-mono text-[9px] font-bold ${isOk ? 'text-[#3615CF]/70' : 'text-red-500'}`}>
                                       ← {ep.statusCode}
                                     </span>
-                                    <span className={`text-[9px] ${isOk ? 'text-emerald-500' : 'text-red-400'}`}>
+                                    <span className={`text-[9px] ${isOk ? 'text-[#3615CF]' : 'text-red-400'}`}>
                                       {HTTP_STATUS_TEXT[ep.statusCode] ?? ''}
                                     </span>
                                   </div>
@@ -848,9 +848,9 @@ setViewMode: setViewModeProp,
                                 return (
                                   <div className="mx-2 mb-1.5 space-y-0.5">
                                     {validations.map((v, i) => (
-                                      <div key={i} className="flex gap-1.5 px-2 py-1 bg-amber-50/70 rounded border border-amber-100 text-[10px]">
-                                        <span className="text-amber-400 flex-shrink-0 font-bold">✓</span>
-                                        <span className="text-amber-700 leading-relaxed">{v}</span>
+                                      <div key={i} className="flex gap-1.5 px-2 py-1 bg-gray-50 rounded border border-[#e5e7eb] text-[10px]">
+                                        <span className="text-[#3615CF] flex-shrink-0 font-bold">✓</span>
+                                        <span className="text-[#6b7280] leading-relaxed">{v}</span>
                                       </div>
                                     ))}
                                   </div>
@@ -928,7 +928,7 @@ setViewMode: setViewModeProp,
                 </button>
               </div>
 
-              <div className="mx-3 h-[2px] bg-[#e5e7eb] flex-shrink-0" />
+              <div className="m-2 mx-2 h-[2px] bg-[#f0f0f0] flex-shrink-0" />
 
               {/* Group cards */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -958,9 +958,6 @@ setViewMode: setViewModeProp,
                       }`}>
                       <div className="flex items-center justify-between mb-2">
                         <span className={`text-xs font-semibold ${isSelected ? 'text-[#d9506b]' : 'text-[#1a1a2e]'}`}>{group.name}</span>
-                        <span className={`px-1.5 py-0.5 text-[9px] rounded-full font-medium flex-shrink-0 ${
-                          group.status === 'active' ? 'bg-[#9AB17A]/15 text-[#9AB17A]' : 'bg-gray-100 text-[#9ca3af]'
-                        }`}>{group.status === 'active' ? '활성' : '보관'}</span>
                       </div>
                       <div className="flex flex-wrap gap-1 mb-2">
                         {(group.scenarios as string[]).map(sid => (

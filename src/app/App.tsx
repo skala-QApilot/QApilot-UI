@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import ScenarioNetworkGraph from './components/ScenarioNetworkGraph';
-import { PageTitle } from './components/common/PageTitle';
 import { StatusIcon } from './components/common/StatusIcon';
 import { SubHeader } from './components/common/SubHeader';
 import { LeftNavigation } from './components/common/LeftNavigation';
@@ -12,7 +11,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import {
-  Bell, ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Clock, Plus,
   Eye, AlertCircle, CheckCircle, X,
   RotateCcw, Pause, ChevronLeft, Send,
@@ -33,6 +32,7 @@ import {
   mockTestLogs,
   type TestCaseMap,
 } from './data/mockData';
+const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
 
 // ── App ────────────────────────────────────────────────────────────────────────
 
@@ -308,19 +308,19 @@ export default function App() {
           {/* 말풍선 꼬리 */}
           <div className="w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-l-[8px] border-l-[#3615CF] -ml-px flex-shrink-0" />
         </div>
-        {/* 캐릭터 플레이스홀더 — 추후 이미지로 교체 */}
-        <div className="w-9 h-9 rounded-full bg-[#eee9ff] border-2 border-[#3615CF]/20 flex items-center justify-center text-[18px] select-none">
-          🐱
-        </div>
-        <div className="relative">
-          <button onClick={() => setNotificationOpen(!notificationOpen)} className="p-2 hover:bg-gray-100 rounded-full relative transition-colors">
-            <Bell className="w-5 h-5 text-[#374151]" />
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => setNotificationOpen(prev => !prev)}
+            className="relative w-11 h-11 rounded-full  flex items-center justify-center select-none focus:outline-none focus:ring-2 focus:ring-[#3615CF]/20"
+            aria-label="알람 열기"
+          >
+            <img src={qapilotAgent} alt="QApilot" className="w-full h-full object-cover" />
             {unreadNotifications > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-[#3615CF] text-white text-[9px] rounded-full flex items-center justify-center font-bold">
+              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-[#3615CF] text-white text-[10px] rounded-full flex items-center justify-center font-bold shadow-sm">
                 {unreadNotifications}
               </span>
             )}
-          </button>
+          </button> 
           {notificationOpen && (
             <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-[#e5e7eb] z-50">
               <div className="p-4 border-b border-[#f0f0f0] font-semibold text-[#1a1a2e]">알림</div>
@@ -346,7 +346,7 @@ export default function App() {
       return (
         <button
           onClick={() => setAiPanelOpen(true)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 w-10 h-32 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded-l-lg shadow-lg flex items-center justify-center z-40 hover:w-12 transition-all"
+          className="fixed right-0 top-1/2 -translate-y-1/2 w-10 h-32 bg-[#3615CF] text-white rounded-l-lg shadow-lg flex items-center justify-center z-40 hover:w-12 transition-all"
           style={{ writingMode: 'vertical-rl' }}
         >
           <span className="text-sm font-semibold">시나리오 관리봇</span>
@@ -355,7 +355,7 @@ export default function App() {
     }
     return (
       <div className="w-80 h-full bg-white border-l border-[#f0f0f0] flex flex-col shadow-lg flex-shrink-0">
-        <div className="p-4 border-b border-[#f0f0f0] flex justify-between items-center bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10">
+        <div className="p-4 border-b border-[#f0f0f0] flex justify-between items-center bg-[#EBEBFA]">
           <div className="font-semibold text-[#1a1a2e]">시나리오 관리봇</div>
           <button onClick={() => setAiPanelOpen(false)} className="p-1 hover:bg-white/50 rounded">
             <ChevronRight className="w-5 h-5 text-[#6b7280]" />
@@ -367,7 +367,7 @@ export default function App() {
               <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[85%] p-3 rounded-lg text-sm ${
                   msg.role === 'user'
-                    ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white'
+                    ? 'bg-[#EBEBFA] text-[#3615CF]'
                     : 'bg-gray-100 text-[#1a1a2e]'
                 }`}>{msg.text}</div>
               </div>
@@ -396,11 +396,11 @@ export default function App() {
             <input
               type="text" value={aiInput} onChange={e => setAiInput(e.target.value)}
               placeholder="예) 사용자가 이메일로 로그인하는 시나리오를 만들어줘"
-              className="flex-1 p-2 border border-[#f0f0f0] rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#f78ca0]/20"
+              className="flex-1 p-2 border border-[#f0f0f0] rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#3615CF]/20"
               onKeyDown={e => { if (e.key === 'Enter' && aiInput.trim()) sendAiMessage(aiInput); }}
             />
             <button onClick={() => { if (aiInput.trim()) sendAiMessage(aiInput); }}
-              className="p-2 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded hover:shadow-md transition-shadow">
+              className="p-2 bg-[#3615CF] text-white rounded hover:shadow-md transition-shadow">
               <Send className="w-4 h-4" />
             </button>
           </div>
@@ -456,7 +456,7 @@ export default function App() {
                 <button
                   onClick={() => setScenarioViewMode(scenarioViewMode === 'table' ? 'graph' : 'table')}
                   title={scenarioViewMode === 'table' ? '그래프 보기' : '목록 보기'}
-                  className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${
+                  className={`inline-flex h-7 items-center justify-center rounded-lg px-2 text-xs leading-none transition-colors ${
                     scenarioViewMode === 'graph'
                       ? 'bg-[#3615CF] text-white'
                       : 'text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/8'
@@ -466,19 +466,19 @@ export default function App() {
                 <div className="w-px h-4 bg-[#e5e7eb]" />
                 <button
                   onClick={() => setShowLinkedFiles(true)}
-                  className="flex items-center gap-1.5 px-2 py-1 text-xs text-[#6b7280] hover:text-[#1a1a2e] rounded-lg hover:bg-black/5 transition-colors">
+                  className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs leading-none text-[#6b7280] hover:text-[#6b7280] hover:bg-[#fef3c7] transition-colors">
                   <FolderOpen className="w-3.5 h-3.5" /> Files
                 </button>
                 <button
                   onClick={triggerCodeChangeDetection}
                   disabled={codeChangeDetected}
-                  className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-lg transition-colors ${
+                  className={`inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs leading-none transition-colors ${
                     codeChangeDetected
-                      ? 'text-blue-600 bg-blue-50'
-                      : 'text-[#6b7280] hover:text-[#1a1a2e] hover:bg-black/5'
+                      ? 'text-[#6b7280] bg-[#fef3c7]'
+                      : 'text-[#6b7280] hover:text-[#6b7280] hover:bg-[#fef3c7]'
                   }`}>
                   <GitBranch className="w-3.5 h-3.5" /> 코드 변경 탐지
-                  {codeChangeDetected && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                  {codeChangeDetected && <span className="w-1.5 h-1.5 rounded-full bg-[#6b7280]" />}
                 </button>
               </div>
             ) : undefined}
@@ -701,22 +701,6 @@ export default function App() {
             }}
           />
 
-          {/* Quick chips panel */}
-          {chatbarActive && quickChipsOpen && (
-            <div
-              className="fixed z-50 flex flex-col gap-1.5"
-              style={{ bottom: '5rem', left: 'calc(3.5rem + 1rem)' }}
-            >
-              {['엣지 케이스 추가', 'TC 세분화', '시나리오 생성', '오류 분석'].map(chip => (
-                <button key={chip}
-                  onClick={() => { setAiInput(chip); setQuickChipsOpen(false); setChatPanelExpanded(true); }}
-                  className="px-4 py-2 bg-white rounded-full shadow-lg border border-[#f0f0f0] text-sm text-[#1a1a2e] hover:shadow-xl hover:border-[#f78ca0]/30 text-left transition-all">
-                  {chip}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Chat history panel */}
           {chatbarActive && chatHistoryPanelOpen && (
             <div
@@ -763,7 +747,7 @@ export default function App() {
               }}
             >
               <style>{`@keyframes slideUpFade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }`}</style>
-              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0 bg-gradient-to-r from-[#f78ca0]/5 to-[#fe9a8b]/5">
+              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0 bg-[#EBEBFA]/40">
                 <span className="text-sm font-semibold text-[#1a1a2e]">시나리오 관리봇</span>
                 <button onClick={() => setChatPanelExpanded(false)} className="p-1 hover:bg-gray-100 rounded">
                   <ChevronDown className="w-4 h-4 text-[#9ca3af]" />
@@ -775,7 +759,7 @@ export default function App() {
                     <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed ${
                         msg.role === 'user'
-                          ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white'
+                          ? 'bg-[#EBEBFA] text-[#3615CF]'
                           : 'bg-gray-100 text-[#1a1a2e]'
                       }`}>{msg.text}</div>
                     </div>
@@ -788,7 +772,7 @@ export default function App() {
                               setHighlightedBotRow('tc-TS1_TC2');
                               setTimeout(() => setHighlightedBotRow(null), 2000);
                             }}
-                            className="px-2.5 py-1 text-xs bg-white border border-[#f0f0f0] rounded-full hover:bg-gray-50 hover:border-[#f78ca0]/30 transition-colors">
+                            className="px-2.5 py-1 text-xs bg-white border border-[#f0f0f0] rounded-full hover:bg-gray-50 hover:border-[#3615CF]/30 transition-colors">
                             {label}
                           </button>
                         ))}
@@ -814,15 +798,28 @@ export default function App() {
             <div className="flex items-center gap-2 w-full max-w-2xl px-4">
 
               {/* (+) outside-left: quick chips */}
-              <button
-                onClick={() => { setQuickChipsOpen(p => !p); setChatHistoryPanelOpen(false); }}
-                className={`w-10 h-10 rounded-full shadow-lg border flex items-center justify-center flex-shrink-0 transition-all hover:shadow-xl ${
-                  quickChipsOpen
-                    ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white border-transparent'
-                    : 'bg-white border-[#f0f0f0] text-[#6b7280] hover:border-[#f78ca0]/30'
-                }`}>
-                <Plus className="w-5 h-5" />
-              </button>
+              <div className="relative flex-shrink-0">
+                {chatbarActive && quickChipsOpen && (
+                  <div className="absolute z-50 flex flex-col gap-1.5 right-full bottom-0 mr-3">
+                    {['엣지 케이스 추가', 'TC 세분화', '시나리오 생성', '오류 분석'].map(chip => (
+                      <button key={chip}
+                        onClick={() => { setAiInput(chip); setQuickChipsOpen(false); setChatPanelExpanded(true); }}
+                        className="w-max min-w-[132px] px-4 py-2.5 bg-white rounded-full shadow-lg border border-[#f0f0f0] text-[13px] font-semibold text-[#1a1a2e] whitespace-nowrap hover:shadow-xl hover:border-[#3615CF]/30 text-left transition-all">
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => { setQuickChipsOpen(p => !p); setChatHistoryPanelOpen(false); }}
+                  className={`w-10 h-10 rounded-full shadow-lg border flex items-center justify-center transition-all hover:shadow-xl ${
+                    quickChipsOpen
+                      ? 'bg-[#3615CF] text-white border-transparent'
+                      : 'bg-white border-[#f0f0f0] text-[#6b7280] hover:border-[#3615CF]/30'
+                  }`}>
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
 
               {/* Pill bar */}
               <div className="flex-1 flex items-center bg-white rounded-full shadow-xl border border-[#f0f0f0] px-4 py-2.5 gap-3 hover:shadow-2xl transition-shadow">
@@ -830,7 +827,7 @@ export default function App() {
                 {/* History toggle — inside-left */}
                 <button
                   onClick={() => { setChatHistoryPanelOpen(p => !p); setQuickChipsOpen(false); }}
-                  className={`flex-shrink-0 transition-colors p-0.5 rounded-full ${chatHistoryPanelOpen ? 'text-[#f78ca0]' : 'text-[#9ca3af] hover:text-[#6b7280]'}`}
+                  className={`flex-shrink-0 transition-colors p-0.5 rounded-full ${chatHistoryPanelOpen ? 'text-[#3615CF]' : 'text-[#9ca3af] hover:text-[#6b7280]'}`}
                   title="대화 히스토리">
                   <History className="w-4 h-4" />
                 </button>
@@ -840,7 +837,7 @@ export default function App() {
 
                 {/* Context tag (pink) — shown when clicking speech bubble on a row */}
                 {chatContextTag && (
-                  <div className="flex items-center gap-1 px-2.5 py-0.5 bg-[#f78ca0]/15 text-[#f78ca0] rounded-full text-xs flex-shrink-0 max-w-[200px] border border-[#f78ca0]/20">
+                  <div className="flex items-center gap-1 px-2.5 py-0.5 bg-[#EBEBFA] text-[#3615CF] rounded-full text-xs flex-shrink-0 max-w-[200px] border border-[#3615CF]/20">
                     <span className="truncate font-medium">{chatContextTag}</span>
                     <button onClick={() => setChatContextTag(null)} className="flex-shrink-0 ml-0.5 opacity-60 hover:opacity-100">
                       <X className="w-3 h-3" />
@@ -875,7 +872,7 @@ export default function App() {
                   onClick={() => { if (aiInput.trim()) { sendAiMessage(aiInput); setChatPanelExpanded(true); } }}
                   className={`p-1.5 rounded-full flex-shrink-0 transition-all ${
                     aiInput.trim()
-                      ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white shadow-sm hover:shadow-md'
+                      ? 'bg-[#3615CF] text-white shadow-sm hover:shadow-md'
                       : 'bg-gray-100 text-[#c4c9d4]'
                   }`}>
                   <Send className="w-4 h-4" />
