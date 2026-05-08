@@ -129,11 +129,8 @@ setShowCompletionModal,
               </button>
             </div>
           ) : (
-            <div className="px-3 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-[#1a1a2e]">진행중</span>
-                <span className="px-2 py-0.5 bg-gradient-to-r from-[#f78ca0]/20 to-[#fe9a8b]/20 text-[#f78ca0] text-xs rounded-full font-medium">{activeRuns.length}건</span>
-              </div>
+            <div className="px-3 py-2 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
+              <span className="px-2 py-0.5 bg-[#3d35d0]/10 text-[#3d35d0] text-xs rounded-full font-medium">{activeRuns.length}건</span>
               <button onClick={() => setSidebarCollapsed(true)}
                 className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-100 text-[#9ca3af]"
                 title="접기">

@@ -1,7 +1,7 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
 import {
-  AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  Eye, Loader2, Pause, Play, RotateCcw, Search, XCircle,
+  AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronRight,
+  Eye, Loader2, Pause, Play, RotateCcw, XCircle,
 } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import RobotNarrator from '../components/RobotNarrator';
@@ -51,7 +51,7 @@ interface ExecutionHistoryPageProps {
 
 export const ExecutionHistoryPage = ({
   historyFilter,
-  setHistoryFilter,
+  setHistoryFilter: _setHistoryFilter,
   selectedExecutionId,
   setSelectedExecutionId,
   selectedFailTC,
@@ -189,42 +189,8 @@ export const ExecutionHistoryPage = ({
 
   // ── depth 1: running test detail ─────────────────────────────────────────
   if (selectedRunningForDetail) {
-    const run = runningTests.find(r => r.id === selectedRunningForDetail);
-
     return (
       <div className="flex flex-col h-[calc(100vh-4rem)]">
-
-        {/* Back bar */}
-        <div className="bg-white border-b border-[#f0f0f0] px-5 py-3 flex items-center gap-4 flex-shrink-0">
-          <button
-            onClick={() => setSelectedRunningForDetail(null)}
-            className="flex items-center gap-1.5 text-[#6b7280] hover:text-[#1a1a2e]">
-            <ChevronLeft className="w-4 h-4" />
-            <span className="text-sm">이력</span>
-          </button>
-          <div className="w-px h-4 bg-[#e5e7eb]" />
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm">{run?.name ?? '테스트 실행'}</span>
-            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-gradient-to-r from-[#f78ca0]/15 to-[#fe9a8b]/15 rounded-full border border-[#f78ca0]/20">
-              <Loader2 className="w-3 h-3 text-[#f78ca0] animate-spin" />
-              <span className="text-[10px] text-[#f78ca0] font-medium">실행중</span>
-            </div>
-            {run && <span className="text-xs text-[#9ca3af]">시작 {run.startTime}</span>}
-          </div>
-          {/* Pass/fail stacked bar — history page style */}
-          <div className="ml-auto flex items-center gap-3">
-            <div className="flex h-2 w-28 rounded-full overflow-hidden">
-              <div className="bg-[#9AB17A]" style={{ width: `${(passedTCs.length / Math.max(allTCs.length, 1)) * 100}%` }} />
-              <div className="bg-red-400"   style={{ width: `${(failedTCs.length / Math.max(allTCs.length, 1)) * 100}%` }} />
-              <div className="bg-[#f3f4f6] flex-1" />
-            </div>
-            <div className="flex items-center gap-2 text-xs font-mono">
-              <span className="text-[#9AB17A] font-semibold">P{passedTCs.length}</span>
-              <span className="text-red-400 font-semibold">F{failedTCs.length}</span>
-              <span className="text-[#9ca3af]">N{allTCs.length - passedTCs.length - failedTCs.length}</span>
-            </div>
-          </div>
-        </div>
 
         {/* Scenario sidebar + main panel */}
         <div className="flex flex-1 overflow-hidden">
@@ -570,33 +536,6 @@ export const ExecutionHistoryPage = ({
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-white">
 
-      {/* Header */}
-      <div className="border-b border-[#f0f0f0] px-6 py-3 flex items-center gap-3 flex-shrink-0">
-        <div className="font-semibold text-base text-[#1a1a2e]">테스트 결과</div>
-        <div className="text-xs text-[#9ca3af]">총 {filtered.length}건</div>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9ca3af]" />
-            <input type="text" placeholder="그룹명 검색..."
-              className="pl-8 pr-3 py-1.5 border border-[#f0f0f0] rounded text-sm w-44 focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30" />
-          </div>
-          <select
-            value={historyFilter}
-            onChange={e => setHistoryFilter(e.target.value)}
-            className="pl-3 pr-7 py-1.5 border border-[#f0f0f0] rounded text-sm text-[#6b7280] bg-white focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 appearance-none cursor-pointer"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-              backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
-            }}>
-            <option value="ALL">전체</option>
-            <option value="FAIL">FAIL</option>
-            <option value="HITL">HITL</option>
-            <option value="PASS">PASS</option>
-            <option value="미실행">미실행</option>
-          </select>
-        </div>
-      </div>
-
       {/* Graph */}
       <div className="border-b border-[#f0f0f0] px-6 pt-3 pb-2 flex-shrink-0 bg-white">
         <div className="flex items-center justify-between mb-1">
@@ -632,14 +571,6 @@ export const ExecutionHistoryPage = ({
 
         {/* Left: Running tests */}
         <div className="w-60 border-r border-[#f0f0f0] flex flex-col flex-shrink-0 bg-[#F9F9FB]">
-          <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center gap-2 flex-shrink-0">
-            <span className="text-sm font-semibold text-[#1a1a2e]">진행중</span>
-            {activeRunningTests.length > 0 && (
-              <span className="px-2 py-0.5 bg-gradient-to-r from-[#f78ca0]/20 to-[#fe9a8b]/20 text-[#f78ca0] text-xs rounded-full font-medium">
-                {activeRunningTests.length}건
-              </span>
-            )}
-          </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {activeRunningTests.length === 0 && (
               <div className="flex flex-col items-center justify-center h-32 text-center">

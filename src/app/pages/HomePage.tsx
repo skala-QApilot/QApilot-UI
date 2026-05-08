@@ -1,9 +1,7 @@
-import { useState } from 'react';
-import { FileText, Plus } from 'lucide-react';
+import React from 'react';
+import { FileList } from '../components/common/FileList';
 import { Cell, Pie, PieChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { mockExecutionHistory, mockFiles, mockRTMRequirements } from '../data/mockData';
-
-type Tab = 'overview' | 'people' | 'settings';
+import { mockExecutionHistory, mockRTMRequirements } from '../data/mockData';
 
 const mockPassHistory = [
   { date: '4/20', pass: 72, fail: 15, total: 87 },
@@ -23,12 +21,13 @@ const Label = ({ children }: { children: React.ReactNode }) => (
 export function HomePage({
   setCurrentPage,
   navigateToHistory,
+  activeTab = 'overview',
 }: {
   setCurrentPage: (page: string) => void;
   navigateToHistory: (filter: string) => void;
+  activeTab?: string;
 }) {
   void navigateToHistory;
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
 
   const totalReqs = mockRTMRequirements.length;
   const metReqs = mockRTMRequirements.filter(r => r.status === '충족').length;
@@ -44,27 +43,8 @@ export function HomePage({
     { name: '미측정', value: unrunReqs },
   ];
 
-  const TAB_LABELS: Record<Tab, string> = { overview: 'Overview', people: 'People', settings: 'Settings' };
-
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
-      {/* 탭 바 */}
-      <div className="flex-shrink-0 flex items-center gap-1 px-8 pt-6 pb-5 border-b border-[#e5e7eb]">
-        {(Object.keys(TAB_LABELS) as Tab[]).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-5 py-2 rounded-lg text-base font-medium transition-all ${
-              activeTab === tab
-                ? 'bg-[#3615CF] text-white'
-                : 'text-[#6b7280] hover:text-[#374151] hover:bg-gray-50'
-            }`}
-          >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
-      </div>
-
       {activeTab === 'overview' && (
         <div className="flex-1 flex flex-col overflow-y-auto">
 
@@ -148,39 +128,7 @@ export function HomePage({
 
             {/* FILES */}
             <div className="flex-1 min-w-0 px-10 py-9">
-              <div className="flex items-center justify-between mb-4">
-                <Label>Files</Label>
-                <button className="flex items-center gap-1 text-xs text-[#9ca3af] hover:text-[#3615CF] transition-colors">
-                  <Plus className="w-3.5 h-3.5" /> new
-                </button>
-              </div>
-              <div className="space-y-1">
-                {mockFiles.map(file => (
-                  <div key={file.id} className="flex items-center gap-3 py-2.5 group">
-                    <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 text-[#3615CF]" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm text-[#374151]">{file.name}</span>
-                      <span className="text-xs text-[#c4c9d4] ml-2">{file.version}</span>
-                    </div>
-                    {file.reflected ? (
-                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#3615CF]/8 text-[#3615CF] border border-[#3615CF]/20 flex-shrink-0">
-                        반영됨
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#f43b47]/8 text-[#f43b47] border border-[#f43b47]/20">
-                          미반영
-                        </span>
-                        <button className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#3615CF]/8 text-[#3615CF] border border-[#3615CF]/20 hover:bg-[#3615CF]/15">
-                          업데이트
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <FileList />
             </div>
 
             {/* 이력 */}

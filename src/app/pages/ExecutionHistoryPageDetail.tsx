@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import { CheckCircle, ChevronLeft, Download, Eye, RotateCcw, XCircle } from 'lucide-react';
+import { CheckCircle, Eye, RotateCcw, XCircle } from 'lucide-react';
 import { mockExecutionHistory } from '../data/mockData';
 
 type HistoryDetailTab = 'FAIL' | 'PASS';
@@ -95,28 +95,6 @@ export const ExecutionHistoryPageDetail = ({
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
-      <div className="bg-white border-b border-[#f0f0f0] px-5 py-3 flex items-center gap-4 flex-shrink-0">
-        <button onClick={() => { setSelectedExecutionId(null); setSelectedFailTC(null); setRetestCheckedIds(new Set()); setHistoryDetailTab('FAIL'); }}
-          className="flex items-center gap-1.5 text-[#6b7280] hover:text-[#1a1a2e]">
-          <ChevronLeft className="w-4 h-4" />
-          <span className="text-sm">이력</span>
-        </button>
-        <div className="w-px h-4 bg-[#e5e7eb]" />
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-sm">{exec.groupId}</span>
-          <span className="text-xs text-white px-2 py-0.5 rounded-full bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]">{exec.executionNumber}번째 실행</span>
-          <span className="text-xs text-[#9ca3af]">{exec.startDate}</span>
-        </div>
-        <div className="ml-auto flex gap-2">
-          <button className="px-3 py-1.5 bg-white border border-[#f0f0f0] rounded text-xs hover:bg-gray-50 flex items-center gap-1">
-            <Download className="w-3.5 h-3.5" /> PDF
-          </button>
-          <button className="px-3 py-1.5 bg-white border border-[#f0f0f0] rounded text-xs hover:bg-gray-50 flex items-center gap-1">
-            <Download className="w-3.5 h-3.5" /> CSV
-          </button>
-        </div>
-      </div>
-
       <div className="flex flex-1 overflow-hidden">
         <div className="w-64 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
           <div className="px-4 border-b border-[#f0f0f0] flex items-center gap-0 flex-shrink-0">

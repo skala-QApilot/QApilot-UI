@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, LayoutGrid, List, Loader2, Network, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, X, Wand2 } from 'lucide-react';
+import { Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, Play, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Star, Trash2, X } from 'lucide-react';
 import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
 import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
 import { mockRTMData, mockScenarioVersions, mockTestGroups, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
@@ -74,10 +74,12 @@ setRunningTests,
 setTestSubTab,
 setSelectedRunningTestId,
 setSelectedTestGroup,
+viewMode: viewModeProp = 'table',
+setViewMode: setViewModeProp,
 }: ScenarioPageProps) => {
 
-  // View mode: table (full-width list) or graph
-  const [viewMode, setViewMode] = React.useState<'table' | 'graph'>('table');
+  const viewMode = viewModeProp as 'table' | 'graph';
+  const setViewMode = setViewModeProp as (m: 'table' | 'graph') => void;
 
   // 시나리오 생성 오버레이
   const [showGeneratingOverlay, setShowGeneratingOverlay] = React.useState(false);
@@ -331,7 +333,7 @@ setSelectedTestGroup,
           if (e.key === 'Enter') saveSidebarEdit();
           if (e.key === 'Escape') setEditingDetailItem(null);
         }}
-        className={`min-w-0 flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 ${className}`}
+        className={`min-w-0 flex-1 px-1.5 py-0.5 border border-[#3615CF]/50 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#3615CF]/30 ${className}`}
       />
       <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0">
         <CheckCircle className="w-3 h-3 text-white" />
@@ -406,86 +408,12 @@ setSelectedTestGroup,
   );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
-
-      {/* ── Top Toolbar ── */}
-      <div className="bg-white border-b border-[#f0f0f0] px-5 py-2.5 flex items-center gap-3 flex-shrink-0">
-        <span className="font-semibold text-sm text-[#1a1a2e]">시나리오</span>
-        {someSelected && (
-          <span className="px-2 py-0.5 text-xs bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] rounded-full border border-[#f78ca0]/20">
-            {_selectedTCIds.length}개 선택됨
-          </span>
-        )}
-
-        {/* View mode toggle */}
-        <div className="flex items-center rounded-lg border border-[#f0f0f0] overflow-hidden">
-          <button
-            onClick={() => setViewMode('table')}
-            className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-all ${
-              viewMode === 'table'
-                ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] font-medium'
-                : 'text-[#9ca3af] hover:bg-gray-50'
-            }`}>
-            <List className="w-3.5 h-3.5" /> 목록
-          </button>
-          <div className="w-px h-5 bg-[#f0f0f0]" />
-          <button
-            onClick={() => setViewMode('graph')}
-            className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-all ${
-              viewMode === 'graph'
-                ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] font-medium'
-                : 'text-[#9ca3af] hover:bg-gray-50'
-            }`}>
-            <Network className="w-3.5 h-3.5" /> 그래프
-          </button>
-        </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          {/* AI 시나리오 생성 버튼 */}
-          <button
-            onClick={() => setShowGeneratingOverlay(true)}
-            className="px-4 py-1.5 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg text-xs font-medium shadow-sm hover:shadow-md transition-all flex items-center gap-1.5">
-            <Wand2 className="w-3.5 h-3.5" /> AI 시나리오 생성
-          </button>
-          <div className="w-px h-5 bg-[#f0f0f0]" />
-          <button className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
-            <Download className="w-3.5 h-3.5" /> CSV
-          </button>
-          <button onClick={() => { if (someSelected) setShowTestGroupModal(true); }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-              someSelected
-                ? 'bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white shadow-sm hover:shadow-md'
-                : 'bg-white border border-[#f0f0f0] text-[#9ca3af] cursor-default'
-            }`}>
-            <LayoutGrid className="w-3.5 h-3.5" /> 시나리오 그룹 생성
-          </button>
-          <button onClick={() => { setCurrentPage('테스트'); (setTestSubTab as any)?.('HISTORY'); }}
-            className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
-            <Play className="w-3.5 h-3.5" /> E2E TEST
-          </button>
-          <div className="w-px h-5 bg-[#f0f0f0]" />
-          <button onClick={() => setShowLinkedFiles(true)}
-            className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
-            <FolderOpen className="w-3.5 h-3.5" /> Files
-          </button>
-          <button
-            onClick={triggerCodeChangeDetection}
-            disabled={codeChangeDetected}
-            className={`px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all ${
-              codeChangeDetected
-                ? 'bg-blue-50 border border-blue-200 text-blue-600 cursor-wait'
-                : 'bg-white border border-[#f0f0f0] hover:bg-gray-50 text-[#6b7280]'
-            }`}>
-            <GitBranch className="w-3.5 h-3.5" /> 코드 변경 탐지
-            {codeChangeDetected && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />}
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col h-full">
 
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── [1] Version Timeline — 맨 좌측 ── */}
-        <div className="w-14 bg-[#F3F4F6] border-r border-[#e5e7eb] flex flex-col items-center py-4 flex-shrink-0" style={{ overflow: 'visible', zIndex: 20 }}>
+        <div className="w-14 bg-white border-r border-[#e5e7eb] flex flex-col items-center py-4 flex-shrink-0" style={{ overflow: 'visible', zIndex: 20 }}>
           <div className="text-[9px] text-[#9ca3af] font-semibold uppercase tracking-wide mb-4">VER</div>
           <div className="relative flex flex-col items-center w-full" style={{ overflow: 'visible' }}>
             <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-[#e5e7eb]" style={{ zIndex: 0 }} />
@@ -499,8 +427,8 @@ setSelectedTestGroup,
                   <button onClick={() => setSelectedScenarioVersion(latestChange.id)} className="relative flex items-center justify-center">
                     <svg width={20} height={20} style={{ overflow: 'visible' }}>
                       <circle cx={10} cy={10} r={8}
-                        fill={isSelected ? '#f78ca0' : 'white'}
-                        stroke="#f78ca0" strokeWidth={1.5} strokeDasharray="4 2.5" />
+                        fill={isSelected ? '#EBEBFA' : 'white'}
+                        stroke="#3615CF" strokeWidth={1.5} strokeDasharray="4 2.5" />
                     </svg>
                   </button>
                   <span className="text-[8px] text-[#c4c9d4]">{latestChange.date}</span>
@@ -510,7 +438,7 @@ setSelectedTestGroup,
                       onMouseEnter={() => handleVersionEnter(latestChange.id)}
                       onMouseLeave={handleVersionLeave}>
                       <div className="flex items-center gap-1.5 mb-2">
-                        <Sparkles className="w-3.5 h-3.5 text-[#f78ca0]" />
+                        <Sparkles className="w-3.5 h-3.5 text-[#3615CF]" />
                         <span className="text-xs font-semibold text-[#1a1a2e]">변경 감지</span>
                       </div>
                       <div className="text-[10px] text-[#6b7280] mb-3 leading-relaxed">{latestChange.changeDesc}</div>
@@ -519,7 +447,7 @@ setSelectedTestGroup,
                         <button onClick={() => setHoveredVersionId(null)}
                           className="flex-1 px-2 py-1.5 bg-white border border-[#e5e7eb] rounded-lg text-[10px] hover:bg-gray-50 font-medium">No</button>
                         <button onClick={() => setHoveredVersionId(null)}
-                          className="flex-1 px-2 py-1.5 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded-lg text-[10px] font-medium">Yes</button>
+                          className="flex-1 px-2 py-1.5 bg-[#3615CF] text-white rounded-lg text-[10px] font-medium">Yes</button>
                       </div>
                     </div>
                   )}
@@ -535,12 +463,12 @@ setSelectedTestGroup,
                   onMouseLeave={handleVersionLeave}>
                   <button onClick={() => setSelectedScenarioVersion(ver.id)} className="relative flex items-center justify-center">
                     <div className={`w-5 h-5 rounded-full border-2 transition-all ${
-                      isSelected ? 'bg-[#f78ca0] border-[#f78ca0] shadow-md shadow-pink-200' : 'bg-white border-[#d1d5db] hover:border-[#f78ca0]'
+                      isSelected ? 'bg-[#EBEBFA] border-[#3615CF] shadow-md shadow-[#3615CF]/20' : 'bg-white border-[#d1d5db] hover:border-[#3615CF]'
                     }`} />
                     {isFav && <Star className="absolute -right-3 -top-1 w-3 h-3 text-yellow-400 fill-yellow-400" />}
                   </button>
                   {ver.label && (
-                    <span className={`text-[9px] mt-0.5 font-medium leading-none ${isSelected ? 'text-[#f78ca0]' : 'text-[#9ca3af]'}`}>{ver.label}</span>
+                    <span className={`text-[9px] mt-0.5 font-medium leading-none ${isSelected ? 'text-[#3615CF]' : 'text-[#9ca3af]'}`}>{ver.label}</span>
                   )}
                   <span className="text-[8px] text-[#c4c9d4]">{ver.date}</span>
                   {hoveredVersionId === ver.id && (
@@ -586,19 +514,27 @@ setSelectedTestGroup,
           )}
 
           {/* Tree header */}
-          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#f0f0f0] bg-gray-50 flex-shrink-0">
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#f0f0f0] bg-white flex-shrink-0">
             <input type="checkbox" checked={allTCsSelected}
               onChange={e => setSelectedTCIds(e.target.checked ? allTCIds : [])}
-              className="w-3.5 h-3.5 accent-[#f78ca0] flex-shrink-0" />
+              className="w-3.5 h-3.5 accent-[#3615CF] flex-shrink-0" />
+            {someSelected && (
+              <span className="px-1.5 py-0.5 text-[9px] bg-[#3615CF]/10 text-[#3615CF] rounded-full font-medium flex-shrink-0">
+                {_selectedTCIds.length}개
+              </span>
+            )}
+            <button className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#6b7280] hover:text-[#1a1a2e] border border-[#e5e7eb] rounded hover:bg-white transition-colors flex-shrink-0">
+              <Download className="w-3 h-3" /> CSV
+            </button>
             <div className="relative flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#9ca3af]" />
               <input type="text" value={scenarioSearchQuery} onChange={e => setScenarioSearchQuery(e.target.value)}
                 placeholder="검색..."
-                className="w-full pl-6 pr-2 py-1 text-[11px] border border-[#f0f0f0] rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30" />
+                className="w-full pl-6 pr-2 py-1 text-[11px] border border-[#f0f0f0] rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#3615CF]/30" />
             </div>
             <button onClick={() => setScenarioChangeFilter(!scenarioChangeFilter)} title="변경사항 필터"
               className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-                scenarioChangeFilter ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white' : 'text-[#9ca3af] hover:text-[#f78ca0] hover:bg-[#f78ca0]/10'
+                scenarioChangeFilter ? 'bg-[#3615CF] text-white' : 'text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10'
               }`}>
               <Sparkles className="w-3.5 h-3.5" />
             </button>
@@ -684,20 +620,20 @@ setSelectedTestGroup,
 
               const triggerLabel = aiInfo?.trigger === 'chatbot' ? '챗봇 질의' : aiInfo?.trigger === 'file' ? '파일 업데이트' : '코드 변경 감지';
 
-              const tsBadge = isAIItem ? 'bg-purple-100 text-purple-700' : 'bg-[#f78ca0]/10 text-[#f78ca0]';
-              const tcBadge = isAIItem ? 'bg-purple-50 text-purple-500' : 'bg-blue-50 text-blue-500';
+              const tsBadge = isAIItem ? 'bg-purple-100 text-purple-700' : 'bg-[#3615CF]/10 text-[#3615CF]';
+              const tcBadge = isAIItem ? 'bg-purple-50 text-purple-500' : 'bg-[#3615CF]/8 text-[#3615CF]';
 
               const tsRowContent = (
                 <>
                   {/* TS 행 */}
                   <div className={`group flex items-center gap-1.5 px-2 py-2 ${isAIItem ? 'bg-purple-50/60' : 'hover:bg-gray-50'} border-b ${isAIItem ? 'border-purple-100' : 'border-[#f0f0f0]/60'} ${
-                    !isAIItem && selectedScenario === scenario.id ? 'bg-[#f78ca0]/5 border-l-2 border-l-[#f78ca0]' : ''
+                    !isAIItem && selectedScenario === scenario.id ? 'bg-[#3615CF]/5 border-l-2 border-l-[#3615CF]' : ''
                   }`}>
                     {isAIItem && <Sparkles className="w-3 h-3 text-purple-500 flex-shrink-0" />}
                     <input type="checkbox" checked={tsAllSel}
                       ref={el => { if (el) el.indeterminate = tsSomeSel && !tsAllSel; }}
                       onChange={() => toggleTSSelection(scenario.id)}
-                      className="w-3.5 h-3.5 accent-[#f78ca0] flex-shrink-0"
+                      className="w-3.5 h-3.5 accent-[#3615CF] flex-shrink-0"
                       onClick={e => e.stopPropagation()} />
                     <button onClick={e => { e.stopPropagation(); setExpandedTSForTC(prev => prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]); }} className="flex-shrink-0">
                       {isExpanded ? <ChevronDown className={`w-3.5 h-3.5 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3.5 h-3.5 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} />}
@@ -760,10 +696,10 @@ setSelectedTestGroup,
                     const frEntries = mockRTMData.filter(r => r.ts === scenario.id && r.tc === tc.id);
                     return (
                       <div key={tc.id}>
-                        <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/30 border-purple-100/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#f78ca0]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
+                        <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/30 border-purple-100/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#3615CF]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
                           <input type="checkbox" checked={_selectedTCIds.includes(tcKey)}
                             onChange={() => toggleTCSelection(tcKey)}
-                            className="w-3 h-3 accent-[#f78ca0] flex-shrink-0"
+                            className="w-3 h-3 accent-[#3615CF] flex-shrink-0"
                             onClick={e => e.stopPropagation()} />
                           <button onClick={e => { e.stopPropagation(); setExpandedTCMain(prev => prev.includes(tcKey) ? prev.filter(id => id !== tcKey) : [...prev, tcKey]); }} className="flex-shrink-0">
                             {tc.testVariables.length > 0
@@ -781,7 +717,7 @@ setSelectedTestGroup,
                                 <div key={fr.frId} className="relative group/fr flex-shrink-0">
                                   <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-blue-50 text-blue-500 border border-blue-100 cursor-help">{fr.frId}</span>
                                   <div className="absolute bottom-full left-0 mb-1 w-52 bg-[#1a1a2e] text-white text-[10px] rounded-lg px-2.5 py-2 shadow-xl leading-relaxed z-50 hidden group-hover/fr:block pointer-events-none whitespace-normal">
-                                    <div className="font-semibold mb-0.5 text-[9px] text-[#f78ca0]">{fr.frId}</div>
+                                    <div className="font-semibold mb-0.5 text-[9px] text-[#3615CF]">{fr.frId}</div>
                                     {fr.requirement}
                                   </div>
                                 </div>
@@ -838,7 +774,7 @@ setSelectedTestGroup,
 
                                 <input type="checkbox" checked={_selectedTCIds.includes(tvKey)}
                                   onChange={() => toggleTVSelection(tvKey)}
-                                  className="w-3 h-3 accent-[#f78ca0] flex-shrink-0"
+                                  className="w-3 h-3 accent-[#3615CF] flex-shrink-0"
                                   onClick={e => e.stopPropagation()} />
 
                                 {/* TV ID 배지 */}
@@ -858,7 +794,7 @@ setSelectedTestGroup,
                                       <input autoFocus value={editingDetailItem?.value ?? ''}
                                         onChange={e => setEditingDetailItem((prev: any) => prev ? { ...prev, value: e.target.value } : null)}
                                         onKeyDown={e => { if (e.key === 'Enter') saveSidebarEdit(); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                                        className="flex-1 min-w-0 text-[10px] bg-white border border-[#f78ca0]/50 rounded px-1.5 py-0.5 focus:outline-none" />
+                                        className="flex-1 min-w-0 text-[10px] bg-white border border-[#3615CF]/50 rounded px-1.5 py-0.5 focus:outline-none" />
                                       <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
                                       <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
                                     </div>
@@ -876,7 +812,7 @@ setSelectedTestGroup,
                                       {isCopied ? <CheckCircle className="w-2.5 h-2.5" /> : <svg className="w-2.5 h-2.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h8"/></svg>}
                                     </button>
                                     <button onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvKey, value: tv.name }); }}
-                                      title="수정" className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-[#f78ca0] hover:bg-[#f78ca0]/10 transition-colors">
+                                      title="수정" className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
                                       <Edit2 className="w-2.5 h-2.5" />
                                     </button>
                                     <button onClick={e => { e.stopPropagation(); deleteTV(scenario.id, tc.id, tv.id); }}
@@ -936,7 +872,7 @@ setSelectedTestGroup,
         {/* ── 그래프 모드: Left drag handle + Center graph ── */}
         {viewMode === 'graph' && (
           <>
-            <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleLeftDragStart} />
+            <div className="w-1 bg-[#e5e7eb] hover:bg-[#3615CF]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleLeftDragStart} />
             <div
               ref={graphContainerRef}
               className="flex-1 bg-[#F2F3F5] overflow-hidden relative">
@@ -953,7 +889,7 @@ setSelectedTestGroup,
         )}
 
         {/* Right drag handle — always */}
-        <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleRightDragStart} />
+        <div className="w-1 bg-[#e5e7eb] hover:bg-[#3615CF]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleRightDragStart} />
 
         {/* ── [4] Right Panel — 시나리오 그룹 ── */}
         {(() => {
@@ -961,18 +897,55 @@ setSelectedTestGroup,
           return (
             <div className="bg-white border-l border-[#f0f0f0] flex flex-col flex-shrink-0 overflow-hidden" style={{ width: rightPanelWidth }}>
               {/* Header */}
-              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0 bg-gradient-to-r from-[#f78ca0]/5 to-[#fe9a8b]/5">
-                <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">시나리오 그룹</div>
-                {selectedScenarioGroupId && (
-                  <button onClick={() => (setSelectedScenarioGroupId as any)(null)}
-                    className="flex items-center gap-1 text-[10px] text-[#9ca3af] hover:text-[#f78ca0] transition-colors">
-                    <X className="w-3 h-3" /> 필터 해제
-                  </button>
-                )}
+              <div className="px-3 pt-3 pb-2.5 flex flex-col gap-2 flex-shrink-0">
+                {/* 시나리오 그룹 라벨 + 필터 해제 */}
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">시나리오 그룹</div>
+                  {selectedScenarioGroupId && (
+                    <button onClick={() => (setSelectedScenarioGroupId as any)(null)}
+                      className="flex items-center gap-1 text-[10px] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
+                      <X className="w-3 h-3" /> 필터 해제
+                    </button>
+                  )}
+                </div>
+                {/* E2E TEST 실행 */}
+                <button
+                  onClick={() => setCurrentPage('테스트')}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#3615CF] text-white text-xs font-semibold hover:shadow-md hover:bg-[#3615CF]/90 transition-all">
+                  <Play className="w-3.5 h-3.5" />
+                  E2E TEST 실행
+                </button>
+                {/* 그룹 생성 버튼 */}
+                <button
+                  onClick={() => someSelected && setShowTestGroupModal(true)}
+                  className={`w-full py-2 rounded-lg border border-dashed flex items-center justify-center gap-1.5 text-xs transition-all ${
+                    someSelected
+                      ? 'border-[#3615CF]/30 text-[#3615CF] hover:bg-[#EBEBFA]'
+                      : 'border-[#e5e7eb] text-[#c4c9d4] cursor-default'
+                  }`}>
+                  <Plus className="w-3 h-3" />
+                  {someSelected ? `${_selectedTCIds.length}개 TC로 그룹 생성` : 'TC를 선택하면 그룹을 생성할 수 있어요'}
+                </button>
               </div>
+
+              <div className="mx-3 h-[2px] bg-[#e5e7eb] flex-shrink-0" />
 
               {/* Group cards */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {/* 검색바 */}
+                <div className="flex items-center gap-1.5 mb-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#9ca3af]" />
+                    <input
+                      type="text"
+                      placeholder="그룹 검색..."
+                      className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-[#f0f0f0] rounded-lg bg-[#f9f9fb] focus:outline-none focus:ring-1 focus:ring-[#3615CF]/20 focus:bg-white transition-colors"
+                    />
+                  </div>
+                  <button className="w-7 h-7 flex items-center justify-center rounded-lg text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/8 transition-colors flex-shrink-0">
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 {mockTestGroups.map(group => {
                   const isSelected = selectedScenarioGroupId === group.id;
                   return (
@@ -980,8 +953,8 @@ setSelectedTestGroup,
                       onClick={() => (setSelectedScenarioGroupId as any)(isSelected ? null : group.id)}
                       className={`w-full text-left p-3 rounded-lg border transition-all ${
                         isSelected
-                          ? 'border-[#f78ca0] bg-gradient-to-br from-[#f78ca0]/8 to-[#fe9a8b]/8 shadow-sm'
-                          : 'border-[#e5e7eb] hover:border-[#f78ca0]/40 hover:bg-gray-50'
+                          ? 'border-[#3615CF] bg-[#EBEBFA] shadow-sm'
+                          : 'border-[#e5e7eb] hover:border-[#3615CF]/40 hover:bg-gray-50'
                       }`}>
                       <div className="flex items-center justify-between mb-2">
                         <span className={`text-xs font-semibold ${isSelected ? 'text-[#d9506b]' : 'text-[#1a1a2e]'}`}>{group.name}</span>
@@ -992,7 +965,7 @@ setSelectedTestGroup,
                       <div className="flex flex-wrap gap-1 mb-2">
                         {(group.scenarios as string[]).map(sid => (
                           <span key={sid} className={`px-1.5 py-0.5 text-[9px] rounded font-mono font-bold ${
-                            isSelected ? 'bg-[#f78ca0]/15 text-[#f78ca0]' : 'bg-gray-100 text-[#6b7280]'
+                            isSelected ? 'bg-[#EBEBFA] text-[#3615CF]' : 'bg-gray-100 text-[#6b7280]'
                           }`}>{sid}</span>
                         ))}
                       </div>
@@ -1004,7 +977,12 @@ setSelectedTestGroup,
                         ))}
                       </div>
                       {/* Run button */}
-                      <div className="mt-2.5 flex justify-end">
+                      <div className="mt-2.5 flex justify-end gap-1.5">
+                        <button
+                          onClick={e => e.stopPropagation()}
+                          className="flex items-center gap-1 px-2.5 py-1 bg-white border border-[#e5e7eb] text-[#6b7280] rounded text-[10px] font-medium hover:border-[#3615CF]/40 hover:text-[#3615CF] transition-colors">
+                          <Calendar className="w-2.5 h-2.5" /> 예약하기
+                        </button>
                         <button
                           onClick={e => {
                             e.stopPropagation();
@@ -1021,7 +999,7 @@ setSelectedTestGroup,
                             setCurrentPage('테스트');
                             (setTestSubTab as any)('HISTORY');
                           }}
-                          className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded text-[10px] font-medium hover:shadow-md transition-shadow">
+                          className="flex items-center gap-1 px-2.5 py-1 bg-[#EBEBFA] text-[#3615CF] rounded text-[10px] font-medium hover:bg-[#DDDDF5] transition-colors">
                           <Play className="w-2.5 h-2.5" /> 실행
                         </button>
                       </div>
@@ -1029,17 +1007,6 @@ setSelectedTestGroup,
                   );
                 })}
 
-                {/* Create group shortcut */}
-                <button
-                  onClick={() => someSelected && setShowTestGroupModal(true)}
-                  className={`w-full p-3 rounded-lg border border-dashed transition-all flex items-center justify-center gap-1.5 text-xs ${
-                    someSelected
-                      ? 'border-[#f78ca0]/40 text-[#f78ca0] hover:bg-[#f78ca0]/5'
-                      : 'border-[#e5e7eb] text-[#c4c9d4] cursor-default'
-                  }`}>
-                  <Plus className="w-3.5 h-3.5" />
-                  {someSelected ? `${_selectedTCIds.length}개 TC로 그룹 생성` : 'TC를 선택하면 그룹을 생성할 수 있어요'}
-                </button>
               </div>
             </div>
           );
@@ -1062,7 +1029,7 @@ setSelectedTestGroup,
             </div>
             <div className="flex gap-2">
               <button onClick={() => { setShowTestGroupModal(false); setSelectedTCIds([]); }}
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg font-medium">
+                className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium">
                 생성 확인
               </button>
               <button onClick={() => setShowTestGroupModal(false)}

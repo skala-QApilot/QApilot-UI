@@ -34,14 +34,13 @@ export const RTMPage = () => {
       {/* ── Left Panel — FR list ── */}
       <div className="w-72 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
 
-        {/* Header */}
-        <div className="px-5 py-3.5 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
+        {/* Header — RTM 버전 선택 + CSV */}
+        <div className="px-5 py-2.5 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
           <div className="relative">
             <button
               onClick={() => setRtmVersionOpen(!rtmVersionOpen)}
               className="flex items-center gap-1.5 group"
             >
-              <span className="font-semibold text-sm text-[#1a1a2e]">RTM</span>
               <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-100 group-hover:bg-gray-200 transition-colors">
                 <span className="text-[10px] font-medium text-[#6b7280]">{currentRtmVersion.id}</span>
                 <ChevronDown className="w-3 h-3 text-[#9ca3af]" />

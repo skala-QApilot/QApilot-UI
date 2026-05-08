@@ -1,6 +1,5 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
 import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, History, Loader2, Pause, Play, Plus, RotateCcw, Search, X, Clock, Check, XCircle } from 'lucide-react';
-import { PageTitle } from '../components/common/PageTitle';
 import { StatusIcon } from '../components/common/StatusIcon';
 import { mockScenarios, mockTestCases, mockTestGroups, mockTestLogs } from '../data/mockData';
 
@@ -37,7 +36,7 @@ function ScheduleModal({
         <div className="px-6 py-4 border-b border-[#f0f0f0] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-[#9ca3af]" />
-            <span className="font-semibold text-sm text-[#1a1a2e]">테스트 실행 예약</span>
+            <span className="font-bold text-xl text-[#1a1a2e]">테스트 실행 예약</span>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded text-[#9ca3af] hover:text-[#6b7280]">
             <X className="w-4 h-4" />
@@ -252,7 +251,6 @@ setScheduledAlarms,
 
     return (
       <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50">
-        <PageTitle title="시나리오 그룹 관리" />
 
         {/* Controls bar */}
         <div className="bg-white border-b border-[#f0f0f0] px-6 py-3 flex items-center gap-3 flex-shrink-0">

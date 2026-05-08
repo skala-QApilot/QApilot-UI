@@ -65,7 +65,6 @@ src/app/                                      # 앱 UI 소스 루트
 
 - `ScenarioNetworkGraph.tsx`: 시나리오, TC, TV 노드를 네트워크 그래프로 렌더링합니다.
 - `FourColorBar.tsx`: 테스트 결과 비율을 4색 막대로 표현합니다.
-- `PageTitle.tsx`: 페이지 상단 제목 UI를 통일합니다.
 - `StatusIcon.tsx`: 상태값에 따라 성공, 실패, 진행중, 대기 아이콘을 렌더링합니다.
 - `mockData.ts`: 현재 UI에서 사용하는 임시 데이터를 한곳에 모아둔 파일입니다.
 

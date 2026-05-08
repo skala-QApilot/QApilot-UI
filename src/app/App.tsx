@@ -1,7 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ScenarioNetworkGraph from './components/ScenarioNetworkGraph';
 import { PageTitle } from './components/common/PageTitle';
 import { StatusIcon } from './components/common/StatusIcon';
+import { SubHeader } from './components/common/SubHeader';
+import { LeftNavigation } from './components/common/LeftNavigation';
+import { FileList } from './components/common/FileList';
 import { HomePage } from './pages/HomePage';
 import { ExecutionHistoryPage as ExecutionHistoryPageView } from './pages/ExecutionHistoryPage';
 import { RTMPage } from './pages/RTMPage';
@@ -9,18 +12,18 @@ import { SettingsPage } from './pages/SettingsPage';
 import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import {
-  Bell, Play, ChevronDown, ChevronRight, Upload, FileText,
+  Bell, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Clock, Plus,
-  Eye, AlertCircle, CheckCircle, X, Home, Layers,
-  RotateCcw, Pause, ChevronLeft, User, Send,
-  History, CheckSquare, Search, Edit2, MessageCircle,
-  Sparkles, Star, FolderOpen, LayoutGrid,
+  Eye, AlertCircle, CheckCircle, X,
+  RotateCcw, Pause, ChevronLeft, Send,
+  History, BarChart2, Users, Settings,
+  Network, GitBranch,
+  Sparkles, Star, FolderOpen,
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
 import {
   mockAIItems,
   mockAgentTrace,
-  mockFiles,
   mockNotifications,
   mockScenarioHistory,
   mockScenarios,
@@ -38,6 +41,8 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<string>('HOME');
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [, setScenarioSubmenuExpanded] = useState(false);
+  const [homeTab, setHomeTab] = useState('overview');
+  const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
 
   // pipeline header
   const [showAgentTrace, setShowAgentTrace] = useState(false);
@@ -270,72 +275,10 @@ export default function App() {
     }
   };
 
-  // ── LeftNavigation ──────────────────────────────────────────────────────────
-
-  const LeftNavigation = () => {
-    const isTestPage = currentPage === '테스트';
-    const runningCount = runningTests.filter(t => t.status === 'running').length;
-
-    const NavItem = ({
-      icon: Icon, label, active, onClick, badge,
-    }: { icon: React.ElementType; label: string; active: boolean; onClick: () => void; badge?: number }) => (
-      <button
-        onClick={onClick}
-        title={label}
-        className="relative w-full flex items-center justify-center h-[58px] transition-all group"
-      >
-        {active && (
-          <>
-            <div className="absolute inset-0 bg-white rounded-l-2xl" />
-            <div className="absolute pointer-events-none z-10" style={{
-              top: -22, right: 0, width: 22, height: 22,
-              background: '#f2f3f5', borderBottomRightRadius: 22,
-            }} />
-            <div className="absolute pointer-events-none z-10" style={{
-              bottom: -22, right: 0, width: 22, height: 22,
-              background: '#f2f3f5', borderTopRightRadius: 22,
-            }} />
-          </>
-        )}
-        <span className="relative z-10 flex items-center justify-center">
-          <Icon className={`w-6 h-6 transition-colors ${active ? 'text-[#3615CF]' : 'text-[#9ca3af] group-hover:text-[#6b7280]'}`} />
-          {badge !== undefined && badge > 0 && (
-            <span className="absolute -top-1.5 -right-2.5 min-w-[18px] h-[18px] px-0.5 bg-[#3615CF] text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
-              {badge}
-            </span>
-          )}
-        </span>
-      </button>
-    );
-
-    return (
-      <div className="h-full w-[68px] bg-[#f2f3f5] border-r border-[#e5e7eb] flex flex-col pt-4 pb-2.5 flex-shrink-0">
-        <div className="flex-1 flex flex-col items-center justify-center gap-5 pb-16">
-          <NavItem icon={Home} label="홈" active={currentPage === 'HOME'}
-            onClick={() => setCurrentPage('HOME')} />
-          <NavItem icon={Layers} label="시나리오" active={currentPage === '시나리오'}
-            onClick={() => setCurrentPage('시나리오')} />
-          <NavItem icon={RotateCcw} label="이력" active={isTestPage && testSubTab === 'HISTORY'}
-            badge={runningCount}
-            onClick={() => { setCurrentPage('테스트'); setTestSubTab('HISTORY'); }} />
-          <NavItem icon={CheckSquare} label="RTM" active={currentPage === 'RTM'}
-            onClick={() => setCurrentPage('RTM')} />
-        </div>
-        {/* 유저 아이콘 — 하단 고정 */}
-        <button
-          title="프로필"
-          className="w-full flex items-center justify-center h-12 text-[#9ca3af] hover:text-[#6b7280] transition-colors"
-        >
-          <User className="w-5 h-5" />
-        </button>
-      </div>
-    );
-  };
-
   // ── NavBar ──────────────────────────────────────────────────────────────────
 
   const NavBar = () => (
-    <div className="h-[60px] bg-white border-b border-[#e5e7eb] flex items-center px-5 gap-4 z-10 flex-shrink-0">
+    <div className="h-[72px] bg-white border-b border-[#e5e7eb] flex items-center px-5 gap-4 z-10 flex-shrink-0">
       {/* 로고 + 프로젝트 선택 */}
       <div className="flex items-center gap-3 flex-shrink-0">
         <span className="text-[18px] font-extrabold text-[#3615CF] tracking-tight">QApilot</span>
@@ -478,7 +421,13 @@ export default function App() {
       <NavBar />
 
       <div className="flex-1 flex overflow-hidden">
-        <LeftNavigation />
+        <LeftNavigation
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          testSubTab={testSubTab}
+          setTestSubTab={setTestSubTab}
+          runningTests={runningTests}
+        />
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {showAgentTrace && (
@@ -487,13 +436,53 @@ export default function App() {
               onClose={() => setShowAgentTrace(false)}
             />
           )}
-          {/* 페이지 타이틀 바 */}
-          <div className="flex-shrink-0 bg-[#f5f6fa] border-b border-[#e5e7eb] px-6 py-2">
-            <span className="text-sm font-semibold text-[#374151]">
-              {currentPage === 'HOME' ? '대시보드' : currentPage}
-            </span>
-          </div>
-
+          <SubHeader
+            title={
+              currentPage === 'HOME' ? '대시보드' :
+              currentPage === '시나리오' ? '시나리오' :
+              currentPage === '테스트' ? (testSubTab === 'HISTORY' ? '실행 이력' : '테스트 실행') :
+              currentPage === 'RTM' ? 'RTM' :
+              currentPage === '설정' ? '설정' : ''
+            }
+            tabs={currentPage === 'HOME' ? [
+              { key: 'overview', label: 'Overview', icon: BarChart2 },
+              { key: 'people',   label: 'People',   icon: Users, count: 6 },
+              { key: 'settings', label: 'Settings', icon: Settings },
+            ] : undefined}
+            activeTab={homeTab}
+            onTabChange={setHomeTab}
+            rightContent={currentPage === '시나리오' ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setScenarioViewMode(scenarioViewMode === 'table' ? 'graph' : 'table')}
+                  title={scenarioViewMode === 'table' ? '그래프 보기' : '목록 보기'}
+                  className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${
+                    scenarioViewMode === 'graph'
+                      ? 'bg-[#3615CF] text-white'
+                      : 'text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/8'
+                  }`}>
+                  <Network className="w-4 h-4" />
+                </button>
+                <div className="w-px h-4 bg-[#e5e7eb]" />
+                <button
+                  onClick={() => setShowLinkedFiles(true)}
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs text-[#6b7280] hover:text-[#1a1a2e] rounded-lg hover:bg-black/5 transition-colors">
+                  <FolderOpen className="w-3.5 h-3.5" /> Files
+                </button>
+                <button
+                  onClick={triggerCodeChangeDetection}
+                  disabled={codeChangeDetected}
+                  className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-lg transition-colors ${
+                    codeChangeDetected
+                      ? 'text-blue-600 bg-blue-50'
+                      : 'text-[#6b7280] hover:text-[#1a1a2e] hover:bg-black/5'
+                  }`}>
+                  <GitBranch className="w-3.5 h-3.5" /> 코드 변경 탐지
+                  {codeChangeDetected && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                </button>
+              </div>
+            ) : undefined}
+          />
           <div className="flex-1 overflow-hidden flex">
             <div className="flex-1 overflow-hidden">
             {currentPage === 'HOME' && <HomePage setCurrentPage={setCurrentPage} navigateToHistory={navigateToHistory} />}
@@ -564,6 +553,8 @@ export default function App() {
                 setTestSubTab={setTestSubTab}
                 setSelectedRunningTestId={setSelectedRunningTestId}
                 setSelectedTestGroup={setSelectedTestGroup}
+                viewMode={scenarioViewMode}
+                setViewMode={setScenarioViewMode}
               />
             )}
             {currentPage === '테스트' && (
@@ -617,49 +608,18 @@ export default function App() {
       {showLinkedFiles && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowLinkedFiles(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-[#f0f0f0] flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FolderOpen className="w-5 h-5 text-[#6b7280]" />
-                <span className="font-semibold text-[#1a1a2e]">FILES</span>
-              </div>
-              <button
-                className="px-3 py-1.5 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded text-xs flex items-center gap-1">
-                <Plus className="w-3.5 h-3.5" /> 파일 추가
-              </button>
+            <div className="px-8 pt-7 pb-5">
+              <FileList />
             </div>
-            {/* File list */}
-            <div className="px-6 py-4 space-y-3">
-              {mockFiles.map(file => (
-                <div key={file.id} className="flex items-center justify-between p-3 rounded-lg border border-[#f0f0f0] hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-[#6b7280] flex-shrink-0" />
-                    <div>
-                      <div className="font-medium text-sm text-[#1a1a2e]">{file.name}</div>
-                      <div className="text-xs text-[#6b7280]">{file.version} · {file.date}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {file.reflected
-                      ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">시나리오 반영됨</span>
-                      : <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">미반영</span>}
-                    <button className="px-3 py-1 bg-white border border-[#f0f0f0] rounded text-xs hover:bg-gray-50 flex items-center gap-1">
-                      <Upload className="w-3 h-3" /> 업데이트 +
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* Footer buttons */}
-            <div className="px-6 py-4 border-t border-[#f0f0f0] flex items-center gap-3">
+            <div className="px-6 pb-5 flex items-center gap-3">
               <button onClick={() => setShowLinkedFiles(false)}
-                className="flex-1 px-4 py-2 bg-white border border-[#f0f0f0] rounded-lg text-sm hover:bg-gray-50">
-                취소
+                className="flex-1 px-4 py-2 bg-white border border-[#e5e7eb] rounded-lg text-sm hover:bg-gray-50">
+                닫기
               </button>
               <button
                 onClick={() => { setShowLinkedFiles(false); setChatbarActive(true); setChatPanelExpanded(true); setChatContextTag('연관 파일 변경 반영'); }}
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2">
-                수정
+                className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:shadow-md transition-shadow">
+                수정 요청
                 <Sparkles className="w-3.5 h-3.5" />
               </button>
             </div>
