@@ -69,12 +69,19 @@ export const mockTestCases: TestCaseMap = {
       { id: 'TV1', name: '유효한 이메일', status: 'completed' },
       { id: 'TV2', name: '유효한 비밀번호', status: 'completed' },
     ]},
+    { id: 'TC3', name: '로그아웃 성공', status: 'passed', testVariables: [
+      { id: 'TV1', name: '로그아웃 버튼 클릭', status: 'passed' },
+      { id: 'TV2', name: '로그인 화면 이동 확인', status: 'passed' },
+    ]},
     { id: 'TC2', name: '비밀번호 오류', status: 'failed', testVariables: [
       { id: 'TV1', name: '유효한 이메일', status: 'completed' },
       { id: 'TV2', name: '잘못된 비밀번호', status: 'failed' },
     ]},
   ],
   TS2: [
+    { id: 'TC2', name: '검색 결과 노출', status: 'passed', testVariables: [
+      { id: 'TV1', name: '검색 결과 목록 확인', status: 'passed' },
+    ]},
     { id: 'TC1', name: '상품 검색', status: 'running', testVariables: [
       { id: 'TV1', name: '검색어 입력', status: 'running' },
     ]},
