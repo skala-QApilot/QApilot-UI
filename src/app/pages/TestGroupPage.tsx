@@ -1,5 +1,7 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
-import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, History, Loader2, Pause, Play, Plus, RotateCcw, Search, X, Clock, Check, XCircle } from 'lucide-react';
+import { CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, GitBranch, History, List, Loader2, Pause, Play, Plus, RotateCcw, Search, X, Clock, Check, XCircle } from 'lucide-react';
+import { AgentProgressStrip } from '../components/common/AgentProgressStrip';
+import { RuntimeTerminal, TerminalFrame } from '../components/common/RuntimeTerminal';
 import { StatusIcon } from '../components/common/StatusIcon';
 import { mockScenarios, mockTestCases, mockTestGroups, mockTestLogs } from '../data/mockData';
 
@@ -130,7 +132,7 @@ function ScheduleModal({
             취소
           </button>
           <button onClick={() => onSave(time)}
-            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg text-sm font-medium hover:shadow-md transition-shadow">
+            className="flex-1 px-4 py-2.5 bg-primary-blue text-white rounded-lg text-sm font-medium hover:shadow-md transition-shadow">
             예약 생성
           </button>
         </div>
@@ -244,7 +246,7 @@ setScheduledAlarms,
     const totalTCs = filteredGroups.reduce((sum, g) => sum + g.tcCount, 0);
 
     return (
-      <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50">
+      <div className="flex h-full min-h-0 flex-col bg-gray-50">
 
         {/* Controls bar */}
         <div className="bg-white border-b border-[#f0f0f0] px-6 py-3 flex items-center gap-3 flex-shrink-0">
@@ -270,7 +272,7 @@ setScheduledAlarms,
               }`}>
               <Clock className="w-4 h-4" /> 예약 설정
             </button>
-            <button className="px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg text-sm font-medium flex items-center gap-1.5 shadow-sm hover:shadow-md transition-shadow">
+            <button className="px-4 py-2 bg-primary-blue text-white rounded-lg text-sm font-medium flex items-center gap-1.5 shadow-sm hover:shadow-md transition-shadow">
               <Plus className="w-4 h-4" /> 새 시나리오 그룹 생성
             </button>
           </div>
@@ -433,17 +435,20 @@ setScheduledAlarms,
     );
 
     // Resizable sidebar state
-    const [depth1SidebarWidth, setDepth1SidebarWidth] = React.useState(288);
+    const [depth1SidebarWidth, setDepth1SidebarWidth] = React.useState<number | null>(null);
     const depth1DragRef = React.useRef(false);
+    const depth1SidebarRef = React.useRef<HTMLDivElement>(null);
     const depth1StartX = React.useRef(0);
     const depth1StartW = React.useRef(0);
+    const depth1RuntimeLogRef = React.useRef<HTMLDivElement>(null);
     const handleDepth1DragStart = (e: React.MouseEvent) => {
       depth1DragRef.current = true;
       depth1StartX.current = e.clientX;
-      depth1StartW.current = depth1SidebarWidth;
+      depth1StartW.current = depth1SidebarRef.current?.getBoundingClientRect().width ?? 0;
       const onMove = (ev: MouseEvent) => {
         if (!depth1DragRef.current) return;
-        setDepth1SidebarWidth(Math.max(180, Math.min(500, depth1StartW.current + ev.clientX - depth1StartX.current)));
+        const parentWidth = depth1SidebarRef.current?.parentElement?.clientWidth ?? window.innerWidth;
+        setDepth1SidebarWidth(Math.max(240, Math.min(parentWidth - 420, depth1StartW.current + ev.clientX - depth1StartX.current)));
       };
       const onUp = () => { depth1DragRef.current = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
       document.addEventListener('mousemove', onMove);
@@ -451,7 +456,7 @@ setScheduledAlarms,
     };
 
     return (
-      <div className="flex flex-col h-[calc(100vh-4rem)]">
+      <div className="flex h-full min-h-0 flex-col">
         <div className="bg-white border-b border-[#f0f0f0] p-4 flex-shrink-0">
           <button onClick={() => setTestDepth(0)}
             className="flex items-center gap-2 text-[#6b7280] hover:text-[#1a1a2e]">
@@ -460,41 +465,76 @@ setScheduledAlarms,
           </button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Left Sidebar — resizable */}
-          <div className="bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0" style={{ width: depth1SidebarWidth }}>
+          <div ref={depth1SidebarRef} className="bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0 min-h-0" style={{ width: depth1SidebarWidth ?? '50%' }}>
             {/* Tabs: TOTAL / PASS / ⊗ */}
             {(() => {
               const allTCs = mockScenarios.flatMap(s =>
                 (mockTestCases[s.id] || []).map(tc => ({ sId: s.id, sName: s.name, tc }))
               );
-              const passedTCs = allTCs.filter(({ tc }) => tc.status === 'passed');
+              const passedTCs = allTCs.filter(({ tc }) => tc.status === 'passed' || tc.status === 'completed');
               const failedTCs = allTCs.filter(({ tc }) => tc.status === 'failed');
+              const passedByTS = passedTCs.reduce((acc, item) => {
+                if (!acc[item.sId]) acc[item.sId] = [];
+                acc[item.sId].push(item);
+                return acc;
+              }, {} as Record<string, typeof passedTCs>);
+              const failedByTS = failedTCs.reduce((acc, item) => {
+                if (!acc[item.sId]) acc[item.sId] = [];
+                acc[item.sId].push(item);
+                return acc;
+              }, {} as Record<string, typeof failedTCs>);
 
               const scrollToLog = (logIdx: number) => {
                 setHighlightedLogIdx(logIdx);
                 setTimeout(() => {
-                  document.getElementById(`d1-log-${logIdx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  const container = depth1RuntimeLogRef.current;
+                  const target = container?.querySelector<HTMLElement>(`#d1-log-${logIdx}`);
+                  if (!container || !target) return;
+
+                  const containerRect = container.getBoundingClientRect();
+                  const targetRect = target.getBoundingClientRect();
+                  container.scrollTo({
+                    top: container.scrollTop + targetRect.top - containerRect.top - (container.clientHeight / 2) + (target.clientHeight / 2),
+                    behavior: 'smooth',
+                  });
                 }, 50);
               };
 
               return (
                 <>
-                  <div className="flex gap-1 px-3 pt-2.5 border-b border-[#f0f0f0] flex-shrink-0">
-                    {[
-                      { key: 'TOTAL',    label: 'TOTAL' },
-                      { key: 'PASS',     label: `✓ PASS${passedTCs.length ? ` (${passedTCs.length})` : ''}` },
-                      { key: 'FILTERED', label: `⊗ FAIL${failedTCs.length ? ` (${failedTCs.length})` : ''}` },
-                    ].map(tab => (
-                      <button key={tab.key} onClick={() => setScenarioSidebarTab(tab.key as ScenarioSidebarTab)}
-                        className={`px-2.5 py-2 text-xs relative whitespace-nowrap ${scenarioSidebarTab === tab.key ? 'text-[#1a1a2e] font-semibold' : 'text-[#6b7280]'}`}>
-                        {tab.label}
-                        {scenarioSidebarTab === tab.key && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]" />}
-                      </button>
-                    ))}
+                  <div className="flex items-center gap-1 px-3 pt-2.5 border-b border-[#f0f0f0] flex-shrink-0">
+                    <div className="flex min-w-0 flex-1 gap-1">
+                      {[
+                        { key: 'TOTAL',    label: 'TOTAL' },
+                        { key: 'PASS',     label: 'PASS', count: passedTCs.length, color: 'text-status-pass', badge: 'bg-status-pass/15 text-status-pass', underline: 'bg-status-pass' },
+                        { key: 'FILTERED', label: 'FAIL', count: failedTCs.length, color: 'text-status-fail', badge: 'bg-status-fail/15 text-status-fail', underline: 'bg-status-fail' },
+                      ].map(tab => {
+                        const active = scenarioSidebarTab === tab.key;
+                        return (
+                        <button key={tab.key} onClick={() => setScenarioSidebarTab(tab.key as ScenarioSidebarTab)}
+                          className={`px-2.5 py-2 text-xs relative whitespace-nowrap flex items-center gap-1.5 transition-colors ${
+                            active ? (tab.color ?? 'text-[#1a1a2e]') : 'text-[#6b7280] hover:text-[#1a1a2e]'
+                          } font-semibold`}>
+                          {tab.label}
+                          {'count' in tab && (
+                            <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
+                              active ? tab.badge : 'bg-gray-100 text-[#9ca3af]'
+                            }`}>{tab.count}</span>
+                          )}
+                          {active && <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${tab.underline ?? 'bg-primary-blue'}`} />}
+                        </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mb-2 flex flex-shrink-0 overflow-hidden rounded-md border border-[#e5e7eb] bg-white">
+                      <button className="p-1.5 text-primary-blue bg-primary-blue/10" aria-label="목록 보기"><List className="h-3.5 w-3.5" /></button>
+                      <button className="p-1.5 text-[#9ca3af] hover:text-primary-blue" aria-label="흐름 보기"><GitBranch className="h-3.5 w-3.5" /></button>
+                    </div>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-2">
+                  <div className={`flex-1 min-h-0 overflow-y-auto ${scenarioSidebarTab === 'TOTAL' ? 'p-2' : ''}`}>
                     {/* TOTAL tab */}
                     {scenarioSidebarTab === 'TOTAL' && (
                       <div className="space-y-1">
@@ -555,20 +595,28 @@ setScheduledAlarms,
 
                     {/* PASS tab */}
                     {scenarioSidebarTab === 'PASS' && (
-                      <div className="space-y-1 pt-1">
+                      <div>
                         {passedTCs.length === 0 && (
                           <div className="text-center py-10 text-xs text-[#9ca3af]">완료된 테스트케이스 없음</div>
                         )}
-                        {passedTCs.map(({ sId, tc }, idx) => (
-                          <div key={`${sId}_${tc.id}_${idx}`}
-                            className="flex items-center gap-2 p-2 bg-status-pass/5 rounded-lg border border-status-pass/20 cursor-pointer hover:bg-status-pass/10 transition-colors"
-                            onClick={() => scrollToLog(0)}>
-                            <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[10px] text-[#9ca3af]">{sId}</div>
-                              <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
+                        {Object.entries(passedByTS).map(([sId, items]) => (
+                          <div key={sId}>
+                            <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
+                              <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
+                              <span className="text-xs font-semibold text-[#1a1a2e]">{sId}</span>
+                              <span className="ml-auto text-xs text-status-pass">PASS {items.length}</span>
                             </div>
-                            <span className="text-[9px] font-bold bg-status-pass/10 text-status-pass px-1.5 py-0.5 rounded">PASS</span>
+                            {items.map(({ tc }, idx) => (
+                              <div key={`${sId}_${tc.id}_${idx}`}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors border-b border-[#f0f0f0] cursor-pointer hover:bg-gray-50"
+                                onClick={() => scrollToLog(0)}>
+                                <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-medium text-[#1a1a2e] truncate">{tc.id}</div>
+                                  <div className="text-[10px] text-[#9ca3af] truncate">{tc.name}</div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         ))}
                       </div>
@@ -576,23 +624,31 @@ setScheduledAlarms,
 
                     {/* ⊗ FAIL tab */}
                     {scenarioSidebarTab === 'FILTERED' && (
-                      <div className="space-y-1 pt-1">
+                      <div>
                         {failedTCs.length === 0 && (
                           <div className="text-center py-10 text-xs text-[#9ca3af]">실패한 테스트케이스 없음</div>
                         )}
-                        {failedTCs.map(({ sId, tc }, idx) => (
-                          <div key={`${sId}_${tc.id}_${idx}`}
-                            className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-100 cursor-pointer hover:bg-red-50/70 transition-colors"
-                            onClick={() => {
-                              const logIdx = mockTestLogs.findIndex(l => l.isError);
-                              scrollToLog(Math.max(0, logIdx));
-                            }}>
-                            <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[10px] text-[#9ca3af]">{sId}</div>
-                              <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
+                        {Object.entries(failedByTS).map(([sId, items]) => (
+                          <div key={sId}>
+                            <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
+                              <XCircle className="w-3.5 h-3.5 text-status-fail flex-shrink-0" />
+                              <span className="text-xs font-semibold text-[#1a1a2e]">{sId}</span>
+                              <span className="ml-auto text-xs text-status-fail">FAIL {items.length}</span>
                             </div>
-                            <span className="text-[9px] font-bold bg-red-50 text-red-500 px-1.5 py-0.5 rounded border border-red-100">FAIL</span>
+                            {items.map(({ tc }, idx) => (
+                              <div key={`${sId}_${tc.id}_${idx}`}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors border-b border-[#f0f0f0] cursor-pointer hover:bg-gray-50"
+                                onClick={() => {
+                                  const logIdx = mockTestLogs.findIndex(l => l.isError);
+                                  scrollToLog(Math.max(0, logIdx));
+                                }}>
+                                <XCircle className="w-3.5 h-3.5 text-status-fail flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-medium text-[#1a1a2e] truncate">{tc.id}</div>
+                                  <div className="text-[10px] text-[#9ca3af] truncate">{tc.name}</div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         ))}
                       </div>
@@ -603,7 +659,7 @@ setScheduledAlarms,
             })()}
 
             {/* Execution Controls */}
-            <div className="p-4 border-t border-[#f0f0f0] space-y-2">
+            <div className="p-4 border-t border-[#f0f0f0] space-y-2 bg-white flex-shrink-0">
               <div className="flex gap-2 justify-center items-center">
                 <button
                   onClick={() => {
@@ -616,12 +672,12 @@ setScheduledAlarms,
                       setIsTestRunning(true);
                     }
                   }}
-                  className="px-4 py-2 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded-lg text-sm font-medium flex items-center gap-1.5 shadow-sm hover:shadow-md transition-shadow">
+                  className="flex-1 min-w-0 px-3 py-2 bg-primary-blue text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md transition-shadow">
                   {isTestRunning ? <><Pause className="w-4 h-4" /> 정지</> : <><Play className="w-4 h-4" /> 실행</>}
                 </button>
                 <button
                   onClick={() => { setCompletedAgentStages([]); setCurrentAgentStage(''); setIsTestRunning(false); }}
-                  className="px-4 py-2 bg-white border border-[#f0f0f0] rounded-lg text-sm hover:bg-gray-50 flex items-center gap-1.5">
+                  className="flex-1 min-w-0 px-3 py-2 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5">
                   <RotateCcw className="w-4 h-4" /> 전체 재실행
                 </button>
               </div>
@@ -641,140 +697,24 @@ setScheduledAlarms,
           />
 
           {/* Main Panel */}
-          <div className="flex-1 flex overflow-hidden">
-            {/* Test UI Preview (62%) */}
-            <div className="w-[62%] p-4 bg-white border-r border-[#f0f0f0]">
-              <div className="font-semibold mb-3 text-sm">TEST UI Preview</div>
-              <div className="w-full h-[calc(100vh-14rem)] bg-gray-100 rounded border border-[#f0f0f0] flex items-center justify-center">
-                {isTestRunning ? (
-                  <div className="text-center">
-                    <Loader2 className="w-8 h-8 text-[#6b7280] animate-spin mx-auto mb-2" />
-                    <div className="text-sm text-[#6b7280]">실시간 브라우저 화면</div>
-                  </div>
-                ) : (
-                  <div className="text-center text-[#6b7280]">
-                    <Eye className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    <div className="text-sm">테스트 실행 중 실시간 화면이 표시됩니다</div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Test Runtime Log (38%) */}
-            <div className="w-[38%] p-4 bg-gray-50 overflow-y-auto">
-              {/* Agent Progress Bar */}
-              <div className="bg-white rounded-lg shadow-sm border border-[#f0f0f0] p-4 mb-4">
-                <div className="text-[11px] font-semibold text-[#6b7280] mb-3 uppercase tracking-wide">에이전트 실행 흐름</div>
-                <div className="flex items-center w-full gap-2">
-                  {/* Parallel nodes — vertical */}
-                  <div className="flex flex-col gap-2 flex-shrink-0">
-                    {[
-                      { stage: 'UI',  label: 'UI 테스트 Tool', short: 'UI' },
-                      { stage: 'API', label: 'API 추적 Tool',  short: 'AP' },
-                      { stage: 'DB',  label: 'DB 테스트 Tool', short: 'DB' },
-                    ].map(n => {
-                      const st = getNodeStatus(n.stage);
-                      return (
-                        <div key={n.stage} className="flex items-center gap-1.5">
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 transition-all ${
-                            st === 'complete' ? 'bg-status-pass text-white' :
-                            st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
-                            'bg-gray-200 text-gray-400'
-                          }`}>
-                            {st === 'complete' ? <CheckCircle className="w-3 h-3" /> : n.short}
-                          </div>
-                          <span className="text-[10px] text-[#6b7280] whitespace-nowrap">{n.label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* merge connector */}
-                  <div className="text-[#9ca3af] text-sm select-none flex-shrink-0">+</div>
-                  {/* Sequential pipeline */}
-                  <div className="flex flex-col flex-1 min-w-0">
-                    <div className="h-2.5" />
-                    <div className="flex items-center w-full">
-                      {[
-                        { stage: 'Cross-check', label: 'Cross-check', short: 'Cr'  },
-                        { stage: '원인 분석',    label: '원인 분석',    short: '원인' },
-                        { stage: 'Report 생성', label: 'Report 생성', short: 'Re'  },
-                      ].map((node, i) => {
-                        const st = getNodeStatus(node.stage);
-                        const prevDone = i > 0 && completedAgentStages.includes(
-                          ['Cross-check', '원인 분석', 'Report 생성'][i - 1]
-                        );
-                        return (
-                          <React.Fragment key={node.stage}>
-                            {i > 0 && (
-                              <div
-                                className="flex-1 mx-2"
-                                style={{
-                                  height: '2px',
-                                  background: prevDone
-                                    ? '#f78ca0'
-                                    : 'repeating-linear-gradient(to right, #9ca3af 0, #9ca3af 4px, transparent 4px, transparent 10px)',
-                                }}
-                              />
-                            )}
-                            <div className="w-16 flex justify-center flex-shrink-0">
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold transition-all ${
-                                st === 'complete' ? 'bg-status-pass text-white' :
-                                st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
-                                'bg-gray-200 text-gray-400'
-                              }`}>
-                                {st === 'complete' ? <CheckCircle className="w-3.5 h-3.5" /> : node.short}
-                              </div>
-                            </div>
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                    <div className="flex items-start mt-0.5 w-full">
-                      {[
-                        { stage: 'Cross-check', label: 'Cross-check' },
-                        { stage: '원인 분석',    label: '원인 분석'    },
-                        { stage: 'Report 생성', label: 'Report 생성'  },
-                      ].map((node, i) => (
-                        <React.Fragment key={node.stage}>
-                          {i > 0 && <div className="flex-1 mx-2" />}
-                          <div className="w-16 flex justify-center flex-shrink-0">
-                            <span className="text-[8px] text-[#9ca3af] text-center leading-tight">{node.label}</span>
-                          </div>
-                        </React.Fragment>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
+          <div className="flex-1 min-w-0 overflow-hidden bg-gray-50 p-4">
+            <div className="flex h-full min-h-0 flex-col gap-3">
+              <AgentProgressStrip getNodeStatus={getNodeStatus} />
+              <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4">
               {/* Playwright Logs */}
-              <div className="bg-white rounded-lg shadow-sm border border-[#f0f0f0] p-4">
-                <div className="font-semibold mb-3 text-sm">Test Runtime Log</div>
-                <div className="space-y-2">
-                  {mockTestLogs.map((log, idx) => (
-                    <div key={idx} id={`d1-log-${idx}`} className={`p-2.5 rounded text-xs ${
-                      idx === highlightedLogIdx ? 'bg-yellow-50 border-l-4 border-yellow-400' :
-                      log.isError ? 'bg-red-50 border-l-4 border-red-400' :
-                      'bg-gray-50'
-                    }`}>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[#9ca3af]">{log.time}</span>
-                        {log.apiMethod && (
-                          <span>
-                            <span className="font-semibold">{log.apiMethod}</span> {log.endpoint} ·{' '}
-                            <span className={log.status === 200 ? 'text-status-pass' : 'text-status-fail'}>{log.status}</span> · {log.responseTime}
-                          </span>
-                        )}
-                      </div>
-                      <code className="block text-[#1a1a2e]">{log.action}</code>
-                      {log.hitl && (
-                        <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded">
-                          <AlertCircle className="w-3 h-3" /> HITL 플래그
-                        </div>
-                      )}
-                    </div>
-                  ))}
+              <TerminalFrame title="qapilot-preview - zsh" bodyClassName="aspect-video flex items-center justify-center p-4">
+                <div className="text-center text-[#9aa0a6]">
+                  {isTestRunning ? (
+                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+                  ) : (
+                    <Eye className="w-8 h-8 mx-auto mb-3 opacity-70" />
+                  )}
+                  <div className="font-mono text-xs">
+                    {isTestRunning ? '실시간 브라우저 화면' : '테스트 실행 중 실시간 화면이 표시됩니다'}
+                  </div>
                 </div>
+              </TerminalFrame>
+              <RuntimeTerminal logs={mockTestLogs} highlightedLogIdx={highlightedLogIdx} idPrefix="d1-log" scrollContainerRef={depth1RuntimeLogRef} />
               </div>
             </div>
           </div>
@@ -784,19 +724,21 @@ setScheduledAlarms,
         {showCompletionModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-              <CheckCircle2 className="w-12 h-12 text-status-pass mx-auto mb-4" />
+              <CheckCircle2 className="w-12 h-12 text-primary-blue mx-auto mb-4" />
               <div className="font-semibold text-lg mb-2">테스트 실행이 완료되었습니다.</div>
               <div className="text-sm text-[#6b7280] mb-6">결과 페이지로 이동하시겠습니까?</div>
               <div className="flex gap-3">
                 <button onClick={() => {
                   setShowCompletionModal(false);
                   setRunningTests(prev => prev.map(t => t.id === selectedRunningTestId ? { ...t, status: 'completed' } : t));
+                  setSelectedRunningTestId(null);
+                  setTestDepth(0);
                   setCurrentPage('테스트');
                   setTestSubTab('HISTORY');
                   setTestSubmenuExpanded(true);
                   setHistoryFilter('ALL');
                 }}
-                  className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg font-medium">
+                  className="flex-1 px-4 py-2 bg-primary-blue text-white rounded-lg font-medium">
                   이동
                 </button>
                 <button onClick={() => setShowCompletionModal(false)}
@@ -813,4 +755,3 @@ setScheduledAlarms,
 
   return null;
 };
-
