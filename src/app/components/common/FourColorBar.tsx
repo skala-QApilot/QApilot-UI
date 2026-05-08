@@ -17,9 +17,9 @@ export function FourColorBar({
 
   return (
     <div className="flex h-3 rounded-full overflow-hidden bg-gray-100">
-      <div className="bg-[#9AB17A] transition-all" style={{ width: `${(pass / total) * 100}%` }} title={`PASS: ${pass}`} />
+      <div className="bg-status-pass transition-all" style={{ width: `${(pass / total) * 100}%` }} title={`PASS: ${pass}`} />
       <div
-        className={`bg-[#FF9A86] transition-all ${onClickFail ? 'cursor-pointer hover:opacity-80' : ''}`}
+        className={`bg-status-fail transition-all ${onClickFail ? 'cursor-pointer hover:opacity-80' : ''}`}
         style={{ width: `${(fail / total) * 100}%` }}
         onClick={onClickFail}
         title={`FAIL: ${fail}`}

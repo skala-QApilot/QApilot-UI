@@ -34,14 +34,13 @@ export const RTMPage = () => {
       {/* ── Left Panel — FR list ── */}
       <div className="w-72 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
 
-        {/* Header */}
-        <div className="px-5 py-3.5 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
+        {/* Header — RTM 버전 선택 + CSV */}
+        <div className="px-5 py-2.5 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
           <div className="relative">
             <button
               onClick={() => setRtmVersionOpen(!rtmVersionOpen)}
               className="flex items-center gap-1.5 group"
             >
-              <span className="font-semibold text-sm text-[#1a1a2e]">RTM</span>
               <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-100 group-hover:bg-gray-200 transition-colors">
                 <span className="text-[10px] font-medium text-[#6b7280]">{currentRtmVersion.id}</span>
                 <ChevronDown className="w-3 h-3 text-[#9ca3af]" />
@@ -84,7 +83,7 @@ export const RTMPage = () => {
               <PieChart width={120} height={120}>
                 <Pie data={overallPieData} cx={55} cy={55} innerRadius={36} outerRadius={54}
                   dataKey="value" startAngle={90} endAngle={-270} strokeWidth={0}>
-                  <Cell fill="#9AB17A" />
+                  <Cell fill="var(--status-pass)" />
                   <Cell fill="#E5E7EB" />
                 </Pie>
               </PieChart>
@@ -98,14 +97,14 @@ export const RTMPage = () => {
                 <span className="font-semibold text-[#1a1a2e]">{totalReqs}건</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#9AB17A] flex-shrink-0" />
+                <span className="w-2 h-2 rounded-full bg-status-pass flex-shrink-0" />
                 <span className="text-[#9ca3af] w-8">충족</span>
-                <span className="font-semibold text-[#9AB17A]">{metReqs}건</span>
+                <span className="font-semibold text-status-pass">{metReqs}건</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#FF9A86] flex-shrink-0" />
+                <span className="w-2 h-2 rounded-full bg-tertiary-blue flex-shrink-0" />
                 <span className="text-[#9ca3af] w-8">미충족</span>
-                <span className="font-semibold text-[#FF9A86]">{unmetReqs}건</span>
+                <span className="font-semibold text-primary-blue">{unmetReqs}건</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#BFC6C4] flex-shrink-0" />
@@ -121,11 +120,11 @@ export const RTMPage = () => {
           {mockRTMRequirements.map(req => {
             const isActive = selectedFrId === req.frId;
             const pct = req.totalCount > 0 ? Math.round((req.passCount / req.totalCount) * 100) : 0;
-            const fillColor = req.totalCount === 0 ? '#BFC6C4' : req.status === '충족' ? '#9AB17A' : '#FF9A86';
+            const fillColor = req.totalCount === 0 ? '#BFC6C4' : req.status === '충족' ? 'var(--status-pass)' : 'var(--tertiary-blue)';
             const statusLabel = req.totalCount === 0 ? '미실행' : req.status;
             const statusClass = req.totalCount === 0
               ? 'bg-gray-100 text-[#9ca3af]'
-              : req.status === '충족' ? 'bg-green-100 text-[#9AB17A]' : 'bg-red-100 text-[#FF9A86]';
+              : req.status === '충족' ? 'bg-green-100 text-status-pass' : 'bg-tertiary-blue text-primary-blue';
 
             return (
               <button
@@ -185,7 +184,7 @@ export const RTMPage = () => {
           <span className="font-mono text-sm font-bold text-[#1a1a2e]">{selectedFr.frId}</span>
           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
             selectedFr.totalCount === 0 ? 'bg-gray-100 text-[#9ca3af]' :
-            selectedFr.status === '충족' ? 'bg-green-100 text-[#9AB17A]' : 'bg-red-100 text-[#FF9A86]'
+            selectedFr.status === '충족' ? 'bg-green-100 text-status-pass' : 'bg-tertiary-blue text-primary-blue'
           }`}>{selectedFr.totalCount === 0 ? '미실행' : selectedFr.status}</span>
           <span className="text-sm text-[#6b7280] flex-1 min-w-0 truncate">{selectedFr.content}</span>
           <span className="text-xs text-[#9ca3af] flex-shrink-0 font-mono">
@@ -236,7 +235,7 @@ export const RTMPage = () => {
                       </td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          row.pass ? 'bg-green-100 text-[#9AB17A]' : 'bg-red-100 text-[#FF9A86]'
+                          row.pass ? 'bg-green-100 text-status-pass' : 'bg-red-100 text-status-fail'
                         }`}>
                           {row.pass
                             ? <CheckCircle className="w-3 h-3" />

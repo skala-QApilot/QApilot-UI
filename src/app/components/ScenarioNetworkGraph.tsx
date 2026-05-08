@@ -38,13 +38,16 @@ const ZOOM_SHOW_TV = 1.6;   // enter "show-all-TV" mode above this
 const ZOOM_HIDE_TV = 1.35;  // exit  "show-all-TV" mode below this (hysteresis)
 
 // ── node radii + flat style ───────────────────────────────────────────────────
-const BASE_R = { TS: 20, TC: 14, TV: 9 } as const;
+const BASE_R = { TS: 18, TC: 13, TV: 8 } as const;
 
 const STYLE = {
-  TS: { bg: 'rgba(247,140,160,0.14)', bgSel: '#f78ca0', stroke: '#f78ca0', text: '#f78ca0', textSel: '#fff', glow: 'rgba(247,140,160,0.42)' },
-  TC: { bg: 'rgba(107,140,219,0.14)', bgSel: '#6b8cdb', stroke: '#6b8cdb', text: '#6b8cdb', textSel: '#fff', glow: 'rgba(107,140,219,0.38)' },
-  TV: { bg: 'rgba(156,163,175,0.14)', bgSel: '#9ca3af', stroke: '#9ca3af', text: '#9ca3af', textSel: '#fff', glow: 'rgba(156,163,175,0.35)' },
+  TS: { bg: 'rgba(54,21,207,0.08)', bgSel: '#3615CF', stroke: '#3615CF', text: '#2b1e7f', textSel: '#fff', glow: 'rgba(54,21,207,0.28)' },
+  TC: { bg: 'rgba(154,177,122,0.14)', bgSel: '#9AB17A', stroke: '#9AB17A', text: '#5f7250', textSel: '#fff', glow: 'rgba(154,177,122,0.26)' },
+  TV: { bg: 'rgba(148,163,184,0.12)', bgSel: '#94A3B8', stroke: '#94A3B8', text: '#64748b', textSel: '#fff', glow: 'rgba(148,163,184,0.24)' },
 } as const;
+
+const GRAPH_BG = '#f8fafc';
+const GRAPH_MARGIN = 72;
 
 // ── module-level cache: persists across remounts ──────────────────────────────
 // ScenarioPage is an inline component inside App, so it remounts on every
@@ -394,13 +397,13 @@ export default function ScenarioNetworkGraph({
         if (n.pinned) return;
         n.vx *= 0.82; n.vy *= 0.82;
         n.x  += n.vx;  n.y  += n.vy;
-        n.x   = Math.max(n.r * 2, Math.min(width  - n.r * 2, n.x));
-        n.y   = Math.max(n.r * 2, Math.min(height - n.r * 2, n.y));
+        n.x   = Math.max(GRAPH_MARGIN, Math.min(width  - GRAPH_MARGIN, n.x));
+        n.y   = Math.max(GRAPH_MARGIN, Math.min(height - GRAPH_MARGIN, n.y));
       });
 
       // ── render ────────────────────────────────────────────────────────────
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = '#F2F3F5';
+      ctx.fillStyle = GRAPH_BG;
       ctx.fillRect(0, 0, width, height);
 
       ctx.save();
@@ -428,8 +431,8 @@ export default function ScenarioNetworkGraph({
         ctx.beginPath();
         ctx.moveTo(par.x, par.y);
         ctx.lineTo(n.x, n.y);
-        ctx.strokeStyle = isConn && selId ? '#f78ca0' : '#c0c6d0';
-        ctx.lineWidth   = isConn && selId ? 1.5 : 1;
+        ctx.strokeStyle = isConn && selId ? '#3615CF' : '#cbd5e1';
+        ctx.lineWidth   = isConn && selId ? 1.6 : 1;
         if (n.kind === 'TV') ctx.setLineDash([4, 3]);
         ctx.stroke();
         ctx.setLineDash([]);
@@ -451,12 +454,12 @@ export default function ScenarioNetworkGraph({
         ctx.beginPath();
         ctx.moveTo(edge.a.x, edge.a.y);
         ctx.lineTo(edge.b.x, edge.b.y);
-        ctx.strokeStyle = isSelectedFR ? '#f9a84d' : '#e7b96f';
-        ctx.lineWidth = (isSelectedFR ? 2.4 : 1.1) / cam.scale;
+        ctx.strokeStyle = isSelectedFR ? '#f9a84d' : '#d6b37a';
+        ctx.lineWidth = (isSelectedFR ? 2.2 : 1) / cam.scale;
         ctx.setLineDash([7 / cam.scale, 5 / cam.scale]);
         if (isSelectedFR) {
           ctx.shadowBlur = 12 / cam.scale;
-          ctx.shadowColor = 'rgba(249,168,77,0.7)';
+          ctx.shadowColor = 'rgba(249,168,77,0.42)';
         }
         ctx.stroke();
         ctx.setLineDash([]);
@@ -476,10 +479,10 @@ export default function ScenarioNetworkGraph({
         const isHovered  = hoveredIdRef.current === n.id && !isSelected;
         const isFRHL     = frHL.has(n.id);
         const isDirect   = !!connected?.has(n.id);
-        const fillColor  = dimmed ? '#eef0f3' : isSelected ? st.bgSel : st.bg;
-        const strokeColor = dimmed ? '#c7ccd3' : st.stroke;
-        const mainTextColor = dimmed ? '#9aa1aa' : isSelected ? st.textSel : st.text;
-        const nameTextColor = dimmed ? '#9aa1aa' : isSelected ? st.stroke : '#6b7280';
+        const fillColor  = dimmed ? '#edf2f7' : isSelected ? st.bgSel : st.bg;
+        const strokeColor = dimmed ? '#cbd5e1' : st.stroke;
+        const mainTextColor = dimmed ? '#94a3b8' : isSelected ? st.textSel : st.stroke;
+        const nameTextColor = dimmed ? '#94a3b8' : isSelected ? st.stroke : '#475569';
 
         ctx.save();
         ctx.globalAlpha = total;
@@ -502,7 +505,7 @@ export default function ScenarioNetworkGraph({
           ctx.beginPath();
           ctx.arc(n.x, n.y, r + 8 / cam.scale, 0, Math.PI * 2);
           ctx.strokeStyle = st.stroke;
-          ctx.lineWidth   = 3 / cam.scale;
+          ctx.lineWidth   = 2.8 / cam.scale;
           ctx.globalAlpha = total * 0.55;
           ctx.stroke();
           ctx.shadowBlur  = 0;
@@ -511,7 +514,7 @@ export default function ScenarioNetworkGraph({
           ctx.beginPath();
           ctx.arc(n.x, n.y, r + 4 / cam.scale, 0, Math.PI * 2);
           ctx.strokeStyle = st.stroke;
-          ctx.lineWidth   = 1.5 / cam.scale;
+          ctx.lineWidth   = 1.4 / cam.scale;
           ctx.globalAlpha = total * 0.25;
           ctx.stroke();
           ctx.globalAlpha = total;
@@ -531,7 +534,7 @@ export default function ScenarioNetworkGraph({
 
         ctx.shadowBlur  = 0;
         ctx.strokeStyle = strokeColor;
-        ctx.lineWidth   = (isSelected ? 2.6 : isFRHL ? 2.1 : 1.5) / cam.scale;
+        ctx.lineWidth   = (isSelected ? 2.4 : isFRHL ? 2 : 1.3) / cam.scale;
         ctx.stroke();
 
         // Label

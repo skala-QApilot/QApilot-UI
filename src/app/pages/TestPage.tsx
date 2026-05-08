@@ -1,5 +1,6 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
 import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Eye, Loader2, Pause, Play, RotateCcw, XCircle } from 'lucide-react';
+import RobotNarrator from '../components/RobotNarrator';
 import { StatusIcon } from '../components/common/StatusIcon';
 import { mockScenarios, mockTestCases, mockTestLogs, mockExecutionHistory } from '../data/mockData';
 import { ExecutionHistoryPage as ExecutionHistoryPageView } from './ExecutionHistoryPage';
@@ -33,6 +34,8 @@ interface TestPageProps {
   setTestSubTab: Dispatch<SetStateAction<TestSubTab>>;
   historyFilter: string;
   setHistoryFilter: Dispatch<SetStateAction<string>>;
+  historySearchQuery: string;
+  setHistorySearchQuery: Dispatch<SetStateAction<string>>;
   selectedExecutionId: string | null;
   setSelectedExecutionId: Dispatch<SetStateAction<string | null>>;
   selectedFailTC: string | null;
@@ -42,6 +45,8 @@ interface TestPageProps {
   retestCheckedIds: Set<string>;
   setRetestCheckedIds: Dispatch<SetStateAction<Set<string>>>;
   setShowRetestNavModal: Dispatch<SetStateAction<boolean>>;
+  selectedRunningForDetail: string | null;
+  setSelectedRunningForDetail: Dispatch<SetStateAction<string | null>>;
   advanceAgentStage: () => void;
   getNodeStatus: (stage: string) => 'inactive' | 'running' | 'complete';
   showCompletionModal: boolean;
@@ -72,6 +77,8 @@ testSubTab,
 setTestSubTab,
 historyFilter,
 setHistoryFilter,
+historySearchQuery,
+setHistorySearchQuery: _setHistorySearchQuery,
 selectedExecutionId,
 setSelectedExecutionId,
 selectedFailTC,
@@ -81,6 +88,8 @@ setHistoryDetailTab,
 retestCheckedIds,
 setRetestCheckedIds,
 setShowRetestNavModal,
+selectedRunningForDetail,
+setSelectedRunningForDetail,
 advanceAgentStage,
 getNodeStatus,
 showCompletionModal,
@@ -128,11 +137,8 @@ setShowCompletionModal,
               </button>
             </div>
           ) : (
-            <div className="px-3 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-[#1a1a2e]">진행중</span>
-                <span className="px-2 py-0.5 bg-gradient-to-r from-[#f78ca0]/20 to-[#fe9a8b]/20 text-[#f78ca0] text-xs rounded-full font-medium">{activeRuns.length}건</span>
-              </div>
+            <div className="px-3 py-2 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
+              <span className="px-2 py-0.5 bg-[#3d35d0]/10 text-[#3d35d0] text-xs rounded-full font-medium">{activeRuns.length}건</span>
               <button onClick={() => setSidebarCollapsed(true)}
                 className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-100 text-[#9ca3af]"
                 title="접기">
@@ -291,14 +297,14 @@ setShowCompletionModal,
                           )}
                           {passedTCs.map(({ sId, tc }, idx) => (
                             <div key={`${sId}_${tc.id}_${idx}`}
-                              className="flex items-center gap-2 p-2 bg-[#9AB17A]/5 rounded-lg border border-[#9AB17A]/20 cursor-pointer hover:bg-[#9AB17A]/10 transition-colors"
+                              className="flex items-center gap-2 p-2 bg-status-pass/5 rounded-lg border border-status-pass/20 cursor-pointer hover:bg-status-pass/10 transition-colors"
                               onClick={() => scrollToLog(0)}>
-                              <CheckCircle className="w-3.5 h-3.5 text-[#9AB17A] flex-shrink-0" />
+                              <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
                               <div className="flex-1 min-w-0">
                                 <div className="text-[10px] text-[#9ca3af]">{sId}</div>
                                 <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
                               </div>
-                              <span className="text-[9px] font-bold bg-[#9AB17A]/10 text-[#9AB17A] px-1.5 py-0.5 rounded">PASS</span>
+                              <span className="text-[9px] font-bold bg-status-pass/10 text-status-pass px-1.5 py-0.5 rounded">PASS</span>
                             </div>
                           ))}
                         </div>
@@ -384,86 +390,111 @@ setShowCompletionModal,
               </div>
               {/* Test Runtime Log (38%) — 원본과 동일 */}
               <div className="w-[38%] p-4 bg-gray-50 overflow-y-auto">
-                <div className="bg-white rounded-lg shadow-sm border border-[#f0f0f0] p-4 mb-4">
-                  <div className="text-[11px] font-semibold text-[#6b7280] mb-3 uppercase tracking-wide">에이전트 실행 흐름</div>
-                  <div className="flex items-center w-full gap-2">
-                    <div className="flex flex-col gap-2 flex-shrink-0">
-                      {[
-                        { stage: 'UI',  label: 'UI 테스트 Tool', short: 'UI' },
-                        { stage: 'API', label: 'API 추적 Tool',  short: 'AP' },
-                        { stage: 'DB',  label: 'DB 테스트 Tool', short: 'DB' },
-                      ].map(n => {
-                        const st = getNodeStatus(n.stage);
-                        return (
-                          <div key={n.stage} className="flex items-center gap-1.5">
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 transition-all ${
-                              st === 'complete' ? 'bg-[#9AB17A] text-white' :
-                              st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
-                              'bg-gray-200 text-gray-400'
-                            }`}>
-                              {st === 'complete' ? <CheckCircle className="w-3 h-3" /> : n.short}
-                            </div>
-                            <span className="text-[10px] text-[#6b7280] whitespace-nowrap">{n.label}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="text-[#9ca3af] text-sm select-none flex-shrink-0">+</div>
-                    <div className="flex flex-col flex-1 min-w-0">
-                      <div className="h-2.5" />
-                      <div className="flex items-center w-full">
-                        {[
-                          { stage: 'Cross-check', label: 'Cross-check', short: 'Cr'  },
-                          { stage: '원인 분석',    label: '원인 분석',    short: '원인' },
-                          { stage: 'Report 생성', label: 'Report 생성', short: 'Re'  },
-                        ].map((node, i) => {
-                          const st = getNodeStatus(node.stage);
-                          const prevDone = i > 0 && completedAgentStages.includes(
-                            ['Cross-check', '원인 분석', 'Report 생성'][i - 1]
-                          );
-                          return (
-                            <React.Fragment key={node.stage}>
-                              {i > 0 && (
-                                <div
-                                  className="flex-1 mx-2"
-                                  style={{
-                                    height: '2px',
-                                    background: prevDone
-                                      ? '#f78ca0'
-                                      : 'repeating-linear-gradient(to right, #9ca3af 0, #9ca3af 4px, transparent 4px, transparent 10px)',
-                                  }}
-                                />
-                              )}
-                              <div className="w-16 flex justify-center flex-shrink-0">
-                                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold transition-all ${
-                                  st === 'complete' ? 'bg-[#9AB17A] text-white' :
+                {(() => {
+                  // 스테이지별 로봇 대사
+                  const NARRATION: Record<string, { message: string; detail: string }> = {
+                    '':             { message: '테스트 시작을 기다리고 있어요', detail: '실행 버튼을 누르면 에이전트가 깨어납니다' },
+                    'UI':           { message: 'UI 액션을 실행하는 중...', detail: 'Playwright로 버튼 클릭 · 폼 입력 · 화면 검증' },
+                    'API':          { message: 'API 응답을 추적하는 중...', detail: '요청/응답 페어를 검증하고 로그를 기록하고 있어요' },
+                    'DB':           { message: 'DB 상태를 검증하는 중...', detail: '예상 레코드와 실제 DB 데이터를 비교해요' },
+                    'Cross-check':  { message: 'UI · API · DB를 교차 검증하는 중...', detail: '세 레이어 간 일관성 이상이 없는지 확인해요' },
+                    '원인 분석':     { message: '실패 원인을 분석하는 중...', detail: '스택 트레이스 · 로그 · 코드 diff를 종합해요' },
+                    'Report 생성':  { message: '테스트 리포트를 작성하는 중...', detail: 'PASS/FAIL 요약과 재현 단계를 정리하고 있어요' },
+                  };
+                  const narration = NARRATION[currentAgentStage] ?? NARRATION[''];
+                  return (
+                    <div className="bg-white rounded-lg shadow-sm border border-[#f0f0f0] p-4 mb-4">
+                      <div className="text-[11px] font-semibold text-[#6b7280] mb-3 uppercase tracking-wide">에이전트 실행 흐름</div>
+
+                      {/* ── 기존 플로우 다이어그램 ── */}
+                      <div className="flex items-center w-full gap-2 mb-4">
+                        <div className="flex flex-col gap-2 flex-shrink-0">
+                          {[
+                            { stage: 'UI',  label: 'UI 테스트 Tool', short: 'UI' },
+                            { stage: 'API', label: 'API 추적 Tool',  short: 'AP' },
+                            { stage: 'DB',  label: 'DB 테스트 Tool', short: 'DB' },
+                          ].map(n => {
+                            const st = getNodeStatus(n.stage);
+                            return (
+                              <div key={n.stage} className="flex items-center gap-1.5">
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 transition-all ${
+                                  st === 'complete' ? 'bg-status-pass text-white' :
                                   st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
                                   'bg-gray-200 text-gray-400'
                                 }`}>
-                                  {st === 'complete' ? <CheckCircle className="w-3.5 h-3.5" /> : node.short}
+                                  {st === 'complete' ? <CheckCircle className="w-3 h-3" /> : n.short}
                                 </div>
+                                <span className="text-[10px] text-[#6b7280] whitespace-nowrap">{n.label}</span>
                               </div>
-                            </React.Fragment>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
+                        <div className="text-[#9ca3af] text-sm select-none flex-shrink-0">+</div>
+                        <div className="flex flex-col flex-1 min-w-0">
+                          <div className="h-2.5" />
+                          <div className="flex items-center w-full">
+                            {[
+                              { stage: 'Cross-check', label: 'Cross-check', short: 'Cr'  },
+                              { stage: '원인 분석',    label: '원인 분석',    short: '원인' },
+                              { stage: 'Report 생성', label: 'Report 생성', short: 'Re'  },
+                            ].map((node, i) => {
+                              const st = getNodeStatus(node.stage);
+                              const prevDone = i > 0 && completedAgentStages.includes(
+                                ['Cross-check', '원인 분석', 'Report 생성'][i - 1]
+                              );
+                              return (
+                                <React.Fragment key={node.stage}>
+                                  {i > 0 && (
+                                    <div className="flex-1 mx-2" style={{
+                                      height: '2px',
+                                      background: prevDone
+                                        ? '#f78ca0'
+                                        : 'repeating-linear-gradient(to right,#9ca3af 0,#9ca3af 4px,transparent 4px,transparent 10px)',
+                                    }} />
+                                  )}
+                                  <div className="w-16 flex justify-center flex-shrink-0">
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold transition-all ${
+                                      st === 'complete' ? 'bg-status-pass text-white' :
+                                      st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
+                                      'bg-gray-200 text-gray-400'
+                                    }`}>
+                                      {st === 'complete' ? <CheckCircle className="w-3.5 h-3.5" /> : node.short}
+                                    </div>
+                                  </div>
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+                          <div className="flex items-start mt-0.5 w-full">
+                            {[
+                              { stage: 'Cross-check', label: 'Cross-check' },
+                              { stage: '원인 분석',    label: '원인 분석'    },
+                              { stage: 'Report 생성', label: 'Report 생성'  },
+                            ].map((node, i) => (
+                              <React.Fragment key={node.stage}>
+                                {i > 0 && <div className="flex-1 mx-2" />}
+                                <div className="w-16 flex justify-center flex-shrink-0">
+                                  <span className="text-[8px] text-[#9ca3af] text-center leading-tight">{node.label}</span>
+                                </div>
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-start mt-0.5 w-full">
-                        {[
-                          { stage: 'Cross-check', label: 'Cross-check' },
-                          { stage: '원인 분석',    label: '원인 분석'    },
-                          { stage: 'Report 생성', label: 'Report 생성'  },
-                        ].map((node, i) => (
-                          <React.Fragment key={node.stage}>
-                            {i > 0 && <div className="flex-1 mx-2" />}
-                            <div className="w-16 flex justify-center flex-shrink-0">
-                              <span className="text-[8px] text-[#9ca3af] text-center leading-tight">{node.label}</span>
-                            </div>
-                          </React.Fragment>
-                        ))}
-                      </div>
+
+                      {/* ── 구분선 ── */}
+                      <div className="border-t border-[#f0f0f0] -mx-4 mb-3" />
+
+                      {/* ── 로봇 나레이터 ── */}
+                      <RobotNarrator
+                        message={narration.message}
+                        detail={narration.detail}
+                        talking={!!currentAgentStage && isTestRunning}
+                        size="sm"
+                      />
                     </div>
-                  </div>
-                </div>
+                  );
+                })()}
                 <div className="bg-white rounded-lg shadow-sm border border-[#f0f0f0] p-4">
                   <div className="font-semibold mb-3 text-sm">Test Runtime Log</div>
                   <div className="space-y-2">
@@ -478,7 +509,7 @@ setShowCompletionModal,
                           {log.apiMethod && (
                             <span>
                               <span className="font-semibold">{log.apiMethod}</span> {log.endpoint} ·{' '}
-                              <span className={log.status === 200 ? 'text-[#9AB17A]' : 'text-[#FF9A86]'}>{log.status}</span> · {log.responseTime}
+                              <span className={log.status === 200 ? 'text-status-pass' : 'text-status-fail'}>{log.status}</span> · {log.responseTime}
                             </span>
                           )}
                         </div>
@@ -514,6 +545,7 @@ setShowCompletionModal,
         <ExecutionHistoryPageView
           historyFilter={historyFilter}
           setHistoryFilter={setHistoryFilter}
+          historySearchQuery={historySearchQuery}
           selectedExecutionId={selectedExecutionId}
           setSelectedExecutionId={setSelectedExecutionId}
           selectedFailTC={selectedFailTC}
@@ -523,6 +555,30 @@ setShowCompletionModal,
           retestCheckedIds={retestCheckedIds}
           setRetestCheckedIds={setRetestCheckedIds}
           setShowRetestNavModal={setShowRetestNavModal}
+          runningTests={runningTests}
+          setRunningTests={setRunningTests}
+          setSelectedRunningTestId={setSelectedRunningTestId}
+          setSelectedTestGroup={setSelectedTestGroup}
+          selectedRunningForDetail={selectedRunningForDetail}
+          setSelectedRunningForDetail={setSelectedRunningForDetail}
+          isTestRunning={isTestRunning}
+          setIsTestRunning={setIsTestRunning}
+          completedAgentStages={completedAgentStages}
+          setCompletedAgentStages={setCompletedAgentStages}
+          currentAgentStage={currentAgentStage}
+          setCurrentAgentStage={setCurrentAgentStage}
+          scenarioSidebarTab={scenarioSidebarTab}
+          setScenarioSidebarTab={setScenarioSidebarTab}
+          expandedScenarios={expandedScenarios}
+          setExpandedScenarios={setExpandedScenarios}
+          expandedTestCases={expandedTestCases}
+          setExpandedTestCases={setExpandedTestCases}
+          highlightedLogIdx={highlightedLogIdx}
+          setHighlightedLogIdx={setHighlightedLogIdx}
+          advanceAgentStage={advanceAgentStage}
+          getNodeStatus={getNodeStatus}
+          showCompletionModal={showCompletionModal}
+          setShowCompletionModal={setShowCompletionModal}
         />
       )}
       
@@ -530,7 +586,7 @@ setShowCompletionModal,
       {showCompletionModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-            <CheckCircle2 className="w-12 h-12 text-[#9AB17A] mx-auto mb-4" />
+            <CheckCircle2 className="w-12 h-12 text-status-pass mx-auto mb-4" />
             <div className="font-semibold text-lg mb-2">테스트 실행이 완료되었습니다.</div>
             <div className="text-sm text-[#6b7280] mb-6">결과 페이지로 이동하시겠습니까?</div>
             <div className="flex gap-3">

@@ -1,8 +1,9 @@
 import React from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, FolderOpen, GitBranch, History, LayoutGrid, Loader2, MessageCircle, Play, Plus, RotateCcw, Search, Sparkles, Star, Trash2, X } from 'lucide-react';
-import ScenarioNetworkGraph from '../components/ScenarioNetworkGraph';
-import { PageTitle } from '../components/common/PageTitle';
-import { mockRTMData, mockScenarioHistory, mockScenarios, mockScenarioVersions, mockTestCases } from '../data/mockData';
+import { Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, Play, Plus, RotateCcw, Sparkles, Star, Trash2, X } from 'lucide-react';
+import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
+import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
+import { SearchBar } from '../components/common/SearchBar';
+import { mockRTMData, mockScenarioVersions, mockTestGroups, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
 
 interface ScenarioPageProps {
   [key: string]: any;
@@ -68,9 +69,29 @@ triggerCodeChangeDetection,
 ScenarioManagerPanel,
 setCurrentPage,
 setTestDepth,
+selectedScenarioGroupId,
+setSelectedScenarioGroupId,
+setRunningTests,
+setTestSubTab,
+setSelectedRunningTestId,
+setSelectedTestGroup,
+viewMode: viewModeProp = 'table',
+setViewMode: setViewModeProp,
 }: ScenarioPageProps) => {
-  // Resizable left sidebar
-  const [leftSidebarWidth, setLeftSidebarWidth] = React.useState(256);
+
+  const viewMode = viewModeProp as 'table' | 'graph';
+  const setViewMode = setViewModeProp as (m: 'table' | 'graph') => void;
+
+  // 시나리오 생성 오버레이
+  const [showGeneratingOverlay, setShowGeneratingOverlay] = React.useState(false);
+
+  // TV JSON editor state
+  const [tvEditingKey, setTvEditingKey] = React.useState<string | null>(null);
+  const [tvEditContent, setTvEditContent] = React.useState('');
+  const [tvCopied, setTvCopied] = React.useState<string | null>(null);
+
+  // Resizable left sidebar (graph mode only)
+  const [leftSidebarWidth, setLeftSidebarWidth] = React.useState(300);
   const leftDragRef = React.useRef(false);
   const leftStartX = React.useRef(0);
   const leftStartW = React.useRef(0);
@@ -105,41 +126,41 @@ setTestDepth,
     document.addEventListener('mouseup', onUp);
   };
 
-  const tagColors: Record<string, string> = {
-    blue: 'bg-blue-100 text-blue-700',
-    purple: 'bg-purple-100 text-purple-700',
-    gradient: 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white',
-    orange: 'bg-orange-100 text-orange-700',
-  };
+  // typed aliases to suppress implicit-any from loose prop types
+  const _selectedTCIds: string[] = selectedTCIds as string[];
+  const _dynamicScenarios: Array<{ id: string; name: string; tags: string[] }> = dynamicScenarios as any[];
+  const _dynamicTestCases: Record<string, Array<{ id: string; name: string; testVariables: Array<{ id: string; name: string }> }>> = dynamicTestCases as any;
+  const _aiItemActions: Record<string, string> = aiItemActions as Record<string, string>;
+  const _dynamicAIItems: Record<string, { reason: string; trigger: string; timestamp: string }> = dynamicAIItems as any;
 
-  const selectedTCs = selectedTCIds
-    .filter(id => id.split('_').length === 2)
-    .map(id => {
+  const selectedTCs = _selectedTCIds
+    .filter((id: string) => id.split('_').length === 2)
+    .map((id: string) => {
       const [tsId, tcId] = id.split('_');
-      const ts = dynamicScenarios.find(s => s.id === tsId);
-      const tc = (dynamicTestCases[tsId] || []).find(t => t.id === tcId);
+      const ts = _dynamicScenarios.find((s) => s.id === tsId);
+      const tc = (_dynamicTestCases[tsId] || []).find(t => t.id === tcId);
       return { tsId, tcId, tsName: ts?.name, tcName: tc?.name };
     });
 
   const toggleTSSelection = (tsId: string) => {
-    const tsTCs = (dynamicTestCases[tsId] || []).map(tc => `${tsId}_${tc.id}`);
-    const allSelected = tsTCs.every(id => selectedTCIds.includes(id));
+    const tsTCs = (_dynamicTestCases[tsId] || []).map(tc => `${tsId}_${tc.id}`);
+    const allSelected = tsTCs.every((id: string) => _selectedTCIds.includes(id));
     if (allSelected) {
-      setSelectedTCIds(prev => prev.filter(id => !tsTCs.includes(id)));
+      setSelectedTCIds((prev: string[]) => prev.filter((id: string) => !tsTCs.includes(id)));
     } else {
-      setSelectedTCIds(prev => [...new Set([...prev, ...tsTCs])]);
+      setSelectedTCIds((prev: string[]) => [...new Set([...prev, ...tsTCs])]);
     }
   };
 
   const toggleTCSelection = (key: string) => {
-    setSelectedTCIds(prev =>
-      prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
+    setSelectedTCIds((prev: string[]) =>
+      prev.includes(key) ? prev.filter((id: string) => id !== key) : [...prev, key]
     );
   };
 
   const toggleTVSelection = (key: string) => {
-    setSelectedTCIds(prev =>
-      prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
+    setSelectedTCIds((prev: string[]) =>
+      prev.includes(key) ? prev.filter((id: string) => id !== key) : [...prev, key]
     );
   };
 
@@ -150,46 +171,84 @@ setTestDepth,
     'TS1_TC2_TV2': ['입력: 잘못된 비밀번호 (5자 미만)', '기대: 오류 메시지 표시', '코드: 401 Unauthorized'],
   };
 
+  // ── TV 엔드포인트 헬퍼 ────────────────────────────────────────
+  const METHOD_STYLE: Record<HttpMethod, string> = {
+    GET:    'bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/20',
+    POST:   'bg-[#3615CF]/10 text-[#3615CF] border border-[#3615CF]/20',
+    PUT:    'bg-gray-100 text-[#6b7280] border border-gray-200',
+    PATCH:  'bg-gray-100 text-[#6b7280] border border-gray-200',
+    DELETE: 'bg-[#f43b47]/10 text-[#f43b47] border border-[#f43b47]/20',
+  };
+
+  const HTTP_STATUS_TEXT: Record<number, string> = {
+    200: 'OK', 201: 'Created', 204: 'No Content',
+    400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
+    404: 'Not Found', 422: 'Unprocessable Entity', 500: 'Internal Server Error',
+  };
+
+  // 라이트 테마 JSON 구문 강조
+  const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
+    const lines = JSON.stringify(obj, null, 2).split('\n');
+    return (
+      <code className="block font-mono text-[10.5px] leading-[1.7]">
+        {lines.map((line, i) => {
+          const m = line.match(/^(\s*)("[\w\s가-힣\-./[\]_]+")(\s*:\s*)(".*?"|[\d.]+|true|false|null)(,?)$/);
+          if (m) {
+            const isStr = m[4].startsWith('"');
+            return (
+              <div key={i}>
+                <span className="text-slate-400">{m[1]}</span>
+                <span className="text-[#3615CF]">{m[2]}</span>
+                <span className="text-slate-400">{m[3]}</span>
+                <span className={isStr ? 'text-[#3615CF]/70' : 'text-[#f43b47]'}>{m[4]}</span>
+                <span className="text-slate-400">{m[5]}</span>
+              </div>
+            );
+          }
+          return <div key={i}><span className="text-slate-500">{line}</span></div>;
+        })}
+      </code>
+    );
+  };
+
+  const handleTVCopy = (tvKey: string) => {
+    const ep = mockTVEndpoints[tvKey];
+    const text = ep
+      ? JSON.stringify({ method: ep.method, path: ep.path, requestBody: ep.requestBody ?? {}, statusCode: ep.statusCode, responseBody: ep.responseBody ?? {} }, null, 2)
+      : '{}';
+    navigator.clipboard.writeText(text).then(() => {
+      setTvCopied(tvKey);
+      setTimeout(() => setTvCopied(null), 1800);
+    });
+  };
+
+  const handleTVEditSave = (tvId: string, tsId_: string, tcId_: string) => {
+    // tvEditContent는 requestBody JSON이 들어있음
+    try { JSON.parse(tvEditContent); } catch { setTvEditingKey(null); return; }
+    // 이름 변경은 별도이므로 여기서는 편집 종료만 (실제 저장은 확장 가능)
+    setTvEditingKey(null);
+  };
+
   // ── 사이드바 필터링 ────────────────────────────────────────────
-  const filteredScenarios = dynamicScenarios.filter(s => {
-    const q = scenarioSearchQuery.toLowerCase();
+  const filteredScenarios = _dynamicScenarios.filter(s => {
+    const q = (scenarioSearchQuery as string).toLowerCase();
     const matchSearch = !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
-    // AI 필터: dynamicAIItems에 있고 아직 승인/거절 안 된 항목만
-    const isDeferred = aiItemActions[s.id] === 'deferred';
-    const matchChange = !scenarioChangeFilter || (!!dynamicAIItems[s.id] && aiItemActions[s.id] !== 'approved' && aiItemActions[s.id] !== 'rejected' && !isDeferred);
-    return matchSearch && matchChange && !isDeferred;
+    const isDeferred = _aiItemActions[s.id] === 'deferred';
+    const matchChange = !scenarioChangeFilter || (!!_dynamicAIItems[s.id] && _aiItemActions[s.id] !== 'approved' && _aiItemActions[s.id] !== 'rejected' && !isDeferred);
+    const activeGroup = selectedScenarioGroupId ? mockTestGroups.find(g => g.id === selectedScenarioGroupId) : null;
+    const matchGroup = !activeGroup || (activeGroup.scenarios as string[]).includes(s.id);
+    return matchSearch && matchChange && !isDeferred && matchGroup;
   });
-  const deferredAIIds = Object.entries(aiItemActions)
+  const deferredAIIds = Object.entries(_aiItemActions)
     .filter(([, value]) => value === 'deferred')
     .map(([id]) => id);
 
-  // ── ScenarioNetworkGraph 노드 데이터 ─────────────────────────
-  const tsNodesForGraph = mockScenarios.map(s => ({
+  // ── TS 흐름 그래프 노드 데이터 ──────────────────────────────
+  const tsFlowNodes = _dynamicScenarios.map(s => ({
     id: s.id,
     label: s.id,
     name: s.name,
-    frs: mockRTMData.filter(r => r.ts === s.id).map(r => r.frId),
   }));
-  const tcNodesForGraph = Object.entries(mockTestCases).flatMap(([tsId, tcs]) =>
-    tcs.map(tc => ({
-      id: `${tsId}_${tc.id}`,
-      label: tc.id,
-      name: tc.name,
-      frs: mockRTMData.filter(r => r.ts === tsId && r.tc === tc.id).map(r => r.frId),
-      parent: tsId,
-    }))
-  );
-  const tvNodesForGraph = Object.entries(mockTestCases).flatMap(([tsId, tcs]) =>
-    tcs.flatMap(tc =>
-      tc.testVariables.map(tv => ({
-        id: `${tsId}_${tc.id}_${tv.id}`,
-        label: tv.id,
-        name: tv.name,
-        frs: mockRTMData.filter(r => r.ts === tsId && r.tc === tc.id).map(r => r.frId),
-        parent: `${tsId}_${tc.id}`,
-      }))
-    )
-  );
 
   // ResizeObserver로 center 컨테이너 크기를 캔버스에 전달
   const graphContainerRef = React.useRef<HTMLDivElement>(null);
@@ -206,14 +265,12 @@ setTestDepth,
   }, []);
 
   // ── 그래프 ↔ 우측 패널 연동 ──────────────────────────────────
-  // detailPanelRow → graphSelectedId (그래프에 전달)
   const graphSelectedId = detailPanelRow ? (
     detailPanelRow.level === 'TS' ? detailPanelRow.tsId :
     detailPanelRow.level === 'TC' ? `${detailPanelRow.tsId}_${detailPanelRow.tcId}` :
     `${detailPanelRow.tsId}_${detailPanelRow.tcId}_${detailPanelRow.tvId}`
   ) : null;
 
-  // 그래프 노드 클릭 → detailPanelRow 갱신
   const handleGraphNodeSelect = (id: string | null) => {
     if (!id) { setDetailPanelRow(null); return; }
     const parts = id.split('_');
@@ -225,9 +282,6 @@ setTestDepth,
       setDetailPanelRow({ level: 'TV', tsId: parts[0], tcId: parts[1], tvId: parts[2] });
     }
   };
-
-  // ── 사이드바 아이템 메뉴 ──────────────────────────────────────
-  const [openItemMenuId, setOpenItemMenuId] = React.useState<string | null>(null);
 
   // ── 버전 팝업 hover 유지 (timer) ──────────────────────────────
   const versionHoverTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -280,9 +334,9 @@ setTestDepth,
           if (e.key === 'Enter') saveSidebarEdit();
           if (e.key === 'Escape') setEditingDetailItem(null);
         }}
-        className={`min-w-0 flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 ${className}`}
+        className={`min-w-0 flex-1 px-1.5 py-0.5 border border-[#3615CF]/50 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#3615CF]/30 ${className}`}
       />
-      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0">
+      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-status-pass flex-shrink-0">
         <CheckCircle className="w-3 h-3 text-white" />
       </button>
       <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0">
@@ -291,61 +345,79 @@ setTestDepth,
     </div>
   );
 
-  return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]" onClick={() => setOpenItemMenuId(null)}>
+  // ── TS 추가 ──────────────────────────────────────────────────
+  const addNewTS = () => {
+    const newId = `TS${_dynamicScenarios.length + 1}`;
+    setDynamicScenarios(prev => [...prev, { id: newId, name: '새 시나리오', tags: [] }]);
+    setDynamicTestCases(prev => ({ ...prev, [newId]: [] }));
+    setExpandedTSForTC(prev => [...prev, newId]);
+  };
 
-      {/* ── Top Toolbar ── */}
-      <div className="bg-white border-b border-[#f0f0f0] px-5 py-2.5 flex items-center gap-3 flex-shrink-0">
-        <span className="font-semibold text-sm text-[#1a1a2e]">시나리오</span>
-        {someSelected && (
-          <span className="px-2 py-0.5 text-xs bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] rounded-full border border-[#f78ca0]/20">
-            {selectedTCIds.length}개 선택됨
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <button className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
-            <Download className="w-3.5 h-3.5" /> CSV
-          </button>
-          <button onClick={() => { if (someSelected) setShowTestGroupModal(true); }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-              someSelected
-                ? 'bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white shadow-sm hover:shadow-md'
-                : 'bg-white border border-[#f0f0f0] text-[#9ca3af] cursor-default'
-            }`}>
-            <LayoutGrid className="w-3.5 h-3.5" /> 시나리오 그룹 생성
-          </button>
-          <button onClick={() => setCurrentPage('테스트그룹')}
-            className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
-            <Play className="w-3.5 h-3.5" /> E2E TEST
-          </button>
-          <div className="w-px h-5 bg-[#f0f0f0]" />
-          <button onClick={() => setShowLinkedFiles(true)}
-            className="px-4 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
-            <FolderOpen className="w-3.5 h-3.5" /> Files
-          </button>
-          <button
-            onClick={triggerCodeChangeDetection}
-            disabled={codeChangeDetected}
-            className={`px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all ${
-              codeChangeDetected
-                ? 'bg-blue-50 border border-blue-200 text-blue-600 cursor-wait'
-                : 'bg-white border border-[#f0f0f0] hover:bg-gray-50 text-[#6b7280]'
-            }`}>
-            <GitBranch className="w-3.5 h-3.5" /> 코드 변경 탐지
-            {codeChangeDetected && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />}
-          </button>
-        </div>
-      </div>
+  // ── TC 추가 ──────────────────────────────────────────────────
+  const addNewTC = (tsId: string) => {
+    const existing = _dynamicTestCases[tsId] || [];
+    const newId = `TC${existing.length + 1}`;
+    setDynamicTestCases(prev => ({
+      ...prev,
+      [tsId]: [...existing, { id: newId, name: '새 테스트케이스', testVariables: [] }],
+    }));
+    setExpandedTSForTC(prev => prev.includes(tsId) ? prev : [...prev, tsId]);
+  };
+
+  // ── TV 추가 ──────────────────────────────────────────────────
+  const addNewTV = (tsId: string, tcId: string) => {
+    const tcKey = `${tsId}_${tcId}`;
+    setDynamicTestCases(prev => ({
+      ...prev,
+      [tsId]: (prev[tsId] || []).map(tc => {
+        if (tc.id !== tcId) return tc;
+        const newId = `TV${tc.testVariables.length + 1}`;
+        return { ...tc, testVariables: [...tc.testVariables, { id: newId, name: '새 테스트변수' }] };
+      }),
+    }));
+    setExpandedTCMain(prev => prev.includes(tcKey) ? prev : [...prev, tcKey]);
+  };
+
+  // ── TS 삭제 ──────────────────────────────────────────────────
+  const deleteTS = (tsId: string) => {
+    setDynamicScenarios(prev => prev.filter(s => s.id !== tsId));
+    if (detailPanelRow?.tsId === tsId) setDetailPanelRow(null);
+  };
+
+  // ── TC 삭제 ──────────────────────────────────────────────────
+  const deleteTC = (tsId: string, tcId: string) => {
+    setDynamicTestCases(prev => ({
+      ...prev,
+      [tsId]: (prev[tsId] || []).filter(t => t.id !== tcId),
+    }));
+    if (detailPanelRow?.tcId === tcId && detailPanelRow?.tsId === tsId) setDetailPanelRow(null);
+  };
+
+  // ── TV 삭제 ──────────────────────────────────────────────────
+  const deleteTV = (tsId: string, tcId: string, tvId: string) => {
+    setDynamicTestCases(prev => ({
+      ...prev,
+      [tsId]: (prev[tsId] || []).map(t =>
+        t.id === tcId ? { ...t, testVariables: t.testVariables.filter(v => v.id !== tvId) } : t
+      ),
+    }));
+  };
+
+  // 전체 TC ID 목록
+  const allTCIds = _dynamicScenarios.flatMap((s) =>
+    (_dynamicTestCases[s.id] || []).map(tc => `${s.id}_${tc.id}`)
+  );
+
+  return (
+    <div className="flex flex-col h-full">
 
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── [1] Version Timeline — 맨 좌측 ── */}
-        <div className="w-14 bg-[#F3F4F6] border-r border-[#e5e7eb] flex flex-col items-center py-4 flex-shrink-0" style={{ overflow: 'visible', zIndex: 20 }}>
+        <div className="w-14 bg-white border-r border-[#e5e7eb] flex flex-col items-center py-4 flex-shrink-0" style={{ overflow: 'visible', zIndex: 20 }}>
           <div className="text-[9px] text-[#9ca3af] font-semibold uppercase tracking-wide mb-4">VER</div>
-          {/* 수직 연결선 */}
           <div className="relative flex flex-col items-center w-full" style={{ overflow: 'visible' }}>
             <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-[#e5e7eb]" style={{ zIndex: 0 }} />
-            {/* 변경 감지 시 맨 위에만 점선 동그라미 1개 */}
             {mockScenarioVersions.some(v => v.hasChange) && (() => {
               const latestChange = [...mockScenarioVersions].reverse().find(v => v.hasChange)!;
               const isSelected = selectedScenarioVersion === latestChange.id;
@@ -356,8 +428,8 @@ setTestDepth,
                   <button onClick={() => setSelectedScenarioVersion(latestChange.id)} className="relative flex items-center justify-center">
                     <svg width={20} height={20} style={{ overflow: 'visible' }}>
                       <circle cx={10} cy={10} r={8}
-                        fill={isSelected ? '#f78ca0' : 'white'}
-                        stroke="#f78ca0" strokeWidth={1.5} strokeDasharray="4 2.5" />
+                        fill={isSelected ? '#EAE8F9' : 'white'}
+                        stroke="#3615CF" strokeWidth={1.5} strokeDasharray="4 2.5" />
                     </svg>
                   </button>
                   <span className="text-[8px] text-[#c4c9d4]">{latestChange.date}</span>
@@ -367,7 +439,7 @@ setTestDepth,
                       onMouseEnter={() => handleVersionEnter(latestChange.id)}
                       onMouseLeave={handleVersionLeave}>
                       <div className="flex items-center gap-1.5 mb-2">
-                        <Sparkles className="w-3.5 h-3.5 text-[#f78ca0]" />
+                        <Sparkles className="w-3.5 h-3.5 text-[#3615CF]" />
                         <span className="text-xs font-semibold text-[#1a1a2e]">변경 감지</span>
                       </div>
                       <div className="text-[10px] text-[#6b7280] mb-3 leading-relaxed">{latestChange.changeDesc}</div>
@@ -376,7 +448,7 @@ setTestDepth,
                         <button onClick={() => setHoveredVersionId(null)}
                           className="flex-1 px-2 py-1.5 bg-white border border-[#e5e7eb] rounded-lg text-[10px] hover:bg-gray-50 font-medium">No</button>
                         <button onClick={() => setHoveredVersionId(null)}
-                          className="flex-1 px-2 py-1.5 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded-lg text-[10px] font-medium">Yes</button>
+                          className="flex-1 px-2 py-1.5 bg-[#3615CF] text-white rounded-lg text-[10px] font-medium">Yes</button>
                       </div>
                     </div>
                   )}
@@ -390,19 +462,16 @@ setTestDepth,
                 <div key={ver.id} className="relative flex flex-col items-center mb-5" style={{ zIndex: 10, overflow: 'visible' }}
                   onMouseEnter={() => handleVersionEnter(ver.id)}
                   onMouseLeave={handleVersionLeave}>
-                  {/* Dot */}
                   <button onClick={() => setSelectedScenarioVersion(ver.id)} className="relative flex items-center justify-center">
                     <div className={`w-5 h-5 rounded-full border-2 transition-all ${
-                      isSelected ? 'bg-[#f78ca0] border-[#f78ca0] shadow-md shadow-pink-200' : 'bg-white border-[#d1d5db] hover:border-[#f78ca0]'
+                      isSelected ? 'bg-[#EAE8F9] border-[#3615CF] shadow-md shadow-[#3615CF]/20' : 'bg-white border-[#d1d5db] hover:border-[#3615CF]'
                     }`} />
                     {isFav && <Star className="absolute -right-3 -top-1 w-3 h-3 text-yellow-400 fill-yellow-400" />}
                   </button>
                   {ver.label && (
-                    <span className={`text-[9px] mt-0.5 font-medium leading-none ${isSelected ? 'text-[#f78ca0]' : 'text-[#9ca3af]'}`}>{ver.label}</span>
+                    <span className={`text-[9px] mt-0.5 font-medium leading-none ${isSelected ? 'text-[#3615CF]' : 'text-[#9ca3af]'}`}>{ver.label}</span>
                   )}
                   <span className="text-[8px] text-[#c4c9d4]">{ver.date}</span>
-
-                  {/* Popup — 오른쪽으로 열림 */}
                   {hoveredVersionId === ver.id && (
                     <div
                       className="absolute left-full ml-1 top-0 bg-white rounded-xl shadow-2xl border border-[#e5e7eb] p-3 w-52"
@@ -435,21 +504,38 @@ setTestDepth,
           </div>
         </div>
 
-        {/* ── [2] Left Sidebar — TS/TC/TV Tree ── */}
-        <div className="bg-white flex flex-col flex-shrink-0" style={{ width: leftSidebarWidth }}>
-          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#f0f0f0] bg-gray-50 flex-shrink-0">
+        {/* ── [2] TS/TC/TV Tree — table mode: flex-1 / graph mode: fixed width ── */}
+        <div
+          className={`bg-white flex flex-col flex-shrink-0 relative ${viewMode === 'table' ? 'flex-1' : ''}`}
+          style={viewMode === 'graph' ? { width: leftSidebarWidth } : undefined}>
+
+          {/* AI 시나리오 생성 오버레이 — 이 패널 위에만 표시 */}
+          {showGeneratingOverlay && (
+            <ScenarioGeneratingOverlay onComplete={() => setShowGeneratingOverlay(false)} />
+          )}
+
+          {/* Tree header */}
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#f0f0f0] bg-white flex-shrink-0">
             <input type="checkbox" checked={allTCsSelected}
               onChange={e => setSelectedTCIds(e.target.checked ? allTCIds : [])}
-              className="w-3.5 h-3.5 accent-[#f78ca0] flex-shrink-0" />
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#9ca3af]" />
-              <input type="text" value={scenarioSearchQuery} onChange={e => setScenarioSearchQuery(e.target.value)}
-                placeholder="검색..."
-                className="w-full pl-6 pr-2 py-1 text-[11px] border border-[#f0f0f0] rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30" />
-            </div>
+              className="scenario-checkbox w-3.5 h-3.5 flex-shrink-0" />
+            {someSelected && (
+              <span className="px-1.5 py-0.5 text-[9px] bg-[#3615CF]/10 text-[#3615CF] rounded-full font-medium flex-shrink-0">
+                {_selectedTCIds.length}개
+              </span>
+            )}
+            <button className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#6b7280] hover:text-[#1a1a2e] border border-[#e5e7eb] rounded hover:bg-white transition-colors flex-shrink-0">
+              <Download className="w-3 h-3" /> CSV
+            </button>
+            <SearchBar
+              value={scenarioSearchQuery}
+              onChange={setScenarioSearchQuery}
+              placeholder="검색..."
+              className="flex-1"
+            />
             <button onClick={() => setScenarioChangeFilter(!scenarioChangeFilter)} title="변경사항 필터"
               className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-                scenarioChangeFilter ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white' : 'text-[#9ca3af] hover:text-[#f78ca0] hover:bg-[#f78ca0]/10'
+                scenarioChangeFilter ? 'bg-[#3615CF] text-white' : 'text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10'
               }`}>
               <Sparkles className="w-3.5 h-3.5" />
             </button>
@@ -459,143 +545,144 @@ setTestDepth,
               disabled={deferredAIIds.length === 0}
               className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all relative ${
                 showDeferredAIItems && deferredAIIds.length > 0
-                  ? 'bg-purple-100 text-purple-600 ring-1 ring-purple-200'
+                  ? 'bg-[#fef3c7] text-[#d97706] ring-1 ring-[#fcd34d]'
                   : deferredAIIds.length > 0
-                    ? 'text-purple-500 hover:bg-purple-50'
+                    ? 'text-[#d97706] hover:bg-[#fffbeb]'
                     : 'text-[#c4c9d4] cursor-default'
               }`}>
               <Clock className="w-3.5 h-3.5" />
               {deferredAIIds.length > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 bg-purple-500 text-white text-[8px] rounded-full flex items-center justify-center leading-none">
+                <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 bg-[#d97706] text-white text-[8px] rounded-full flex items-center justify-center leading-none">
                   {deferredAIIds.length}
                 </span>
               )}
             </button>
+            {/* TS 추가 버튼 */}
+            <button
+              onClick={addNewTS}
+              title="시나리오 추가"
+              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[#9ca3af] hover:text-status-pass hover:bg-green-50 transition-all">
+              <Plus className="w-3.5 h-3.5" />
+            </button>
           </div>
 
+          {/* Tree body */}
           <div className="flex-1 overflow-y-auto py-1">
-            {/* 보류 항목 — 시계 아이콘을 눌렀을 때만 표시 */}
+            {/* 보류 항목 */}
             {showDeferredAIItems && deferredAIIds.length > 0 && (
-              <div className="mx-2 mb-2 rounded-lg border border-purple-200 bg-purple-50/40">
-                <div className="px-2.5 py-1.5 border-b border-purple-100 flex items-center gap-1.5">
-                  <Clock className="w-3 h-3 text-purple-500 flex-shrink-0" />
-                  <span className="text-[10px] font-semibold text-purple-700">보류 항목</span>
+              <div className="mx-2 mb-2 rounded-lg border border-[#fcd34d] bg-[#fffbeb]/60">
+                <div className="px-2.5 py-1.5 border-b border-[#fde68a] flex items-center gap-1.5">
+                  <Clock className="w-3 h-3 text-[#d97706] flex-shrink-0" />
+                  <span className="text-[10px] font-semibold text-[#b45309]">보류 항목</span>
                 </div>
                 {deferredAIIds.map((tsId) => {
-                  const ai = dynamicAIItems[tsId];
-                  const sc = dynamicScenarios.find(s => s.id === tsId);
+                  const ai = _dynamicAIItems[tsId];
+                  const sc = _dynamicScenarios.find((s) => s.id === tsId);
                   if (!ai || !sc) return null;
                   const triggerLabel = ai.trigger === 'chatbot' ? '챗봇 질의' : ai.trigger === 'file' ? '파일 업데이트' : '코드 변경 감지';
                   return (
-                    <div key={`deferred-${tsId}`} className="px-2.5 py-1.5 border-b border-purple-100/60 last:border-0 text-[10px]">
+                    <div key={`deferred-${tsId}`} className="px-2.5 py-1.5 border-b border-[#fde68a]/60 last:border-0 text-[10px]">
                       <div className="flex items-center gap-1 mb-0.5">
-                        <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
-                        <span className="font-semibold text-purple-700">{tsId} · {sc.name}</span>
+                        <Sparkles className="w-3 h-3 text-[#f59e0b] flex-shrink-0" />
+                        <span className="font-semibold text-[#b45309]">{tsId} · {sc.name}</span>
                         <span className="ml-auto text-[#9ca3af]">{ai.timestamp.split(' ')[0]}</span>
                       </div>
-                      <div className="text-purple-800 mb-1 leading-relaxed">{triggerLabel} · {ai.reason}</div>
+                      <div className="text-[#92400e] mb-1 leading-relaxed">{triggerLabel} · {ai.reason}</div>
                       <div className="flex gap-1">
                         <button onClick={() => setAiItemActions(prev => ({ ...prev, [tsId]: 'approved' }))}
-                          className="px-2 py-0.5 bg-purple-500 text-white rounded text-[9px] font-medium">승인</button>
+                          className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium">승인</button>
                         <button onClick={() => setAiItemActions(prev => ({ ...prev, [tsId]: 'rejected' }))}
-                          className="px-2 py-0.5 bg-white border border-purple-200 text-purple-600 rounded text-[9px] hover:bg-red-50 hover:text-red-500 hover:border-red-200">거절</button>
+                          className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-red-50 hover:text-red-500 hover:border-red-200">거절</button>
                       </div>
                     </div>
                   );
                 })}
               </div>
             )}
+
             {filteredScenarios.map(scenario => {
-              const tcs = dynamicTestCases[scenario.id] || [];
+              const tcs = _dynamicTestCases[scenario.id] || [];
               const allTCKeys = tcs.map(tc => `${scenario.id}_${tc.id}`);
-              const tsAllSel = allTCKeys.length > 0 && allTCKeys.every(k => selectedTCIds.includes(k));
-              const tsSomeSel = allTCKeys.some(k => selectedTCIds.includes(k));
+              const tsAllSel = allTCKeys.length > 0 && allTCKeys.every((k: string) => _selectedTCIds.includes(k));
+              const tsSomeSel = allTCKeys.some((k: string) => _selectedTCIds.includes(k));
               const isExpanded = expandedTSForTC.includes(scenario.id);
-              const tsMenuId = `ts-${scenario.id}`;
               const tsEditKey = scenario.id;
               const isTSEditing = editingDetailItem?.type === 'ts' && editingDetailItem.key === tsEditKey;
 
-              // AI 생성 항목 여부 (코드 변경 감지 버튼으로 생성된 임시 항목 포함)
-              const isCodeChangeItem = codeChangeDetected && scenario.id === 'TS1' && !aiItemActions['TS1'] && !dynamicAIItems['TS1'];
+              const isCodeChangeItem = codeChangeDetected && scenario.id === 'TS1' && !_aiItemActions['TS1'] && !_dynamicAIItems['TS1'];
               const aiInfo = isCodeChangeItem
                 ? { reason: 'login.tsx 비밀번호 검증 로직 변경 감지', trigger: 'code' as const, timestamp: '2026-04-27 10:23' }
-                : dynamicAIItems[scenario.id];
-              const isAIItem = !!aiInfo && aiItemActions[scenario.id] !== 'approved' && aiItemActions[scenario.id] !== 'rejected';
-              const isDeferredItem = aiItemActions[scenario.id] === 'deferred';
+                : _dynamicAIItems[scenario.id];
+              const isAIItem = !!aiInfo && _aiItemActions[scenario.id] !== 'approved' && _aiItemActions[scenario.id] !== 'rejected';
+              const isDeferredItem = _aiItemActions[scenario.id] === 'deferred';
 
-              // 거절된 항목 스킵
-              if (aiItemActions[scenario.id] === 'rejected') return null;
-              // 보류된 항목은 위 섹션에 표시됨 — 여기선 렌더링 안 함
+              if (_aiItemActions[scenario.id] === 'rejected') return null;
               if (isDeferredItem) return null;
 
               const triggerLabel = aiInfo?.trigger === 'chatbot' ? '챗봇 질의' : aiInfo?.trigger === 'file' ? '파일 업데이트' : '코드 변경 감지';
 
-              const tsBadge = isAIItem ? 'bg-purple-100 text-purple-700' : 'bg-[#f78ca0]/10 text-[#f78ca0]';
-              const tcBadge = isAIItem ? 'bg-purple-50 text-purple-500' : 'bg-blue-50 text-blue-500';
-              const tvBadge = isAIItem ? 'bg-purple-50/60 text-purple-400' : 'bg-gray-100 text-[#9ca3af]';
+              const tsBadge = isAIItem ? 'bg-[#fef3c7] text-[#b45309]' : 'bg-[#3615CF]/10 text-[#3615CF]';
+              const tcBadge = isAIItem ? 'bg-[#fffbeb] text-[#d97706]' : 'bg-[#3615CF]/8 text-[#3615CF]';
 
               const tsRowContent = (
                 <>
                   {/* TS 행 */}
-                  <div className={`group flex items-center gap-1.5 px-2 py-2 ${isAIItem ? 'bg-purple-50/60' : 'hover:bg-gray-50'} border-b ${isAIItem ? 'border-purple-100' : 'border-[#f0f0f0]/60'} ${
-                    !isAIItem && selectedScenario === scenario.id ? 'bg-[#f78ca0]/5 border-l-2 border-l-[#f78ca0]' : ''
+                  <div className={`group flex items-center gap-1.5 px-2 py-2 ${isAIItem ? 'bg-[#fffbeb]' : 'hover:bg-gray-50'} border-b ${isAIItem ? 'border-[#fde68a]' : 'border-[#f0f0f0]/60'} ${
+                    !isAIItem && selectedScenario === scenario.id ? 'bg-[#3615CF]/5 border-l-2 border-l-[#3615CF]' : ''
                   }`}>
-                    {isAIItem && <Sparkles className="w-3 h-3 text-purple-500 flex-shrink-0" />}
+                    {isAIItem && <Sparkles className="w-3 h-3 text-[#d97706] flex-shrink-0" />}
                     <input type="checkbox" checked={tsAllSel}
                       ref={el => { if (el) el.indeterminate = tsSomeSel && !tsAllSel; }}
                       onChange={() => toggleTSSelection(scenario.id)}
-                      className="w-3.5 h-3.5 accent-[#f78ca0] flex-shrink-0"
+                      className="scenario-checkbox w-3.5 h-3.5 flex-shrink-0"
                       onClick={e => e.stopPropagation()} />
                     <button onClick={e => { e.stopPropagation(); setExpandedTSForTC(prev => prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]); }} className="flex-shrink-0">
-                      {isExpanded ? <ChevronDown className={`w-3.5 h-3.5 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3.5 h-3.5 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} />}
+                      {isExpanded ? <ChevronDown className={`w-3.5 h-3.5 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3.5 h-3.5 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} />}
                     </button>
                     <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTSEditing) { setSelectedScenario(scenario.id); setDetailPanelRow({ level: 'TS', tsId: scenario.id }); } }}>
                       <div className="flex items-center gap-1">
                         <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tsBadge}`}>TS</span>
-                        <span className={`text-xs font-semibold ${isAIItem ? 'text-purple-800' : 'text-[#1a1a2e]'}`}>{scenario.id}</span>
+                        <span className={`text-xs font-semibold ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{scenario.id}</span>
                         {isTSEditing
                           ? sidebarEditInput('text-[10px]')
-                          : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-600' : 'text-[#6b7280]'}`}>{scenario.name}</span>}
+                          : <span className={`text-[10px] truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{scenario.name}</span>}
                       </div>
                     </div>
+                    {/* TS 액션 아이콘 */}
                     {!isAIItem && (
-                      <div className="relative flex-shrink-0">
+                      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
                         <button
-                          onClick={e => { e.stopPropagation(); setOpenItemMenuId(openItemMenuId === tsMenuId ? null : tsMenuId); }}
-                          className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 text-[#9ca3af] text-xs font-bold transition-opacity">
-                          ···
+                          onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'ts', key: tsEditKey, value: scenario.name }); }}
+                          title="수정"
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EAE8F9] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
+                          <Edit2 className="w-3 h-3" />
                         </button>
-                        {openItemMenuId === tsMenuId && (
-                          <div className="absolute right-0 top-6 bg-white rounded-lg shadow-xl border border-[#e5e7eb] py-1 w-32 z-[200]"
-                            onClick={e => e.stopPropagation()}>
-                            <button onClick={() => { setEditingDetailItem({ type: 'ts', key: tsEditKey, value: scenario.name }); setOpenItemMenuId(null); }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-xs text-[#6b7280]">
-                              <Edit2 className="w-3 h-3" /> 수정
-                            </button>
-                            <button onClick={() => { setChatContextTag(`${scenario.id} — ${scenario.name}`); setChatbarActive(true); setChatPanelExpanded(true); setOpenItemMenuId(null); }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#f78ca0]/5 text-xs text-[#f78ca0]">
-                              <MessageCircle className="w-3 h-3" /> 컨텍스트 입력
-                            </button>
-                            <button onClick={() => { setOpenItemMenuId(null); }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-xs text-red-500">
-                              <Trash2 className="w-3 h-3" /> 삭제
-                            </button>
-                          </div>
-                        )}
+                        <button
+                          onClick={e => { e.stopPropagation(); addNewTC(scenario.id); }}
+                          title="TC 추가"
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-green-50 text-[#9ca3af] hover:text-green-500 transition-colors">
+                          <Plus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); deleteTS(scenario.id); }}
+                          title="삭제"
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-[#9ca3af] hover:text-red-500 transition-colors">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
                     )}
                   </div>
 
-                  {/* AI 항목 승인/보류/거절 버튼 */}
+                  {/* AI 항목 승인/보류/거절 */}
                   {isAIItem && (
-                    <div className="px-2.5 py-1.5 bg-purple-50/40 border-b border-purple-100 flex items-center gap-1.5">
-                      <span className="text-[9px] text-purple-500 flex-shrink-0">{triggerLabel}</span>
-                      <span className="text-[9px] text-purple-400 truncate flex-1">{aiInfo!.reason}</span>
+                    <div className="px-2.5 py-1.5 bg-[#fffbeb]/60 border-b border-[#fde68a] flex items-center gap-1.5">
+                      <span className="text-[9px] text-[#d97706] flex-shrink-0">{triggerLabel}</span>
+                      <span className="text-[9px] text-[#f59e0b] truncate flex-1">{aiInfo!.reason}</span>
                       <div className="flex gap-1 flex-shrink-0">
                         <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'approved' }))}
-                          className="px-2 py-0.5 bg-purple-500 text-white rounded text-[9px] font-medium hover:bg-purple-600">승인</button>
+                          className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium hover:bg-[#b45309]">승인</button>
                         <button onClick={() => { setAiItemActions(prev => ({ ...prev, [scenario.id]: 'deferred' })); setShowDeferredAIItems(true); }}
-                          className="px-2 py-0.5 bg-white border border-purple-200 text-purple-600 rounded text-[9px] hover:bg-purple-50">보류</button>
+                          className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-[#fffbeb]">보류</button>
                         <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'rejected' }))}
                           className="px-2 py-0.5 bg-white border border-red-200 text-red-500 rounded text-[9px] hover:bg-red-50">거절</button>
                       </div>
@@ -605,105 +692,171 @@ setTestDepth,
                   {/* TC 행 */}
                   {isExpanded && tcs.map(tc => {
                     const tcKey = `${scenario.id}_${tc.id}`;
-                    const tcMenuId = `tc-${tcKey}`;
                     const isTCExpanded = expandedTCMain.includes(tcKey);
                     const isTCEditing = editingDetailItem?.type === 'tc' && editingDetailItem.key === tcKey;
+                    const frEntries = mockRTMData.filter(r => r.ts === scenario.id && r.tc === tc.id);
                     return (
                       <div key={tc.id}>
-                        <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/30 border-purple-100/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#f78ca0]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
-                          <input type="checkbox" checked={selectedTCIds.includes(tcKey)}
+                        <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-[#fffbeb]/50 border-[#fde68a]/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#3615CF]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
+                          <input type="checkbox" checked={_selectedTCIds.includes(tcKey)}
                             onChange={() => toggleTCSelection(tcKey)}
-                            className="w-3 h-3 accent-[#f78ca0] flex-shrink-0"
+                            className="scenario-checkbox w-3 h-3 flex-shrink-0"
                             onClick={e => e.stopPropagation()} />
                           <button onClick={e => { e.stopPropagation(); setExpandedTCMain(prev => prev.includes(tcKey) ? prev.filter(id => id !== tcKey) : [...prev, tcKey]); }} className="flex-shrink-0">
                             {tc.testVariables.length > 0
-                              ? (isTCExpanded ? <ChevronDown className={`w-3 h-3 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3 h-3 ${isAIItem ? 'text-purple-400' : 'text-[#9ca3af]'}`} />)
+                              ? (isTCExpanded ? <ChevronDown className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} />)
                               : <span className="w-3" />}
                           </button>
                           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTCEditing) setDetailPanelRow({ level: 'TC', tsId: scenario.id, tcId: tc.id }); }}>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 flex-wrap">
                               <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tcBadge}`}>TC</span>
-                              <span className={`text-[11px] font-medium ${isAIItem ? 'text-purple-800' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
+                              <span className={`text-[11px] font-medium flex-shrink-0 ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
                               {isTCEditing
                                 ? sidebarEditInput('text-[10px]')
-                                : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-500' : 'text-[#6b7280]'}`}>{tc.name}</span>}
+                                : <span className={`text-[10px] truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{tc.name}</span>}
+                              {!isTCEditing && frEntries.map(fr => (
+                                <div key={fr.frId} className="relative group/fr flex-shrink-0">
+                                  <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/15 cursor-help">{fr.frId}</span>
+                                  <div className="absolute bottom-full left-0 mb-1 w-52 bg-[#1a1a2e] text-white text-[10px] rounded-lg px-2.5 py-2 shadow-xl leading-relaxed z-50 hidden group-hover/fr:block pointer-events-none whitespace-normal">
+                                    <div className="font-semibold mb-0.5 text-[9px] text-[#3615CF]">{fr.frId}</div>
+                                    {fr.requirement}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
+                          {/* TC 액션 아이콘 */}
                           {!isAIItem && (
-                            <div className="relative flex-shrink-0">
+                            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
                               <button
-                                onClick={e => { e.stopPropagation(); setOpenItemMenuId(openItemMenuId === tcMenuId ? null : tcMenuId); }}
-                                className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 text-[#9ca3af] text-xs font-bold transition-opacity">
-                                ···
+                                onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tc', key: tcKey, value: tc.name }); }}
+                                title="수정"
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EAE8F9] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
+                                <Edit2 className="w-3 h-3" />
                               </button>
-                              {openItemMenuId === tcMenuId && (
-                                <div className="absolute right-0 top-6 bg-white rounded-lg shadow-xl border border-[#e5e7eb] py-1 w-32 z-[200]"
-                                  onClick={e => e.stopPropagation()}>
-                                  <button onClick={() => { setEditingDetailItem({ type: 'tc', key: tcKey, value: tc.name }); setOpenItemMenuId(null); }}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-xs text-[#6b7280]">
-                                    <Edit2 className="w-3 h-3" /> 수정
-                                  </button>
-                                  <button onClick={() => { setChatContextTag(`${scenario.id} › ${tc.id} — ${tc.name}`); setChatbarActive(true); setChatPanelExpanded(true); setOpenItemMenuId(null); }}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#f78ca0]/5 text-xs text-[#f78ca0]">
-                                    <MessageCircle className="w-3 h-3" /> 컨텍스트 입력
-                                  </button>
-                                  <button onClick={() => setOpenItemMenuId(null)}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-xs text-red-500">
-                                    <Trash2 className="w-3 h-3" /> 삭제
-                                  </button>
-                                </div>
-                              )}
+                              <button
+                                onClick={e => { e.stopPropagation(); addNewTV(scenario.id, tc.id); }}
+                                title="TV 추가"
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-green-50 text-[#9ca3af] hover:text-green-500 transition-colors">
+                                <Plus className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={e => { e.stopPropagation(); deleteTC(scenario.id, tc.id); }}
+                                title="삭제"
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-[#9ca3af] hover:text-red-500 transition-colors">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
                             </div>
                           )}
                         </div>
 
-                        {/* TV 행 */}
+                        {/* TV 행 — 엔드포인트 카드 */}
                         {isTCExpanded && tc.testVariables.map(tv => {
                           const tvKey = `${scenario.id}_${tc.id}_${tv.id}`;
-                          const tvMenuId = `tv-${tvKey}`;
+                          const ep = mockTVEndpoints[tvKey];
                           const isTVEditing = editingDetailItem?.type === 'tv' && editingDetailItem.key === tvKey;
+                          const isSelected = detailPanelRow?.tvId === tv.id && detailPanelRow?.tcId === tc.id;
+                          const isCopied = tvCopied === tvKey;
+                          const isOk = ep ? ep.statusCode < 400 : true;
+
                           return (
                             <div key={tv.id}
-                              className={`group flex items-center gap-1.5 pr-2 py-1.5 border-b ${isAIItem ? 'bg-purple-50/20 border-purple-100/30' : `${highlightedBotRow === `tv-${tvKey}` ? 'bg-[#f78ca0]/8' : 'bg-[#FAFAFA]'} border-[#f0f0f0]/30 hover:bg-gray-50`} cursor-pointer`}
-                              style={{ paddingLeft: '3.25rem' }}
-                              onClick={() => { if (!isTVEditing) { setDetailPanelRow({ level: 'TV', tsId: scenario.id, tcId: tc.id, tvId: tv.id }); setSelectedTvId(tv.id); } }}>
-                              <input type="checkbox" checked={selectedTCIds.includes(tvKey)}
-                                onChange={() => toggleTVSelection(tvKey)}
-                                className="w-3 h-3 accent-[#f78ca0] flex-shrink-0"
-                                onClick={e => e.stopPropagation()} />
-                              <div className="flex-1 min-w-0 flex items-center gap-1">
-                                <span className={`px-1 py-0.5 text-[9px] rounded font-medium ${tvBadge}`}>TV</span>
-                                {isTVEditing
-                                  ? sidebarEditInput('text-[10px]')
-                                  : <span className={`text-[10px] truncate ${isAIItem ? 'text-purple-500' : 'text-[#6b7280]'}`}>{tv.id}: {tv.name}</span>}
-                              </div>
-                              {!isAIItem && (
-                                <div className="relative flex-shrink-0">
-                                  <button
-                                    onClick={e => { e.stopPropagation(); setOpenItemMenuId(openItemMenuId === tvMenuId ? null : tvMenuId); }}
-                                    className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 text-[#9ca3af] text-xs font-bold transition-opacity">
-                                    ···
-                                  </button>
-                                  {openItemMenuId === tvMenuId && (
-                                    <div className="absolute right-0 top-6 bg-white rounded-lg shadow-xl border border-[#e5e7eb] py-1 w-32 z-[200]"
-                                      onClick={e => e.stopPropagation()}>
-                                      <button onClick={() => { setEditingDetailItem({ type: 'tv', key: tvKey, value: tv.name }); setOpenItemMenuId(null); }}
-                                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 text-xs text-[#6b7280]">
-                                        <Edit2 className="w-3 h-3" /> 수정
-                                      </button>
-                                      <button onClick={() => { setChatContextTag(`${scenario.id} › ${tc.id} › ${tv.id}`); setChatbarActive(true); setChatPanelExpanded(true); setOpenItemMenuId(null); }}
-                                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#f78ca0]/5 text-xs text-[#f78ca0]">
-                                        <MessageCircle className="w-3 h-3" /> 컨텍스트 입력
-                                      </button>
-                                      <button onClick={() => setOpenItemMenuId(null)}
-                                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-xs text-red-500">
-                                        <Trash2 className="w-3 h-3" /> 삭제
-                                      </button>
+                              className={`border-b ${isAIItem ? 'border-[#fde68a]/30' : 'border-[#f0f0f0]/30'}`}
+                              style={{ paddingLeft: '3.25rem' }}>
+
+                              {/* ── TV 헤더 ── */}
+                              <div
+                                className={`group flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer transition-colors ${
+                                  isAIItem ? 'bg-[#fffbeb]/40 hover:bg-[#fffbeb]/40'
+                                  : isSelected ? 'bg-slate-50'
+                                  : 'bg-white hover:bg-slate-50'
+                                }`}
+                                onClick={() => { if (!isTVEditing) { setDetailPanelRow({ level: 'TV', tsId: scenario.id, tcId: tc.id, tvId: tv.id }); setSelectedTvId(tv.id); } }}>
+
+                                <input type="checkbox" checked={_selectedTCIds.includes(tvKey)}
+                                  onChange={() => toggleTVSelection(tvKey)}
+                                  className="scenario-checkbox w-3 h-3 flex-shrink-0"
+                                  onClick={e => e.stopPropagation()} />
+
+                                {/* TV ID 배지 */}
+                                <span className={`px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 ${
+                                  isAIItem ? 'bg-[#fef3c7] text-[#d97706]' : 'bg-slate-100 text-slate-500'
+                                }`}>{tv.id}</span>
+
+                                {/* Method + Path 또는 이름 */}
+                                {ep ? (
+                                  <div className="flex items-center gap-1 flex-1 min-w-0">
+                                    <span className={`text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
+                                    <span className="font-mono text-[9.5px] text-slate-500 truncate">{ep.path}</span>
+                                  </div>
+                                ) : (
+                                  isTVEditing ? (
+                                    <div className="flex items-center gap-1 flex-1 min-w-0" onClick={e => e.stopPropagation()}>
+                                      <input autoFocus value={editingDetailItem?.value ?? ''}
+                                        onChange={e => setEditingDetailItem((prev: any) => prev ? { ...prev, value: e.target.value } : null)}
+                                        onKeyDown={e => { if (e.key === 'Enter') saveSidebarEdit(); if (e.key === 'Escape') setEditingDetailItem(null); }}
+                                        className="flex-1 min-w-0 text-[10px] bg-white border border-[#3615CF]/50 rounded px-1.5 py-0.5 focus:outline-none" />
+                                      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-status-pass flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
+                                      <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
                                     </div>
-                                  )}
+                                  ) : (
+                                    <span className="text-[10px] text-slate-500 truncate flex-1">{tv.name}</span>
+                                  )
+                                )}
+
+                                {/* 액션 (호버 시 표시) */}
+                                {!isAIItem && !isTVEditing && (
+                                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
+                                    <button onClick={e => { e.stopPropagation(); handleTVCopy(tvKey); }}
+                                      title={isCopied ? '복사됨' : '복사'}
+                                      className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isCopied ? 'text-[#3615CF]' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
+                                      {isCopied ? <CheckCircle className="w-2.5 h-2.5" /> : <svg className="w-2.5 h-2.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h8"/></svg>}
+                                    </button>
+                                    <button onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvKey, value: tv.name }); }}
+                                      title="수정" className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
+                                      <Edit2 className="w-2.5 h-2.5" />
+                                    </button>
+                                    <button onClick={e => { e.stopPropagation(); deleteTV(scenario.id, tc.id, tv.id); }}
+                                      title="삭제" className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-red-400 hover:bg-red-50 transition-colors">
+                                      <Trash2 className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* ── 엔드포인트 인라인 프리뷰 ── */}
+                              {ep && !isTVEditing && (
+                                <div className="mx-2 mb-1 mt-0.5 rounded border border-slate-100 bg-slate-50 overflow-hidden">
+                                  {/* Request body */}
+                                  <div className="px-2 py-1.5 overflow-x-auto">
+                                    <LightJson obj={ep.requestBody ?? {}} />
+                                  </div>
+                                  {/* Status footer */}
+                                  <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-[#EAE8F9]' : 'bg-red-50'}`}>
+                                    <span className={`font-mono text-[9px] font-bold ${isOk ? 'text-[#3615CF]/70' : 'text-red-500'}`}>
+                                      ← {ep.statusCode}
+                                    </span>
+                                    <span className={`text-[9px] ${isOk ? 'text-[#3615CF]' : 'text-red-400'}`}>
+                                      {HTTP_STATUS_TEXT[ep.statusCode] ?? ''}
+                                    </span>
+                                  </div>
                                 </div>
                               )}
-
+                              {/* ── TV 검증 조건 인라인 ── */}
+                              {(() => {
+                                const validations = mockValidationConditions[tvKey] || [];
+                                if (validations.length === 0) return null;
+                                return (
+                                  <div className="mx-2 mb-1.5 space-y-0.5">
+                                    {validations.map((v, i) => (
+                                      <div key={i} className="flex gap-1.5 px-2 py-1 bg-gray-50 rounded border border-[#e5e7eb] text-[10px]">
+                                        <span className="text-[#3615CF] flex-shrink-0 font-bold">✓</span>
+                                        <span className="text-[#6b7280] leading-relaxed">{v}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           );
                         })}
@@ -717,240 +870,137 @@ setTestDepth,
           </div>
         </div>
 
-        {/* Left drag handle */}
-        <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleLeftDragStart} />
-
-        {/* ── [3] Center: Network Graph ── */}
-        <div
-          ref={graphContainerRef}
-          className="flex-1 bg-[#F2F3F5] overflow-hidden relative"
-          onClick={() => setOpenItemMenuId(null)}>
-          <ScenarioNetworkGraph
-            tsNodes={tsNodesForGraph}
-            tcNodes={tcNodesForGraph}
-            tvNodes={tvNodesForGraph}
-            width={graphSize.width}
-            height={graphSize.height}
-            selectedId={graphSelectedId}
-            onNodeSelect={handleGraphNodeSelect}
-          />
-        </div>
-
-        {/* Right drag handle — only when detail panel is open */}
-        {detailPanelRow && (
-          <div className="w-1 bg-[#e5e7eb] hover:bg-[#f78ca0]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleRightDragStart} />
+        {/* ── 그래프 모드: Left drag handle + Center graph ── */}
+        {viewMode === 'graph' && (
+          <>
+            <div className="w-1 bg-[#e5e7eb] hover:bg-[#3615CF]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleLeftDragStart} />
+            <div
+              ref={graphContainerRef}
+              className="flex-1 bg-[#F2F3F5] overflow-hidden relative">
+              <ScenarioFlowGraph
+                tsNodes={tsFlowNodes}
+                flowEdges={mockTSFlows}
+                width={graphSize.width}
+                height={graphSize.height}
+                selectedId={graphSelectedId}
+                onNodeSelect={handleGraphNodeSelect}
+              />
+            </div>
+          </>
         )}
 
-        {/* ── [4] Right Detail Panel ── */}
-        {detailPanelRow && (() => {
-          const { level, tsId, tcId } = detailPanelRow;
-          const ts = dynamicScenarios.find(s => s.id === tsId);
-          const tc = tcId ? (dynamicTestCases[tsId] || []).find(t => t.id === tcId) : undefined;
-          const frMapped = mockRTMData.filter(r => r.ts === tsId);
+        {/* Right drag handle — always */}
+        <div className="w-1 bg-[#e5e7eb] hover:bg-[#3615CF]/60 cursor-col-resize flex-shrink-0 transition-colors" onMouseDown={handleRightDragStart} />
 
-          const editKey = level === 'TS' ? tsId : `${tsId}_${tcId}`;
-          const isEditingName = editingDetailItem?.key === editKey;
-          const isLoading = loadingItemKey === editKey;
-
-          const saveName = (newName: string) => {
-            setEditingDetailItem(null);
-            setLoadingItemKey(editKey);
-            setTimeout(() => {
-              if (level === 'TS') {
-                setDynamicScenarios(prev => prev.map(s => s.id === tsId ? { ...s, name: newName } : s));
-                // 하위 TC 이름도 갱신 시뮬레이션
-                setDynamicTestCases(prev => ({ ...prev }));
-              } else if (level === 'TC' && tcId) {
-                setDynamicTestCases(prev => ({
-                  ...prev,
-                  [tsId]: (prev[tsId] || []).map(t => t.id === tcId ? { ...t, name: newName } : t),
-                }));
-              }
-              setLoadingItemKey(null);
-            }, 1200);
-          };
-
-          const saveTVName = (tvId: string, newName: string) => {
-            setEditingDetailItem(null);
-            const tvKey = `${tsId}_${tcId}_${tvId}`;
-            setLoadingItemKey(tvKey);
-            setTimeout(() => {
-              setDynamicTestCases(prev => ({
-                ...prev,
-                [tsId]: (prev[tsId] || []).map(t =>
-                  t.id === tcId
-                    ? { ...t, testVariables: t.testVariables.map(v => v.id === tvId ? { ...v, name: newName } : v) }
-                    : t
-                ),
-              }));
-              setLoadingItemKey(null);
-            }, 1000);
-          };
-
+        {/* ── [4] Right Panel — 시나리오 그룹 ── */}
+        {(() => {
+          void detailPanelRow; // keep alive for graph-mode sync
           return (
-            <div className="bg-white border-l border-[#f0f0f0] flex flex-col flex-shrink-0" style={{ width: rightPanelWidth }}>
+            <div className="bg-white border-l border-[#f0f0f0] flex flex-col flex-shrink-0 overflow-hidden" style={{ width: rightPanelWidth }}>
               {/* Header */}
-              <div className="p-4 border-b border-[#f0f0f0] flex justify-between items-center bg-gradient-to-r from-[#f78ca0]/5 to-[#fe9a8b]/5 flex-shrink-0">
-                <div className="font-semibold text-sm text-[#1a1a2e] truncate pr-2">
-                  {level === 'TC' ? `${tsId} › ${tcId}` : tsId}
+              <div className="px-3 pt-3 pb-2.5 flex flex-col gap-2 flex-shrink-0">
+                {/* 시나리오 그룹 라벨 + 필터 해제 */}
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">시나리오 그룹</div>
+                  {selectedScenarioGroupId && (
+                    <button onClick={() => (setSelectedScenarioGroupId as any)(null)}
+                      className="flex items-center gap-1 text-[10px] text-[#9ca3af] hover:text-[#3615CF] transition-colors">
+                      <X className="w-3 h-3" /> 필터 해제
+                    </button>
+                  )}
                 </div>
-                <button onClick={() => { setDetailPanelRow(null); setSelectedNetworkNodeId(null); setSelectedTvId(null); }} className="p-1 hover:bg-gray-100 rounded flex-shrink-0">
-                  <X className="w-4 h-4 text-[#6b7280]" />
+                {/* E2E TEST 실행 */}
+                <button
+                  onClick={() => setCurrentPage('테스트')}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#3615CF] text-white text-xs font-semibold hover:shadow-md hover:bg-[#3615CF]/90 transition-all">
+                  <Play className="w-3.5 h-3.5" />
+                  E2E TEST 실행
+                </button>
+                {/* 그룹 생성 버튼 */}
+                <button
+                  onClick={() => someSelected && setShowTestGroupModal(true)}
+                  className={`w-full py-2 rounded-lg border border-dashed flex items-center justify-center gap-1.5 text-xs transition-all ${
+                    someSelected
+                      ? 'border-[#3615CF]/30 text-[#3615CF] hover:bg-[#EAE8F9]'
+                      : 'border-[#e5e7eb] text-[#c4c9d4] cursor-default'
+                  }`}>
+                  <Plus className="w-3 h-3" />
+                  {someSelected ? `${_selectedTCIds.length}개 TC로 그룹 생성` : 'TC를 선택하면 그룹을 생성할 수 있어요'}
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-5">
-                {/* 기본 정보 + 인라인 수정 */}
-                <div>
-                  <div className="flex items-center justify-between mb-2.5">
-                    <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">기본 정보</div>
-                    {!isLoading && !isEditingName && (
-                      <button onClick={() => setEditingDetailItem({ type: level === 'TS' ? 'ts' : 'tc', key: editKey, value: (level === 'TS' ? ts?.name : tc?.name) ?? '' })}
-                        className="p-1 rounded hover:bg-gray-100">
-                        <Edit2 className="w-3 h-3 text-[#9ca3af]" />
-                      </button>
-                    )}
-                    {isLoading && <Loader2 className="w-3.5 h-3.5 text-[#f78ca0] animate-spin" />}
-                  </div>
-                  <div className="space-y-0 text-xs divide-y divide-[#f0f0f0]">
-                    {level === 'TS' && ts && (<>
-                      <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{ts.id}</span></div>
-                      <div className="flex justify-between items-start py-2 gap-2">
-                        <span className="text-[#9ca3af] flex-shrink-0">이름</span>
-                        {isEditingName ? (
-                          <div className="flex items-center gap-1 flex-1">
-                            <input autoFocus value={editingDetailItem!.value} onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
-                              onKeyDown={e => { if (e.key === 'Enter') saveName(editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                              className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 min-w-0" />
-                            <button onClick={() => saveName(editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                            <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
-                          </div>
-                        ) : (
-                          <span className={`font-medium text-right ${isLoading ? 'text-[#9ca3af] animate-pulse' : ''}`}>{ts.name}</span>
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">TC 수</span><span className="font-medium">{(dynamicTestCases[ts.id] || []).length}개</span></div>
-                    </>)}
-                    {level === 'TC' && tc && (<>
-                      <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">ID</span><span className="font-mono font-semibold">{tc.id}</span></div>
-                      <div className="flex justify-between items-start py-2 gap-2">
-                        <span className="text-[#9ca3af] flex-shrink-0">이름</span>
-                        {isEditingName ? (
-                          <div className="flex items-center gap-1 flex-1">
-                            <input autoFocus value={editingDetailItem!.value} onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
-                              onKeyDown={e => { if (e.key === 'Enter') saveName(editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                              className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30 min-w-0" />
-                            <button onClick={() => saveName(editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                            <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
-                          </div>
-                        ) : (
-                          <span className={`font-medium text-right ${isLoading ? 'text-[#9ca3af] animate-pulse' : ''}`}>{tc.name}</span>
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center py-2"><span className="text-[#9ca3af]">상위 TS</span><span className="font-mono font-medium">{tsId}</span></div>
-                    </>)}
-                  </div>
-                </div>
+              <div className="m-2 mx-2 h-[2px] bg-[#f0f0f0] flex-shrink-0" />
 
-                {/* TV 목록 (TC 상세에서만) */}
-                {level === 'TC' && tc && tc.testVariables.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2.5">테스트 변수 (TV)</div>
-                    <div className="space-y-1.5">
-                      {tc.testVariables.map(tv => {
-                        const tvEditKey = `${tsId}_${tcId}_${tv.id}`;
-                        const isTVSelected = selectedTvId === tv.id;
-                        const isTVEditing = editingDetailItem?.key === tvEditKey;
-                        const isTVLoading = loadingItemKey === tvEditKey;
-                        const validKey = `${tsId}_${tcId}_${tv.id}`;
-                        const validations = mockValidationConditions[validKey] || [];
-                        return (
-                          <div key={tv.id}
-                            className={`rounded-lg border transition-all ${isTVSelected ? 'border-[#f78ca0]/40 bg-[#f78ca0]/5' : 'border-[#f0f0f0] bg-gray-50/50 hover:bg-gray-50'}`}>
-                            <div className="flex items-center gap-2 px-3 py-2 cursor-pointer"
-                              onClick={() => setSelectedTvId(isTVSelected ? null : tv.id)}>
-                              <span className="px-1 py-0.5 bg-gray-100 text-[#9ca3af] text-[9px] rounded font-medium flex-shrink-0">TV</span>
-                              <span className="text-xs font-medium text-[#1a1a2e] flex-1 truncate">{tv.id}: {isTVLoading ? <span className="text-[#9ca3af] animate-pulse">{tv.name}</span> : tv.name}</span>
-                              {isTVLoading && <Loader2 className="w-3 h-3 text-[#f78ca0] animate-spin flex-shrink-0" />}
-                              {!isTVLoading && !isTVEditing && (
-                                <button onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvEditKey, value: tv.name }); setSelectedTvId(tv.id); }}
-                                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-200 flex-shrink-0">
-                                  <Edit2 className="w-2.5 h-2.5 text-[#9ca3af]" />
-                                </button>
-                              )}
-                              {isTVSelected ? <ChevronDown className="w-3 h-3 text-[#9ca3af] flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af] flex-shrink-0" />}
-                            </div>
-                            {isTVSelected && (
-                              <div className="px-3 pb-2.5 space-y-2 border-t border-[#f0f0f0]/60">
-                                {/* TV 이름 인라인 수정 */}
-                                <div className="pt-2">
-                                  {isTVEditing ? (
-                                    <div className="flex items-center gap-1">
-                                      <input autoFocus value={editingDetailItem!.value}
-                                        onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
-                                        onKeyDown={e => { if (e.key === 'Enter') saveTVName(tv.id, editingDetailItem!.value); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                                        className="flex-1 px-1.5 py-0.5 border border-[#f78ca0]/50 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-[#f78ca0]/30" />
-                                      <button onClick={() => saveTVName(tv.id, editingDetailItem!.value)} className="w-5 h-5 flex items-center justify-center rounded bg-[#9AB17A] flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                                      <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[10px] text-[#6b7280]">{tv.name}</span>
-                                      <button onClick={() => setEditingDetailItem({ type: 'tv', key: tvEditKey, value: tv.name })}
-                                        className="p-0.5 rounded hover:bg-gray-200">
-                                        <Edit2 className="w-2.5 h-2.5 text-[#9ca3af]" />
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                                {/* 검증 조건 */}
-                                {validations.length > 0 && (
-                                  <div className="space-y-1">
-                                    <div className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wide">검증 조건</div>
-                                    {validations.map((v, i) => (
-                                      <div key={i} className="flex gap-1.5 p-2 bg-white rounded border border-[#f0f0f0] text-[10px]">
-                                        <span className="text-[#f78ca0] flex-shrink-0 font-bold">•</span>
-                                        <span className="text-[#6b7280] leading-relaxed">{v}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {validations.length === 0 && (
-                                  <div className="text-[10px] text-[#9ca3af]">검증 조건 없음</div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* FR 매핑 */}
-                <div>
-                  <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest mb-2.5">FR 매핑</div>
-                  {frMapped.length === 0
-                    ? <div className="text-xs text-[#9ca3af]">매핑된 요구사항 없음</div>
-                    : (
-                      <div className="space-y-1.5">
-                        {frMapped.map(fr => (
-                          <div key={fr.frId} className="p-2.5 bg-gray-50 rounded-lg border border-[#f0f0f0]">
-                            <div className="flex items-center justify-between mb-0.5">
-                              <span className="font-mono text-[10px] font-bold">{fr.frId}</span>
-                              {fr.result === 'PASS' && <span className="text-[10px] text-[#9AB17A] font-semibold">PASS</span>}
-                              {fr.result === 'FAIL' && <span className="text-[10px] text-[#FF9A86] font-semibold">FAIL</span>}
-                              {fr.result === 'UNCOVERED' && <span className="text-[10px] text-[#9ca3af] font-semibold">미커버</span>}
-                            </div>
-                            <div className="text-[10px] text-[#6b7280] leading-relaxed">{fr.requirement}</div>
-                          </div>
+              {/* Group cards */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {/* 검색바 */}
+                <SearchBar
+                  placeholder="그룹 검색..."
+                  showFilterButton
+                  className="mb-3"
+                />
+                {mockTestGroups.map(group => {
+                  const isSelected = selectedScenarioGroupId === group.id;
+                  return (
+                    <button key={group.id}
+                      onClick={() => (setSelectedScenarioGroupId as any)(isSelected ? null : group.id)}
+                      className={`w-full text-left p-3 rounded-lg border transition-all ${
+                        isSelected
+                          ? 'border-[#3615CF] bg-[#EAE8F9] shadow-sm'
+                          : 'border-[#e5e7eb] hover:border-[#3615CF]/40 hover:bg-gray-50'
+                      }`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-xs font-semibold ${isSelected ? 'text-[#d9506b]' : 'text-[#1a1a2e]'}`}>{group.name}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {(group.scenarios as string[]).map(sid => (
+                          <span key={sid} className={`px-1.5 py-0.5 text-[9px] rounded font-mono font-bold ${
+                            isSelected ? 'bg-[#EAE8F9] text-[#3615CF]' : 'bg-gray-100 text-[#6b7280]'
+                          }`}>{sid}</span>
                         ))}
                       </div>
-                    )}
-                </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] text-[#9ca3af]">TC {group.tcCount}개</span>
+                        <span className="text-[10px] text-[#c4c9d4]">·</span>
+                        {(group.tags as string[]).map(tag => (
+                          <span key={tag} className="px-1.5 py-0.5 bg-gray-100 text-[9px] text-[#6b7280] rounded-full">{tag}</span>
+                        ))}
+                      </div>
+                      {/* Run button */}
+                      <div className="mt-2.5 flex justify-end gap-1.5">
+                        <button
+                          onClick={e => e.stopPropagation()}
+                          className="flex items-center gap-1 px-2.5 py-1 bg-white border border-[#e5e7eb] text-[#6b7280] rounded text-[10px] font-medium hover:border-[#3615CF]/40 hover:text-[#3615CF] transition-colors">
+                          <Calendar className="w-2.5 h-2.5" /> 예약하기
+                        </button>
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            const newRun = {
+                              id: `run-${Date.now()}`,
+                              name: group.name,
+                              groupId: group.id,
+                              startTime: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                              status: 'running' as const,
+                            };
+                            (setRunningTests as any)(prev => [...prev, newRun]);
+                            (setSelectedRunningTestId as any)(newRun.id);
+                            (setSelectedTestGroup as any)(group.name);
+                            setCurrentPage('테스트');
+                            (setTestSubTab as any)('HISTORY');
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 bg-[#EAE8F9] text-[#3615CF] rounded text-[10px] font-medium hover:bg-[#DDDDF5] transition-colors">
+                          <Play className="w-2.5 h-2.5" /> 실행
+                        </button>
+                      </div>
+                    </button>
+                  );
+                })}
+
               </div>
             </div>
           );
+
         })()}
       </div>
 
@@ -968,8 +1018,8 @@ setTestDepth,
               ))}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { setShowTestGroupModal(false); setSelectedTCIds([]); setCurrentPage('테스트그룹'); setTestDepth(0); }}
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg font-medium">
+              <button onClick={() => { setShowTestGroupModal(false); setSelectedTCIds([]); }}
+                className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium">
                 생성 확인
               </button>
               <button onClick={() => setShowTestGroupModal(false)}
@@ -985,4 +1035,3 @@ setTestDepth,
 };
 
 // ── TestPage (진행중 / 이력) ──────────────────────────────────────────────────
-

@@ -1,6 +1,5 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
 import { AlertCircle, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, History, Loader2, Pause, Play, Plus, RotateCcw, Search, X, Clock, Check, XCircle } from 'lucide-react';
-import { PageTitle } from '../components/common/PageTitle';
 import { StatusIcon } from '../components/common/StatusIcon';
 import { mockScenarios, mockTestCases, mockTestGroups, mockTestLogs } from '../data/mockData';
 
@@ -37,7 +36,7 @@ function ScheduleModal({
         <div className="px-6 py-4 border-b border-[#f0f0f0] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-[#9ca3af]" />
-            <span className="font-semibold text-sm text-[#1a1a2e]">테스트 실행 예약</span>
+            <span className="font-bold text-xl text-[#1a1a2e]">테스트 실행 예약</span>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded text-[#9ca3af] hover:text-[#6b7280]">
             <X className="w-4 h-4" />
@@ -244,15 +243,8 @@ setScheduledAlarms,
 
     const totalTCs = filteredGroups.reduce((sum, g) => sum + g.tcCount, 0);
 
-    const statusConfig = {
-      active:   { label: '활성',  bg: 'bg-green-50',  text: 'text-[#9AB17A]',  border: 'border-green-200' },
-      inactive: { label: '비활성', bg: 'bg-gray-100',  text: 'text-[#9ca3af]',  border: 'border-gray-200' },
-      archived: { label: '보관',  bg: 'bg-amber-50',  text: 'text-amber-600',   border: 'border-amber-200' },
-    };
-
     return (
       <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50">
-        <PageTitle title="시나리오 그룹 관리" />
 
         {/* Controls bar */}
         <div className="bg-white border-b border-[#f0f0f0] px-6 py-3 flex items-center gap-3 flex-shrink-0">
@@ -293,7 +285,6 @@ setScheduledAlarms,
             {filteredGroups.map(group => {
               const isEditing = editingGroupId === group.id;
               const displayName = groupNames[group.id] || group.name;
-              const sc = statusConfig[group.status] ?? statusConfig.inactive;
 
               return (
                 <div key={group.id} className="px-5 py-4 hover:bg-gray-50/70 transition-colors">
@@ -331,7 +322,7 @@ setScheduledAlarms,
                           }}
                         />
                         <button onClick={() => { setGroupNames(prev => ({ ...prev, [group.id]: editingGroupName })); setEditingGroupId(null); }}
-                          className="p-0.5 bg-[#9AB17A] text-white rounded flex-shrink-0">
+                          className="p-0.5 bg-status-pass text-white rounded flex-shrink-0">
                           <CheckCircle className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => setEditingGroupId(null)} className="p-0.5 bg-gray-200 rounded flex-shrink-0">
@@ -347,11 +338,6 @@ setScheduledAlarms,
                         <Edit2 className="w-3 h-3 text-[#c4c9d4] flex-shrink-0 opacity-0 group-hover/name:opacity-100 transition-opacity" />
                       </button>
                     )}
-
-                    {/* Status badge */}
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-medium border flex-shrink-0 ${sc.bg} ${sc.text} ${sc.border}`}>
-                      {sc.label}
-                    </span>
 
                     {/* Run button */}
                     <button
@@ -575,14 +561,14 @@ setScheduledAlarms,
                         )}
                         {passedTCs.map(({ sId, tc }, idx) => (
                           <div key={`${sId}_${tc.id}_${idx}`}
-                            className="flex items-center gap-2 p-2 bg-[#9AB17A]/5 rounded-lg border border-[#9AB17A]/20 cursor-pointer hover:bg-[#9AB17A]/10 transition-colors"
+                            className="flex items-center gap-2 p-2 bg-status-pass/5 rounded-lg border border-status-pass/20 cursor-pointer hover:bg-status-pass/10 transition-colors"
                             onClick={() => scrollToLog(0)}>
-                            <CheckCircle className="w-3.5 h-3.5 text-[#9AB17A] flex-shrink-0" />
+                            <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <div className="text-[10px] text-[#9ca3af]">{sId}</div>
                               <div className="text-xs font-medium truncate">{tc.id} {tc.name}</div>
                             </div>
-                            <span className="text-[9px] font-bold bg-[#9AB17A]/10 text-[#9AB17A] px-1.5 py-0.5 rounded">PASS</span>
+                            <span className="text-[9px] font-bold bg-status-pass/10 text-status-pass px-1.5 py-0.5 rounded">PASS</span>
                           </div>
                         ))}
                       </div>
@@ -691,7 +677,7 @@ setScheduledAlarms,
                       return (
                         <div key={n.stage} className="flex items-center gap-1.5">
                           <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 transition-all ${
-                            st === 'complete' ? 'bg-[#9AB17A] text-white' :
+                            st === 'complete' ? 'bg-status-pass text-white' :
                             st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
                             'bg-gray-200 text-gray-400'
                           }`}>
@@ -732,7 +718,7 @@ setScheduledAlarms,
                             )}
                             <div className="w-16 flex justify-center flex-shrink-0">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold transition-all ${
-                                st === 'complete' ? 'bg-[#9AB17A] text-white' :
+                                st === 'complete' ? 'bg-status-pass text-white' :
                                 st === 'running'  ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-md shadow-pink-200' :
                                 'bg-gray-200 text-gray-400'
                               }`}>
@@ -776,7 +762,7 @@ setScheduledAlarms,
                         {log.apiMethod && (
                           <span>
                             <span className="font-semibold">{log.apiMethod}</span> {log.endpoint} ·{' '}
-                            <span className={log.status === 200 ? 'text-[#9AB17A]' : 'text-[#FF9A86]'}>{log.status}</span> · {log.responseTime}
+                            <span className={log.status === 200 ? 'text-status-pass' : 'text-status-fail'}>{log.status}</span> · {log.responseTime}
                           </span>
                         )}
                       </div>
@@ -798,7 +784,7 @@ setScheduledAlarms,
         {showCompletionModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-              <CheckCircle2 className="w-12 h-12 text-[#9AB17A] mx-auto mb-4" />
+              <CheckCircle2 className="w-12 h-12 text-status-pass mx-auto mb-4" />
               <div className="font-semibold text-lg mb-2">테스트 실행이 완료되었습니다.</div>
               <div className="text-sm text-[#6b7280] mb-6">결과 페이지로 이동하시겠습니까?</div>
               <div className="flex gap-3">

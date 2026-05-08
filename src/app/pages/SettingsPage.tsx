@@ -1,9 +1,7 @@
-import { PageTitle } from '../components/common/PageTitle';
 import { mockScenarios } from '../data/mockData';
 
 export const SettingsPage = () => (
   <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50">
-    <PageTitle title="설정" />
     <div className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full">
       <div className="bg-white p-6 rounded-lg shadow-sm border border-[#f0f0f0] space-y-6">
         <div>

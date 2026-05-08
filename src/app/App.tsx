@@ -1,37 +1,40 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ScenarioNetworkGraph from './components/ScenarioNetworkGraph';
-import { PageTitle } from './components/common/PageTitle';
 import { StatusIcon } from './components/common/StatusIcon';
+import { SubHeader } from './components/common/SubHeader';
+import { LeftNavigation } from './components/common/LeftNavigation';
+import { FileList } from './components/common/FileList';
+import { SearchBar } from './components/common/SearchBar';
 import { HomePage } from './pages/HomePage';
 import { ExecutionHistoryPage as ExecutionHistoryPageView } from './pages/ExecutionHistoryPage';
 import { RTMPage } from './pages/RTMPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { TestGroupPage } from './pages/TestGroupPage';
 import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import {
-  Bell, Play, ChevronDown, ChevronRight, Upload, FileText,
-  CheckCircle2, XCircle, Clock, Loader2, Download, Plus, Trash2,
-  Eye, AlertCircle, CheckCircle, X, Home, Layers, Settings,
-  RotateCcw, Pause, ChevronLeft, User, Send,
-  History, CheckSquare, Search, Edit2, MessageCircle,
-  Sparkles, Star, FolderOpen, LayoutGrid,
+  ChevronDown, ChevronRight,
+  CheckCircle2, XCircle, Clock, Plus,
+  Eye, AlertCircle, CheckCircle, X,
+  RotateCcw, Pause, ChevronLeft, Send,
+  History, BarChart2, Users, Settings,
+  Network, GitBranch,
+  Sparkles, Star, FolderOpen, Download,
 } from 'lucide-react';
+import AgentTracePanel from './components/AgentTracePanel';
 import {
   mockAIItems,
-  mockFiles,
+  mockAgentTrace,
   mockNotifications,
-  mockPipelineStages,
-  mockRTMData,
-  mockRunningTestGroups,
   mockScenarioHistory,
   mockScenarios,
+  mockExecutionHistory,
   mockScenarioVersions,
   mockTestCases,
   mockTestGroups,
   mockTestLogs,
   type TestCaseMap,
 } from './data/mockData';
+const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
 
 // ── App ────────────────────────────────────────────────────────────────────────
 
@@ -39,10 +42,12 @@ export default function App() {
   // navigation
   const [currentPage, setCurrentPage] = useState<string>('HOME');
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [scenarioSubmenuExpanded, setScenarioSubmenuExpanded] = useState(false);
+  const [, setScenarioSubmenuExpanded] = useState(false);
+  const [homeTab, setHomeTab] = useState('overview');
+  const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
 
   // pipeline header
-  const [currentPipelineStage] = useState<number>(1);
+  const [showAgentTrace, setShowAgentTrace] = useState(false);
 
   // scenario page
   const [selectedScenario, setSelectedScenario] = useState('TS1');
@@ -92,7 +97,7 @@ export default function App() {
   const [completedAgentStages, setCompletedAgentStages] = useState<string[]>([]);
   const [currentAgentStage, setCurrentAgentStage] = useState<string>('');
   const [showCompletionModal, setShowCompletionModal] = useState(false);
-  const [scenarioSidebarTab, setScenarioSidebarTab] = useState<'TOTAL' | 'FILTERED'>('TOTAL');
+  const [scenarioSidebarTab, setScenarioSidebarTab] = useState<'TOTAL' | 'PASS' | 'FILTERED'>('TOTAL');
   const [scenarioFilter] = useState<string>('TOTAL');
   const [expandedScenarios, setExpandedScenarios] = useState<string[]>(['TS1']);
   const [expandedTestCases, setExpandedTestCases] = useState<string[]>(['TC1']);
@@ -116,7 +121,7 @@ export default function App() {
 
   // 테스트 페이지 (진행중 / 이력)
   const [testSubTab, setTestSubTab] = useState<'INPROGRESS' | 'HISTORY'>('INPROGRESS');
-  const [testSubmenuExpanded, setTestSubmenuExpanded] = useState(false);
+  const [, setTestSubmenuExpanded] = useState(false);
   const [runningTests, setRunningTests] = useState<Array<{
     id: string; name: string; groupId: string; startTime: string; status: 'running' | 'completed';
   }>>([
@@ -127,13 +132,17 @@ export default function App() {
   const [showRetestNavModal, setShowRetestNavModal] = useState(false);
 
   // 시나리오 그룹 선택 & 예약 설정
+  const [selectedScenarioGroupId, setSelectedScenarioGroupId] = useState<string | null>(null);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduledAlarms, setScheduledAlarms] = useState<Array<{ time: string; id: string }>>([]);
 
   // 테스트 결과
   const [historyFilter, setHistoryFilter] = useState<string>('ALL');
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
+  const [selectedRunningForDetail, setSelectedRunningForDetail] = useState<string | null>(null);
+  const [runningElapsed, setRunningElapsed] = useState(0);
   const [selectedFailTC, setSelectedFailTC] = useState<string | null>(null);
   const [historyDetailTab, setHistoryDetailTab] = useState<'FAIL' | 'PASS'>('FAIL');
 
@@ -256,6 +265,19 @@ export default function App() {
     };
   }, []);
 
+  const isHistoryDetail = currentPage === '테스트' && testSubTab === 'HISTORY' && (!!selectedExecutionId || !!selectedRunningForDetail);
+  const selectedExec = selectedExecutionId ? mockExecutionHistory.find(e => e.id === selectedExecutionId) ?? null : null;
+  const selectedRunningTest = selectedExecutionId ? runningTests.find(r => r.id === selectedExecutionId) ?? null : null;
+  const isExecRunning = !!selectedRunningTest && selectedRunningTest.status === 'running';
+  const detailRunningTest = selectedRunningForDetail ? runningTests.find(r => r.id === selectedRunningForDetail) ?? null : null;
+  const isDetailRunning = !!detailRunningTest && detailRunningTest.status === 'running';
+
+  useEffect(() => {
+    if (!isExecRunning && !isDetailRunning) { setRunningElapsed(0); return; }
+    const interval = setInterval(() => setRunningElapsed(s => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [isExecRunning, isDetailRunning]);
+
   const advanceAgentStage = () => {
     const order = ['UI', 'API', 'DB', 'Cross-check', '원인 분석', 'Report 생성'];
     const nextIncomplete = order.find(s => !completedAgentStages.includes(s));
@@ -271,208 +293,63 @@ export default function App() {
     }
   };
 
-  // ── LeftNavigation ──────────────────────────────────────────────────────────
-
-  const LeftNavigation = () => {
-    const bottomNavItems = [
-      { id: 'RTM', icon: CheckSquare, label: 'RTM' },
-      { id: '설정', icon: Settings, label: '설정' },
-    ];
-    const isTestPage = currentPage === '테스트';
-
-    return (
-      <div className="h-full w-14 bg-white border-r border-[#f0f0f0] flex flex-col py-6 transition-all duration-300">
-        <div className="flex flex-col h-full">
-          {/* Home */}
-          <div className="flex flex-col items-center mb-4">
-            <button
-              onClick={() => { setCurrentPage('HOME'); setScenarioSubmenuExpanded(false); setTestSubmenuExpanded(false); }}
-              title="대시보드"
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-                currentPage === 'HOME'
-                  ? 'bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white shadow-lg'
-                  : 'text-[#9ca3af] hover:text-[#6b7280] hover:bg-gray-50'
-              }`}
-            >
-              <Home className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="border-t border-[#f0f0f0] mb-4" />
-
-          {/* 시나리오 Menu with Submenu */}
-          <div className="flex flex-col items-center mb-4">
-            <button
-              onClick={() => {
-                setScenarioSubmenuExpanded(!scenarioSubmenuExpanded);
-                setTestSubmenuExpanded(false);
-                if (!scenarioSubmenuExpanded) setCurrentPage('시나리오');
-              }}
-              title="시나리오"
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-                currentPage === '시나리오' || currentPage === '테스트그룹'
-                  ? 'bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white shadow-lg'
-                  : 'text-[#9ca3af] hover:text-[#6b7280] hover:bg-gray-50'
-              }`}
-            >
-              <Layers className="w-5 h-5" />
-            </button>
-            {scenarioSubmenuExpanded && (
-              <div className="mt-2 flex flex-col items-center gap-2">
-                <div className="h-6 w-px bg-[#f0f0f0]" />
-                <button onClick={() => setCurrentPage('시나리오')} title="시나리오 목록"
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-                    currentPage === '시나리오' ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] shadow-sm' : 'text-[#6b7280] hover:bg-gray-50 hover:text-[#1a1a2e]'
-                  }`}><FileText className="w-4 h-4" /></button>
-                <button onClick={() => { setCurrentPage('테스트그룹'); setTestDepth(0); }} title="테스트그룹"
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-                    currentPage === '테스트그룹' ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] shadow-sm' : 'text-[#6b7280] hover:bg-gray-50 hover:text-[#1a1a2e]'
-                  }`}><LayoutGrid className="w-4 h-4" /></button>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-[#f0f0f0] mb-4" />
-
-          {/* 테스트 Menu with Submenu */}
-          <div className="flex flex-col items-center mb-4">
-            <button
-              onClick={() => {
-                setTestSubmenuExpanded(!testSubmenuExpanded);
-                setScenarioSubmenuExpanded(false);
-                if (!testSubmenuExpanded) setCurrentPage('테스트');
-              }}
-              title="테스트"
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-                isTestPage
-                  ? 'bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white shadow-lg'
-                  : 'text-[#9ca3af] hover:text-[#6b7280] hover:bg-gray-50'
-              }`}
-            >
-              <Play className="w-5 h-5" />
-            </button>
-            {testSubmenuExpanded && (
-              <div className="mt-2 flex flex-col items-center gap-2">
-                <div className="h-6 w-px bg-[#f0f0f0]" />
-                <button
-                  onClick={() => { setCurrentPage('테스트'); setTestSubTab('INPROGRESS'); }}
-                  title="진행중"
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 relative ${
-                    isTestPage && testSubTab === 'INPROGRESS' ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] shadow-sm' : 'text-[#6b7280] hover:bg-gray-50 hover:text-[#1a1a2e]'
-                  }`}
-                >
-                  <Loader2 className="w-4 h-4" />
-                  {runningTests.filter(t => t.status === 'running').length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white text-[9px] rounded-full flex items-center justify-center font-bold">
-                      {runningTests.filter(t => t.status === 'running').length}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => { setCurrentPage('테스트'); setTestSubTab('HISTORY'); }}
-                  title="이력"
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-                    isTestPage && testSubTab === 'HISTORY' ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 text-[#f78ca0] shadow-sm' : 'text-[#6b7280] hover:bg-gray-50 hover:text-[#1a1a2e]'
-                  }`}
-                ><History className="w-4 h-4" /></button>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-[#f0f0f0] mb-4" />
-
-          {/* RTM / 설정 */}
-          <div className="flex flex-col gap-4 flex-1 items-center">
-            {bottomNavItems.map(item => {
-              const Icon = item.icon;
-              const isActive = currentPage === item.id;
-              return (
-                <button key={item.id}
-                  onClick={() => { setCurrentPage(item.id); setScenarioSubmenuExpanded(false); setTestSubmenuExpanded(false); }}
-                  title={item.label}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-                    isActive ? 'bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white shadow-lg' : 'text-[#9ca3af] hover:text-[#6b7280] hover:bg-gray-50'
-                  }`}
-                ><Icon className="w-5 h-5" /></button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   // ── NavBar ──────────────────────────────────────────────────────────────────
 
   const NavBar = () => (
-    <div className="h-16 bg-white border-b border-[#f0f0f0] flex items-center justify-between px-6">
-      <div className="text-xl font-semibold bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] bg-clip-text text-transparent">
-        QApilot
+    <div className="h-[72px] bg-white border-b border-[#e5e7eb] flex items-center px-5 gap-4 z-10 flex-shrink-0">
+      {/* 로고 + 프로젝트 선택 */}
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <span className="text-[18px] font-extrabold text-[#3615CF] tracking-tight">QApilot</span>
+        <button className="flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-gray-50 transition-colors">
+          <span className="text-sm font-medium text-[#374151]">서비스 A</span>
+          <ChevronDown className="w-3.5 h-3.5 text-[#9ca3af]" />
+        </button>
       </div>
 
-      {/* 2-Layer Pipeline */}
-      <div className="flex flex-col items-center gap-1">
-        <div className="flex items-center gap-2 h-6">
-          {mockRunningTestGroups.map((group, idx) => (
-            <div key={group.groupNumber} className="flex flex-col items-center" style={{ marginLeft: idx === 0 ? '120px' : '0' }}>
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs transition-all ${
-                group.status === 'completed' ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white' :
-                group.status === 'running' ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white animate-pulse shadow-lg shadow-pink-300' :
-                'bg-gray-300 text-gray-600'
-              }`}>
-                {group.groupNumber}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          {mockPipelineStages.map((stage, idx) => {
-            const isCompleted = idx < currentPipelineStage;
-            const isCurrent = idx === currentPipelineStage;
-            return (
-              <div key={stage} className="flex items-center">
-                <div className="flex flex-col items-center">
-                  <div className={`w-3 h-3 rounded-full transition-all ${
-                    isCompleted || isCurrent ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]' : 'bg-gray-300'
-                  } ${isCurrent ? 'animate-pulse shadow-lg shadow-pink-300' : ''}`} />
-                  <span className={`text-xs mt-1 whitespace-nowrap ${isCompleted || isCurrent ? 'text-[#1a1a2e] font-medium' : 'text-[#9ca3af]'}`}>
-                    {stage}
-                  </span>
-                </div>
-                {idx < mockPipelineStages.length - 1 && (
-                  <div className={`w-16 h-0.5 mx-2 mb-4 ${isCompleted ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b]' : 'border-t-2 border-dashed border-gray-300'}`} />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <div className="flex-1" />
 
-      <div className="flex items-center gap-4">
-        {/* 예약 알람 시간 표시 */}
+      {/* 우측: 예약알람 + pill + 캐릭터 + 벨 */}
+      <div className="flex items-center gap-3 flex-shrink-0">
         {scheduledAlarms.length > 0 && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10 rounded-lg border border-[#f78ca0]/20">
-            <Clock className="w-4 h-4 text-[#f78ca0]" />
-            <span className="text-sm font-medium text-[#f78ca0]">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3615CF]/8 rounded-lg border border-[#3615CF]/20">
+            <Clock className="w-3.5 h-3.5 text-[#3615CF]" />
+            <span className="text-xs font-medium text-[#3615CF]">
               {scheduledAlarms.map(a => a.time).join(', ')}
             </span>
           </div>
         )}
-        <div className="relative">
-          <button onClick={() => setNotificationOpen(!notificationOpen)} className="p-2 hover:bg-gray-50 rounded-full relative">
-            <Bell className="w-5 h-5 text-[#6b7280]" />
+        {/* 말풍선 + 캐릭터 */}
+        <div className="flex items-center">
+          <div className="flex items-center gap-2 px-5 py-1.5 bg-[#3615CF] rounded-full text-white text-sm font-semibold shadow-sm select-none">
+            <span>[QA 프로젝트 #1] cross check 중</span>
+            <span className="speech-ellipsis" aria-hidden="true">
+              <span>.</span>
+              <span>.</span>
+              <span>.</span>
+            </span>
+          </div>
+          {/* 말풍선 꼬리 */}
+          <div className="w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-l-[8px] border-l-[#3615CF] -ml-px flex-shrink-0" />
+        </div>
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => setNotificationOpen(prev => !prev)}
+            className="relative w-11 h-11 rounded-full  flex items-center justify-center select-none focus:outline-none focus:ring-2 focus:ring-[#3615CF]/20"
+            aria-label="알람 열기"
+          >
+            <img src={qapilotAgent} alt="QApilot" className="w-full h-full object-cover" />
             {unreadNotifications > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white text-xs rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-[#3615CF] text-white text-[10px] rounded-full flex items-center justify-center font-bold shadow-sm">
                 {unreadNotifications}
               </span>
             )}
-          </button>
+          </button> 
           {notificationOpen && (
-            <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-[#f0f0f0] z-50">
-              <div className="p-4 border-b border-[#f0f0f0] font-semibold">알림</div>
+            <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-[#e5e7eb] z-50">
+              <div className="p-4 border-b border-[#f0f0f0] font-semibold text-[#1a1a2e]">알림</div>
               <div className="max-h-96 overflow-y-auto">
                 {mockNotifications.map(notif => (
-                  <div key={notif.id} className={`p-4 border-b border-[#f0f0f0] hover:bg-gray-50 ${!notif.read ? 'bg-blue-50' : ''}`}>
+                  <div key={notif.id} className={`p-4 border-b border-[#f0f0f0] hover:bg-gray-50 ${!notif.read ? 'bg-[#3615CF]/5' : ''}`}>
                     <div className="text-sm text-[#1a1a2e]">{notif.message}</div>
                     <div className="text-xs text-[#6b7280] mt-1">{notif.time}</div>
                   </div>
@@ -480,9 +357,6 @@ export default function App() {
               </div>
             </div>
           )}
-        </div>
-        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] flex items-center justify-center text-white">
-          <User className="w-4 h-4" />
         </div>
       </div>
     </div>
@@ -495,7 +369,7 @@ export default function App() {
       return (
         <button
           onClick={() => setAiPanelOpen(true)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 w-10 h-32 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded-l-lg shadow-lg flex items-center justify-center z-40 hover:w-12 transition-all"
+          className="fixed right-0 top-1/2 -translate-y-1/2 w-10 h-32 bg-[#3615CF] text-white rounded-l-lg shadow-lg flex items-center justify-center z-40 hover:w-12 transition-all"
           style={{ writingMode: 'vertical-rl' }}
         >
           <span className="text-sm font-semibold">시나리오 관리봇</span>
@@ -504,7 +378,7 @@ export default function App() {
     }
     return (
       <div className="w-80 h-full bg-white border-l border-[#f0f0f0] flex flex-col shadow-lg flex-shrink-0">
-        <div className="p-4 border-b border-[#f0f0f0] flex justify-between items-center bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/10">
+        <div className="p-4 border-b border-[#f0f0f0] flex justify-between items-center bg-[#EAE8F9]">
           <div className="font-semibold text-[#1a1a2e]">시나리오 관리봇</div>
           <button onClick={() => setAiPanelOpen(false)} className="p-1 hover:bg-white/50 rounded">
             <ChevronRight className="w-5 h-5 text-[#6b7280]" />
@@ -516,7 +390,7 @@ export default function App() {
               <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[85%] p-3 rounded-lg text-sm ${
                   msg.role === 'user'
-                    ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white'
+                    ? 'bg-[#EAE8F9] text-[#3615CF]'
                     : 'bg-gray-100 text-[#1a1a2e]'
                 }`}>{msg.text}</div>
               </div>
@@ -545,11 +419,11 @@ export default function App() {
             <input
               type="text" value={aiInput} onChange={e => setAiInput(e.target.value)}
               placeholder="예) 사용자가 이메일로 로그인하는 시나리오를 만들어줘"
-              className="flex-1 p-2 border border-[#f0f0f0] rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#f78ca0]/20"
+              className="flex-1 p-2 border border-[#f0f0f0] rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#3615CF]/20"
               onKeyDown={e => { if (e.key === 'Enter' && aiInput.trim()) sendAiMessage(aiInput); }}
             />
             <button onClick={() => { if (aiInput.trim()) sendAiMessage(aiInput); }}
-              className="p-2 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded hover:shadow-md transition-shadow">
+              className="p-2 bg-[#3615CF] text-white rounded hover:shadow-md transition-shadow">
               <Send className="w-4 h-4" />
             </button>
           </div>
@@ -566,13 +440,121 @@ export default function App() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-screen bg-gray-50 flex overflow-hidden">
-      <LeftNavigation />
+    <div className="h-screen flex flex-col overflow-hidden">
+      <NavBar />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <NavBar />
-        <div className="flex-1 overflow-hidden flex">
-          <div className="flex-1 overflow-hidden">
+      <div className="flex-1 flex overflow-hidden">
+        <LeftNavigation
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          testSubTab={testSubTab}
+          setTestSubTab={setTestSubTab}
+          runningTests={runningTests}
+        />
+
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {showAgentTrace && (
+            <AgentTracePanel
+              items={mockAgentTrace}
+              onClose={() => setShowAgentTrace(false)}
+            />
+          )}
+          <SubHeader
+            title={
+              isHistoryDetail ? '' :
+              currentPage === 'HOME' ? '대시보드' :
+              currentPage === '시나리오' ? '시나리오' :
+              currentPage === '테스트' ? (testSubTab === 'HISTORY' ? '실행 이력' : '테스트 실행') :
+              currentPage === 'RTM' ? 'RTM' :
+              currentPage === '설정' ? '설정' : ''
+            }
+            titleExtra={isHistoryDetail ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    if (selectedRunningForDetail) setSelectedRunningForDetail(null);
+                    else setSelectedExecutionId(null);
+                  }}
+                  className="flex items-center gap-0.5 text-[#9ca3af] hover:text-[#1a1a2e] transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span className="text-sm">이력</span>
+                </button>
+                <div className="w-px h-4 bg-[#e5e7eb]" />
+                <span className="text-[15px] font-bold text-[#1a1a2e]">
+                  {detailRunningTest?.name ?? selectedExec?.groupId ?? selectedRunningTest?.groupId ?? ''}
+                </span>
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#3615CF]/10 text-[#3615CF] ${(isExecRunning || isDetailRunning) ? 'animate-pulse' : ''}`}>
+                  {(isExecRunning || isDetailRunning) ? '실행 중' : `#${selectedExec?.executionNumber}번째 실행`}
+                </span>
+                <span className="text-xs text-[#9ca3af]">
+                  {detailRunningTest?.startTime ?? selectedExec?.startDate ?? selectedRunningTest?.startTime ?? ''}
+                </span>
+                <span className="text-xs text-[#9ca3af]">
+                  {(isExecRunning || isDetailRunning)
+                    ? `${Math.floor(runningElapsed / 60)}m ${runningElapsed % 60}s`
+                    : (selectedExec?.duration ?? '')}
+                </span>
+              </div>
+            ) : undefined}
+            tabs={currentPage === 'HOME' ? [
+              { key: 'overview', label: 'Overview', icon: BarChart2 },
+              { key: 'people',   label: 'People',   icon: Users, count: 6 },
+              { key: 'settings', label: 'Settings', icon: Settings },
+            ] : undefined}
+            activeTab={homeTab}
+            onTabChange={setHomeTab}
+            rightContent={
+              (isHistoryDetail && !isExecRunning && !isDetailRunning) ? (
+                <div className="flex items-center gap-2">
+                  <button className="h-7 flex items-center gap-1.5 px-3 text-[11px] font-medium text-[#6b7280] rounded-lg border border-[#e5e7eb] hover:bg-gray-50 transition-colors">
+                    <Download className="w-3 h-3" /> CSV
+                  </button>
+                  <button className="h-7 flex items-center gap-1.5 px-3 text-[11px] font-medium text-[#6b7280] rounded-lg border border-[#e5e7eb] hover:bg-gray-50 transition-colors">
+                    <Download className="w-3 h-3" /> PDF
+                  </button>
+                </div>
+              ) : currentPage === '테스트' && testSubTab === 'HISTORY' && !selectedExecutionId ? (
+              <SearchBar
+                value={historySearchQuery}
+                onChange={setHistorySearchQuery}
+                placeholder="이력 검색..."
+                className="w-52"
+              />
+            ) : currentPage === '시나리오' ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setScenarioViewMode(scenarioViewMode === 'table' ? 'graph' : 'table')}
+                  title={scenarioViewMode === 'table' ? '그래프 보기' : '목록 보기'}
+                  className={`inline-flex h-7 items-center justify-center rounded-lg px-2 text-xs leading-none transition-colors ${
+                    scenarioViewMode === 'graph'
+                      ? 'bg-[#3615CF] text-white'
+                      : 'text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/8'
+                  }`}>
+                  <Network className="w-4 h-4" />
+                </button>
+                <div className="w-px h-4 bg-[#e5e7eb]" />
+                <button
+                  onClick={() => setShowLinkedFiles(true)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs leading-none text-[#6b7280] hover:text-[#6b7280] hover:bg-[#fef3c7] transition-colors">
+                  <FolderOpen className="w-3.5 h-3.5" /> Files
+                </button>
+                <button
+                  onClick={triggerCodeChangeDetection}
+                  disabled={codeChangeDetected}
+                  className={`inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs leading-none transition-colors ${
+                    codeChangeDetected
+                      ? 'text-[#6b7280] bg-[#fef3c7]'
+                      : 'text-[#6b7280] hover:text-[#6b7280] hover:bg-[#fef3c7]'
+                  }`}>
+                  <GitBranch className="w-3.5 h-3.5" /> 코드 변경 탐지
+                  {codeChangeDetected && <span className="w-1.5 h-1.5 rounded-full bg-[#6b7280]" />}
+                </button>
+              </div>
+            ) : undefined}
+          />
+          <div className="flex-1 overflow-hidden flex">
+            <div className="flex-1 overflow-hidden">
             {currentPage === 'HOME' && <HomePage setCurrentPage={setCurrentPage} navigateToHistory={navigateToHistory} />}
             {currentPage === '시나리오' && (
               <ScenarioPage
@@ -635,55 +617,14 @@ export default function App() {
                 setTestDepth={setTestDepth}
                 highlightedBotRow={highlightedBotRow}
                 setHighlightedBotRow={setHighlightedBotRow}
-              />
-            )}
-            {currentPage === '테스트그룹' && (
-              <TestGroupPage
-                testDepth={testDepth}
-                setTestDepth={setTestDepth}
-                selectedTestGroup={selectedTestGroup}
-                groupSearchQuery={groupSearchQuery}
-                setGroupSearchQuery={setGroupSearchQuery}
-                editingGroupId={editingGroupId}
-                setEditingGroupId={setEditingGroupId}
-                editingGroupName={editingGroupName}
-                setEditingGroupName={setEditingGroupName}
-                groupNames={groupNames}
-                setGroupNames={setGroupNames}
-                isTestRunning={isTestRunning}
-                setIsTestRunning={setIsTestRunning}
-                completedAgentStages={completedAgentStages}
-                setCompletedAgentStages={setCompletedAgentStages}
-                currentAgentStage={currentAgentStage}
-                setCurrentAgentStage={setCurrentAgentStage}
-                showCompletionModal={showCompletionModal}
-                setShowCompletionModal={setShowCompletionModal}
-                scenarioSidebarTab={scenarioSidebarTab}
-                setScenarioSidebarTab={setScenarioSidebarTab}
-                scenarioFilter={scenarioFilter}
-                expandedScenarios={expandedScenarios}
-                setExpandedScenarios={setExpandedScenarios}
-                expandedTestCases={expandedTestCases}
-                setExpandedTestCases={setExpandedTestCases}
-                highlightedLogIdx={highlightedLogIdx}
-                setHighlightedLogIdx={setHighlightedLogIdx}
+                selectedScenarioGroupId={selectedScenarioGroupId}
+                setSelectedScenarioGroupId={setSelectedScenarioGroupId}
                 setRunningTests={setRunningTests}
-                selectedRunningTestId={selectedRunningTestId}
+                setTestSubTab={setTestSubTab}
                 setSelectedRunningTestId={setSelectedRunningTestId}
                 setSelectedTestGroup={setSelectedTestGroup}
-                setCurrentPage={setCurrentPage}
-                setTestSubTab={setTestSubTab}
-                setTestSubmenuExpanded={setTestSubmenuExpanded}
-                setScenarioSubmenuExpanded={setScenarioSubmenuExpanded}
-                setHistoryFilter={setHistoryFilter}
-                advanceAgentStage={advanceAgentStage}
-                getNodeStatus={getNodeStatus}
-                selectedGroupIds={selectedGroupIds}
-                setSelectedGroupIds={setSelectedGroupIds}
-                showScheduleModal={showScheduleModal}
-                setShowScheduleModal={setShowScheduleModal}
-                scheduledAlarms={scheduledAlarms}
-                setScheduledAlarms={setScheduledAlarms}
+                viewMode={scenarioViewMode}
+                setViewMode={setScenarioViewMode}
               />
             )}
             {currentPage === '테스트' && (
@@ -711,6 +652,8 @@ export default function App() {
                 setTestSubTab={setTestSubTab}
                 historyFilter={historyFilter}
                 setHistoryFilter={setHistoryFilter}
+                historySearchQuery={historySearchQuery}
+                setHistorySearchQuery={setHistorySearchQuery}
                 selectedExecutionId={selectedExecutionId}
                 setSelectedExecutionId={setSelectedExecutionId}
                 selectedFailTC={selectedFailTC}
@@ -720,6 +663,8 @@ export default function App() {
                 retestCheckedIds={retestCheckedIds}
                 setRetestCheckedIds={setRetestCheckedIds}
                 setShowRetestNavModal={setShowRetestNavModal}
+                selectedRunningForDetail={selectedRunningForDetail}
+                setSelectedRunningForDetail={setSelectedRunningForDetail}
                 advanceAgentStage={advanceAgentStage}
                 getNodeStatus={getNodeStatus}
                 showCompletionModal={showCompletionModal}
@@ -731,54 +676,24 @@ export default function App() {
           </div>
         </div>
       </div>
+    </div>
 
-      {/* Files Modal */}
+    {/* Files Modal */}
       {showLinkedFiles && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowLinkedFiles(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-[#f0f0f0] flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FolderOpen className="w-5 h-5 text-[#6b7280]" />
-                <span className="font-semibold text-[#1a1a2e]">FILES</span>
-              </div>
-              <button
-                className="px-3 py-1.5 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded text-xs flex items-center gap-1">
-                <Plus className="w-3.5 h-3.5" /> 파일 추가
-              </button>
+            <div className="px-8 pt-7 pb-5">
+              <FileList />
             </div>
-            {/* File list */}
-            <div className="px-6 py-4 space-y-3">
-              {mockFiles.map(file => (
-                <div key={file.id} className="flex items-center justify-between p-3 rounded-lg border border-[#f0f0f0] hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-[#6b7280] flex-shrink-0" />
-                    <div>
-                      <div className="font-medium text-sm text-[#1a1a2e]">{file.name}</div>
-                      <div className="text-xs text-[#6b7280]">{file.version} · {file.date}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {file.reflected
-                      ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">시나리오 반영됨</span>
-                      : <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">미반영</span>}
-                    <button className="px-3 py-1 bg-white border border-[#f0f0f0] rounded text-xs hover:bg-gray-50 flex items-center gap-1">
-                      <Upload className="w-3 h-3" /> 업데이트 +
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* Footer buttons */}
-            <div className="px-6 py-4 border-t border-[#f0f0f0] flex items-center gap-3">
+            <div className="px-6 pb-5 flex items-center gap-3">
               <button onClick={() => setShowLinkedFiles(false)}
-                className="flex-1 px-4 py-2 bg-white border border-[#f0f0f0] rounded-lg text-sm hover:bg-gray-50">
-                취소
+                className="flex-1 px-4 py-2 bg-white border border-[#e5e7eb] rounded-lg text-sm hover:bg-gray-50">
+                닫기
               </button>
               <button
                 onClick={() => { setShowLinkedFiles(false); setChatbarActive(true); setChatPanelExpanded(true); setChatContextTag('연관 파일 변경 반영'); }}
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2">
-                수정
+                className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:shadow-md transition-shadow">
+                수정 요청
                 <Sparkles className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -790,7 +705,7 @@ export default function App() {
       {showRetestNavModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] flex items-center justify-center mx-auto mb-4">
+            <div className="w-12 h-12 rounded-full bg-[#3615CF] flex items-center justify-center mx-auto mb-4">
               <RotateCcw className="w-6 h-6 text-white" />
             </div>
             <div className="font-semibold text-[#1a1a2e] mb-2">재테스트 시나리오 그룹이 생성되었습니다</div>
@@ -821,7 +736,7 @@ export default function App() {
                   setTestSubmenuExpanded(true);
                   setScenarioSubmenuExpanded(false);
                 }}
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-[#f78ca0] via-[#fd868c] to-[#fe9a8b] text-white rounded-lg font-medium text-sm"
+                className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium text-sm hover:shadow-md transition-shadow"
               >
                 이동
               </button>
@@ -859,22 +774,6 @@ export default function App() {
               WebkitMaskImage: 'linear-gradient(to top, black 0%, rgba(0,0,0,0.78) 45%, rgba(0,0,0,0.24) 78%, transparent 100%)',
             }}
           />
-
-          {/* Quick chips panel */}
-          {chatbarActive && quickChipsOpen && (
-            <div
-              className="fixed z-50 flex flex-col gap-1.5"
-              style={{ bottom: '5rem', left: 'calc(3.5rem + 1rem)' }}
-            >
-              {['엣지 케이스 추가', 'TC 세분화', '시나리오 생성', '오류 분석'].map(chip => (
-                <button key={chip}
-                  onClick={() => { setAiInput(chip); setQuickChipsOpen(false); setChatPanelExpanded(true); }}
-                  className="px-4 py-2 bg-white rounded-full shadow-lg border border-[#f0f0f0] text-sm text-[#1a1a2e] hover:shadow-xl hover:border-[#f78ca0]/30 text-left transition-all">
-                  {chip}
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Chat history panel */}
           {chatbarActive && chatHistoryPanelOpen && (
@@ -922,7 +821,7 @@ export default function App() {
               }}
             >
               <style>{`@keyframes slideUpFade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }`}</style>
-              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0 bg-gradient-to-r from-[#f78ca0]/5 to-[#fe9a8b]/5">
+              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0 bg-[#EAE8F9]/40">
                 <span className="text-sm font-semibold text-[#1a1a2e]">시나리오 관리봇</span>
                 <button onClick={() => setChatPanelExpanded(false)} className="p-1 hover:bg-gray-100 rounded">
                   <ChevronDown className="w-4 h-4 text-[#9ca3af]" />
@@ -934,7 +833,7 @@ export default function App() {
                     <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed ${
                         msg.role === 'user'
-                          ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white'
+                          ? 'bg-[#EAE8F9] text-[#3615CF]'
                           : 'bg-gray-100 text-[#1a1a2e]'
                       }`}>{msg.text}</div>
                     </div>
@@ -947,7 +846,7 @@ export default function App() {
                               setHighlightedBotRow('tc-TS1_TC2');
                               setTimeout(() => setHighlightedBotRow(null), 2000);
                             }}
-                            className="px-2.5 py-1 text-xs bg-white border border-[#f0f0f0] rounded-full hover:bg-gray-50 hover:border-[#f78ca0]/30 transition-colors">
+                            className="px-2.5 py-1 text-xs bg-white border border-[#f0f0f0] rounded-full hover:bg-gray-50 hover:border-[#3615CF]/30 transition-colors">
                             {label}
                           </button>
                         ))}
@@ -973,15 +872,28 @@ export default function App() {
             <div className="flex items-center gap-2 w-full max-w-2xl px-4">
 
               {/* (+) outside-left: quick chips */}
-              <button
-                onClick={() => { setQuickChipsOpen(p => !p); setChatHistoryPanelOpen(false); }}
-                className={`w-10 h-10 rounded-full shadow-lg border flex items-center justify-center flex-shrink-0 transition-all hover:shadow-xl ${
-                  quickChipsOpen
-                    ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white border-transparent'
-                    : 'bg-white border-[#f0f0f0] text-[#6b7280] hover:border-[#f78ca0]/30'
-                }`}>
-                <Plus className="w-5 h-5" />
-              </button>
+              <div className="relative flex-shrink-0">
+                {chatbarActive && quickChipsOpen && (
+                  <div className="absolute z-50 flex flex-col gap-1.5 right-full bottom-0 mr-3">
+                    {['엣지 케이스 추가', 'TC 세분화', '시나리오 생성', '오류 분석'].map(chip => (
+                      <button key={chip}
+                        onClick={() => { setAiInput(chip); setQuickChipsOpen(false); setChatPanelExpanded(true); }}
+                        className="w-max min-w-[132px] px-4 py-2.5 bg-white rounded-full shadow-lg border border-[#f0f0f0] text-[13px] font-semibold text-[#1a1a2e] whitespace-nowrap hover:shadow-xl hover:border-[#3615CF]/30 text-left transition-all">
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => { setQuickChipsOpen(p => !p); setChatHistoryPanelOpen(false); }}
+                  className={`w-10 h-10 rounded-full shadow-lg border flex items-center justify-center transition-all hover:shadow-xl ${
+                    quickChipsOpen
+                      ? 'bg-[#3615CF] text-white border-transparent'
+                      : 'bg-white border-[#f0f0f0] text-[#6b7280] hover:border-[#3615CF]/30'
+                  }`}>
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
 
               {/* Pill bar */}
               <div className="flex-1 flex items-center bg-white rounded-full shadow-xl border border-[#f0f0f0] px-4 py-2.5 gap-3 hover:shadow-2xl transition-shadow">
@@ -989,7 +901,7 @@ export default function App() {
                 {/* History toggle — inside-left */}
                 <button
                   onClick={() => { setChatHistoryPanelOpen(p => !p); setQuickChipsOpen(false); }}
-                  className={`flex-shrink-0 transition-colors p-0.5 rounded-full ${chatHistoryPanelOpen ? 'text-[#f78ca0]' : 'text-[#9ca3af] hover:text-[#6b7280]'}`}
+                  className={`flex-shrink-0 transition-colors p-0.5 rounded-full ${chatHistoryPanelOpen ? 'text-[#3615CF]' : 'text-[#9ca3af] hover:text-[#6b7280]'}`}
                   title="대화 히스토리">
                   <History className="w-4 h-4" />
                 </button>
@@ -999,7 +911,7 @@ export default function App() {
 
                 {/* Context tag (pink) — shown when clicking speech bubble on a row */}
                 {chatContextTag && (
-                  <div className="flex items-center gap-1 px-2.5 py-0.5 bg-[#f78ca0]/15 text-[#f78ca0] rounded-full text-xs flex-shrink-0 max-w-[200px] border border-[#f78ca0]/20">
+                  <div className="flex items-center gap-1 px-2.5 py-0.5 bg-[#EAE8F9] text-[#3615CF] rounded-full text-xs flex-shrink-0 max-w-[200px] border border-[#3615CF]/20">
                     <span className="truncate font-medium">{chatContextTag}</span>
                     <button onClick={() => setChatContextTag(null)} className="flex-shrink-0 ml-0.5 opacity-60 hover:opacity-100">
                       <X className="w-3 h-3" />
@@ -1034,7 +946,7 @@ export default function App() {
                   onClick={() => { if (aiInput.trim()) { sendAiMessage(aiInput); setChatPanelExpanded(true); } }}
                   className={`p-1.5 rounded-full flex-shrink-0 transition-all ${
                     aiInput.trim()
-                      ? 'bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white shadow-sm hover:shadow-md'
+                      ? 'bg-[#3615CF] text-white shadow-sm hover:shadow-md'
                       : 'bg-gray-100 text-[#c4c9d4]'
                   }`}>
                   <Send className="w-4 h-4" />
