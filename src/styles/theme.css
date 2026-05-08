@@ -187,6 +187,25 @@
 }
 
 @layer components {
+  .speech-ellipsis {
+    display: inline-flex;
+    min-width: 0.9rem;
+    justify-content: space-between;
+  }
+
+  .speech-ellipsis span {
+    opacity: 0.2;
+    animation: speech-ellipsis-blink 1.4s infinite ease-in-out;
+  }
+
+  .speech-ellipsis span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .speech-ellipsis span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
   .scenario-checkbox {
     appearance: none;
     -webkit-appearance: none;
@@ -222,5 +241,19 @@
 
   .scenario-checkbox:indeterminate {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 8h8' stroke='%23000000' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+}
+
+@keyframes speech-ellipsis-blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+    transform: translateY(0);
+  }
+
+  40% {
+    opacity: 1;
+    transform: translateY(-1px);
   }
 }

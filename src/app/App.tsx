@@ -303,7 +303,12 @@ export default function App() {
         {/* 말풍선 + 캐릭터 */}
         <div className="flex items-center">
           <div className="flex items-center gap-2 px-5 py-1.5 bg-[#3615CF] rounded-full text-white text-sm font-semibold shadow-sm select-none">
-            QA 프로젝트 #1
+            <span>[QA 프로젝트 #1] cross check 중</span>
+            <span className="speech-ellipsis" aria-hidden="true">
+              <span>.</span>
+              <span>.</span>
+              <span>.</span>
+            </span>
           </div>
           {/* 말풍선 꼬리 */}
           <div className="w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-l-[8px] border-l-[#3615CF] -ml-px flex-shrink-0" />
