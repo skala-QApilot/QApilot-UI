@@ -10,6 +10,8 @@ import { TestRunningPage } from './pages/TestRunningPage';
 import { RTMPage } from './pages/RTMPage';
 import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
+import { DashHomePage, type Service } from './pages/DashHomePage';
+import { ServiceSetupPage } from './pages/ServiceSetupPage';
 import {
   ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Clock, Plus,
@@ -40,8 +42,15 @@ const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).hre
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // services (top-level dashboard list)
+  const [services, setServices] = useState<Service[]>([
+    { id: 'svc-1', name: '서비스A', isNew: false, createdAt: '2026-01-15' },
+    { id: 'svc-2', name: '서비스B', isNew: false, createdAt: '2026-02-20' },
+  ]);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>('svc-1');
+
   // navigation
-  const [currentPage, setCurrentPage] = useState<string>('HOME');
+  const [currentPage, setCurrentPage] = useState<string>('SERVICES');
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [homeTab, setHomeTab] = useState('overview');
   const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
@@ -337,17 +346,54 @@ export default function App() {
     }
   };
 
+  // ── Service navigation helpers ──────────────────────────────────────────────
+
+  const selectedService = services.find(s => s.id === selectedServiceId) ?? null;
+
+  const handleServiceSelect = (service: Service) => {
+    setSelectedServiceId(service.id);
+    setCurrentPage(service.isNew ? 'SETUP' : 'HOME');
+  };
+
+  const handleCreateService = (name: string) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const newService: Service = { id: `svc-${Date.now()}`, name, isNew: true, createdAt: today };
+    setServices(prev => [...prev, newService]);
+    setSelectedServiceId(newService.id);
+    setCurrentPage('SETUP');
+  };
+
+  const handleGenerateScenarios = () => {
+    if (selectedServiceId) {
+      setServices(prev => prev.map(s => s.id === selectedServiceId ? { ...s, isNew: false } : s));
+    }
+    setCurrentPage('시나리오');
+  };
+
   // ── NavBar ──────────────────────────────────────────────────────────────────
 
   const NavBar = () => (
     <div className="h-[72px] bg-white border-b border-[#e5e7eb] flex items-center px-5 gap-4 z-10 flex-shrink-0">
-      {/* 로고 + 프로젝트 선택 */}
-      <div className="flex items-center gap-3 flex-shrink-0">
-        <span className="text-[18px] font-extrabold text-[#3615CF] tracking-tight">QApilot</span>
-        <button className="flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-gray-50 transition-colors">
-          <span className="text-sm font-medium text-[#374151]">서비스 A</span>
-          <ChevronDown className="w-3.5 h-3.5 text-[#9ca3af]" />
+      {/* 로고 + 서비스 breadcrumb */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <button
+          onClick={() => setCurrentPage('SERVICES')}
+          className="text-[18px] font-extrabold text-[#3615CF] tracking-tight hover:opacity-80 transition-opacity"
+        >
+          QApilot
         </button>
+        {selectedService && currentPage !== 'SERVICES' && (
+          <>
+            <ChevronRight className="w-4 h-4 text-[#d1d5db]" />
+            <button
+              onClick={() => setCurrentPage('HOME')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <span className="text-sm font-medium text-[#374151]">{selectedService.name}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#9ca3af]" />
+            </button>
+          </>
+        )}
       </div>
 
       <div className="flex-1" />
@@ -487,6 +533,13 @@ export default function App() {
     <div className="h-screen flex flex-col overflow-hidden">
       <NavBar />
 
+      {currentPage === 'SERVICES' ? (
+        <DashHomePage
+          services={services}
+          onServiceSelect={handleServiceSelect}
+          onCreateService={handleCreateService}
+        />
+      ) : (
       <div className="flex-1 flex overflow-hidden">
         <LeftNavigation
           currentPage={currentPage}
@@ -503,7 +556,7 @@ export default function App() {
               onClose={() => setShowAgentTrace(false)}
             />
           )}
-          {currentPage !== '테스트' && (
+          {currentPage !== '테스트' && currentPage !== 'SETUP' && (
             <SubHeader
               title={
                 currentPage === 'HOME' ? '대시보드' :
@@ -736,10 +789,17 @@ export default function App() {
               )
             )}
             {currentPage === 'RTM' && <RTMPage />}
+            {currentPage === 'SETUP' && selectedService && (
+              <ServiceSetupPage
+                serviceName={selectedService.name}
+                onGenerateScenarios={handleGenerateScenarios}
+              />
+            )}
           </div>
         </div>
       </div>
-    </div>
+      </div>
+      )}
 
     {/* Files Modal */}
       {showLinkedFiles && (
