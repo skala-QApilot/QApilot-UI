@@ -1,101 +1,40 @@
 import React from 'react';
-import { CheckCircle, CheckCircle2, ChevronDown, ChevronRight, Eye, GitBranch, List, Loader2, Pause, Play, RotateCcw, ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Eye, Loader2, Pause, Play, RotateCcw } from 'lucide-react';
 import { SubHeader } from '../components/common/SubHeader';
-import { mockExecutionHistory } from '../data/mockData';
 import { AgentProgressStrip } from '../components/common/AgentProgressStrip';
-import { TerminalFrame } from '../components/common/RuntimeTerminal';
-import { RuntimeTerminal } from '../components/common/RuntimeTerminal';
-import { StatusIcon } from '../components/common/StatusIcon';
-import { mockScenarios, mockTestCases, mockRTMData, mockTVEndpoints, mockTestLogs } from '../data/mockData';
+import { TerminalFrame, RuntimeTerminal } from '../components/common/RuntimeTerminal';
+import { mockTestLogs } from '../data/mockData';
 
 type RunningTest = { id: string; name: string; groupId: string; startTime: string; status: 'running' | 'completed' };
-type TestSubTab = 'INPROGRESS' | 'HISTORY';
-type HistoryDetailTab = 'FAIL' | 'PASS';
-type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED';
-
 interface TestRunningPageProps {
   runningTests: RunningTest[];
-  setRunningTests: React.Dispatch<React.SetStateAction<RunningTest[]>>;
   selectedRunningTestId: string | null;
   setSelectedRunningTestId: React.Dispatch<React.SetStateAction<string | null>>;
-  setSelectedTestGroup: React.Dispatch<React.SetStateAction<string | null>>;
   isTestRunning: boolean;
   setIsTestRunning: React.Dispatch<React.SetStateAction<boolean>>;
-  completedAgentStages: string[];
   setCompletedAgentStages: React.Dispatch<React.SetStateAction<string[]>>;
-  currentAgentStage: string;
   setCurrentAgentStage: React.Dispatch<React.SetStateAction<string>>;
-  scenarioSidebarTab: ScenarioSidebarTab;
-  setScenarioSidebarTab: React.Dispatch<React.SetStateAction<ScenarioSidebarTab>>;
-  expandedScenarios: string[];
-  setExpandedScenarios: React.Dispatch<React.SetStateAction<string[]>>;
-  expandedTestCases: string[];
-  setExpandedTestCases: React.Dispatch<React.SetStateAction<string[]>>;
   highlightedLogIdx: number | null;
   setHighlightedLogIdx: React.Dispatch<React.SetStateAction<number | null>>;
-  testSubTab: TestSubTab;
-  setTestSubTab: React.Dispatch<React.SetStateAction<TestSubTab>>;
-  historyFilter: string;
-  setHistoryFilter: React.Dispatch<React.SetStateAction<string>>;
-  historySearchQuery: string;
-  setHistorySearchQuery: React.Dispatch<React.SetStateAction<string>>;
-  selectedExecutionId: string | null;
-  setSelectedExecutionId: React.Dispatch<React.SetStateAction<string | null>>;
-  selectedFailTC: string | null;
-  setSelectedFailTC: React.Dispatch<React.SetStateAction<string | null>>;
-  historyDetailTab: HistoryDetailTab;
-  setHistoryDetailTab: React.Dispatch<React.SetStateAction<HistoryDetailTab>>;
-  retestCheckedIds: Set<string>;
-  setRetestCheckedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
-  setShowRetestNavModal: React.Dispatch<React.SetStateAction<boolean>>;
-  selectedRunningForDetail: string | null;
   setSelectedRunningForDetail: React.Dispatch<React.SetStateAction<string | null>>;
   advanceAgentStage: () => void;
   getNodeStatus: (stage: string) => 'inactive' | 'running' | 'complete';
-  showCompletionModal: boolean;
   setShowCompletionModal: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export const TestRunningPage = ({
   runningTests,
-  setRunningTests,
   selectedRunningTestId,
   setSelectedRunningTestId,
-  setSelectedTestGroup,
   isTestRunning,
   setIsTestRunning,
-  completedAgentStages,
   setCompletedAgentStages,
-  currentAgentStage,
   setCurrentAgentStage,
-  scenarioSidebarTab,
-  setScenarioSidebarTab,
-  expandedScenarios,
-  setExpandedScenarios,
-  expandedTestCases,
-  setExpandedTestCases,
   highlightedLogIdx,
   setHighlightedLogIdx,
-  testSubTab,
-  setTestSubTab,
-  historyFilter,
-  setHistoryFilter,
-  historySearchQuery,
-  setHistorySearchQuery,
-  selectedExecutionId,
-  setSelectedExecutionId,
-  selectedFailTC,
-  setSelectedFailTC,
-  historyDetailTab,
-  setHistoryDetailTab,
-  retestCheckedIds,
-  setRetestCheckedIds,
-  setShowRetestNavModal,
-  selectedRunningForDetail,
   setSelectedRunningForDetail,
   advanceAgentStage,
   getNodeStatus,
-  showCompletionModal,
   setShowCompletionModal,
 }: TestRunningPageProps) => {
   const selectedRun = runningTests.find(t => t.id === selectedRunningTestId);
@@ -134,11 +73,10 @@ export const TestRunningPage = ({
     return `${s}s`;
   };
 
+  const formatDate  = (value: string) => value.split(' ')[0] ?? value;
   const formatClock = (value: string) => value.split(' ').slice(-1)[0] ?? value;
 
-  const matchedExec = selectedRun ? mockExecutionHistory.find(e => e.startDate === selectedRun.startTime || e.groupId === selectedRun.name) : undefined;
-
-  const [innerSidebarWidth, setInnerSidebarWidth] = React.useState<number | null>(null);
+const [innerSidebarWidth, setInnerSidebarWidth] = React.useState<number | null>(null);
   const innerDragRef = React.useRef(false);
   const innerSidebarRef = React.useRef<HTMLDivElement>(null);
   const innerStartX = React.useRef(0);
@@ -151,7 +89,7 @@ export const TestRunningPage = ({
     const onMove = (ev: MouseEvent) => {
       if (!innerDragRef.current) return;
       const parentWidth = innerSidebarRef.current?.parentElement?.clientWidth ?? window.innerWidth;
-      setInnerSidebarWidth(Math.max(240, Math.min(parentWidth - 420, innerStartW.current + ev.clientX - innerStartX.current)));
+      setInnerSidebarWidth(Math.max(488, Math.min(parentWidth - 420, innerStartW.current + ev.clientX - innerStartX.current)));
     };
     const onUp = () => { innerDragRef.current = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
     document.addEventListener('mousemove', onMove);
@@ -179,25 +117,31 @@ export const TestRunningPage = ({
       {/* SubHeader with back, page name, execution number, start time and live duration */}
       <SubHeader
         leftContent={(
-          <button
-            onClick={() => { setSelectedRunningTestId(null); setSelectedRunningForDetail(null); }}
-            className="inline-flex items-center gap-1 text-[#9ca3af] hover:text-[#6b7280]"
-          >
-            <ChevronLeft className="w-5 h-5" />
-            <span className="text-sm font-semibold leading-none">이력</span>
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => { setSelectedRunningTestId(null); setSelectedRunningForDetail(null); }}
+              className="flex items-center gap-1 text-[#9ca3af] hover:text-[#3615CF] transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="text-sm">이력</span>
+            </button>
+            <div className="w-px h-4 bg-[#e5e7eb]" />
+          </>
         )}
-        title="나의 진행 중인 테스트"
+        title={selectedRun?.name ?? '나의 진행 중인 테스트'}
+        className="!py-[14px]"
         titleExtra={(
-          <div className="flex items-center gap-3 ml-2">
-            {matchedExec && <span className="px-2 py-0.5 text-[11px] rounded-full bg-[#EAE8F9] text-[#3615CF] font-medium">{matchedExec.executionNumber}번째 test</span>}
-            {selectedRun && <span className="text-[13px] text-[#6b7280]">{formatClock(selectedRun.startTime)}</span>}
-            <span className="text-[13px] text-[#3615CF] font-medium">{formatDuration(elapsedSeconds)}</span>
+          <div className="flex items-center gap-3 ml-1">
+            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#3615CF]/10 text-[#3615CF]">실행 중</span>
+            {selectedRun && <span className="text-sm text-[#9ca3af]">{formatDate(selectedRun.startTime)}</span>}
+            {selectedRun && <span className="text-sm text-[#9ca3af]">{formatClock(selectedRun.startTime)}</span>}
+            <span className="text-sm text-[#9ca3af]">{formatDuration(elapsedSeconds)}</span>
           </div>
         )}
       />
 
-      <div className="flex-1">
+      <div className="flex-1 flex flex-col overflow-hidden">
       {selectedRun ? (
         <div className="flex-1 flex overflow-hidden">
           <div ref={innerSidebarRef} className="bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0 min-h-0" style={{ width: innerSidebarWidth ?? '66.67%' }}>

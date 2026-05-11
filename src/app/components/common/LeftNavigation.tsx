@@ -45,12 +45,12 @@ export const LeftNavigation = ({
       <button
         onClick={onClick}
         title={label}
-        className={`relative w-[calc(100%-8px)] flex items-center justify-center h-[58px] rounded-l-[18px] ml-2 transition-colors group ${
+        className={`relative w-[calc(100%-8px)] flex flex-col items-center justify-center gap-1 h-[64px] rounded-l-[18px] ml-2 transition-colors group ${
           active ? 'bg-white' : ':bg-black/5'
         }`}
       >
         <span className="relative flex items-center justify-center">
-          <Icon className={`w-6 h-6 transition-colors  ${
+          <Icon className={`w-5 h-5 transition-colors ${
             active ? 'text-[#3615CF]' : 'text-[#9ca3af] group-hover:text-[#6b7280]'
           }`} />
           {badge !== undefined && badge > 0 && (
@@ -59,6 +59,9 @@ export const LeftNavigation = ({
             </span>
           )}
         </span>
+        <span className={`text-[10px] font-medium leading-tight text-center whitespace-pre-line transition-colors ${
+          active ? 'text-[#3615CF]' : 'text-[#9ca3af] group-hover:text-[#6b7280]'
+        }`}>{label}</span>
       </button>
     </div>
   );
@@ -70,7 +73,7 @@ export const LeftNavigation = ({
           onClick={() => setCurrentPage('HOME')} />
         <NavItem icon={Layers} label="시나리오" active={currentPage === '시나리오'}
           onClick={() => setCurrentPage('시나리오')} />
-        <NavItem icon={RotateCcw} label="이력" active={isTestPage && testSubTab === 'HISTORY'}
+        <NavItem icon={RotateCcw} label={"테스트\n이력"} active={isTestPage && testSubTab === 'HISTORY'}
           badge={runningCount}
           onClick={() => { setCurrentPage('테스트'); setTestSubTab('HISTORY'); }} />
         <NavItem icon={CheckSquare} label="RTM" active={currentPage === 'RTM'}
