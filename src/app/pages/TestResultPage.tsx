@@ -207,7 +207,7 @@ export const TestResultPage = ({
                       <button
                         onClick={e => { e.stopPropagation(); setShowRetestNavModal(true); setRetestCheckedIds(new Set([err.id])); }}
                         title="재테스트 실행"
-                        className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[#9ca3af] hover:text-[#f78ca0] hover:bg-[#f78ca0]/10 transition-colors"
+                        className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[#9ca3af] hover:text-status-fail hover:bg-status-fail/10 transition-colors"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                       </button>
@@ -247,10 +247,10 @@ export const TestResultPage = ({
           </div>
 
           {historyDetailTab === 'FAIL' && retestCheckedIds.size > 0 && (
-            <div className="p-3 border-t border-[#f0f0f0] flex-shrink-0">
+            <div className="px-4 pt-4 pb-6 border-t border-[#f0f0f0] flex-shrink-0">
               <button
                 onClick={() => setShowRetestNavModal(true)}
-                className="w-full px-3 py-2 bg-gradient-to-r from-[#f78ca0] to-[#fe9a8b] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md transition-shadow"
+                className="w-full px-3 py-2 bg-[#3615CF] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md hover:bg-[#3615CF]/90 transition-all"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 재시나리오 그룹 생성 ({retestCheckedIds.size}건)

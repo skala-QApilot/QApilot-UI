@@ -43,7 +43,6 @@ export default function App() {
   // navigation
   const [currentPage, setCurrentPage] = useState<string>('HOME');
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [, setScenarioSubmenuExpanded] = useState(false);
   const [homeTab, setHomeTab] = useState('overview');
   const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
 
@@ -125,7 +124,6 @@ export default function App() {
 
   // 테스트 페이지 (진행중 / 이력)
   const [testSubTab, setTestSubTab] = useState<'INPROGRESS' | 'HISTORY'>('INPROGRESS');
-  const [, setTestSubmenuExpanded] = useState(false);
   const [runningTests, setRunningTests] = useState<Array<{
     id: string; name: string; groupId: string; startTime: string; status: 'running' | 'completed';
   }>>([
@@ -682,51 +680,23 @@ export default function App() {
               testSubTab === 'INPROGRESS' ? (
                 <TestRunningPage
                   runningTests={runningTests}
-                  setRunningTests={setRunningTests}
                   selectedRunningTestId={selectedRunningTestId}
                   setSelectedRunningTestId={setSelectedRunningTestId}
-                  setSelectedTestGroup={setSelectedTestGroup}
                   isTestRunning={isTestRunning}
                   setIsTestRunning={setIsTestRunning}
-                  completedAgentStages={completedAgentStages}
                   setCompletedAgentStages={setCompletedAgentStages}
-                  currentAgentStage={currentAgentStage}
                   setCurrentAgentStage={setCurrentAgentStage}
-                  scenarioSidebarTab={scenarioSidebarTab}
-                  setScenarioSidebarTab={setScenarioSidebarTab}
-                  expandedScenarios={expandedScenarios}
-                  setExpandedScenarios={setExpandedScenarios}
-                  expandedTestCases={expandedTestCases}
-                  setExpandedTestCases={setExpandedTestCases}
                   highlightedLogIdx={highlightedLogIdx}
                   setHighlightedLogIdx={setHighlightedLogIdx}
-                  testSubTab={testSubTab}
-                  setTestSubTab={setTestSubTab}
-                  historyFilter={historyFilter}
-                  setHistoryFilter={setHistoryFilter}
-                  historySearchQuery={historySearchQuery}
-                  setHistorySearchQuery={setHistorySearchQuery}
-                  selectedExecutionId={selectedExecutionId}
-                  setSelectedExecutionId={setSelectedExecutionId}
-                  selectedFailTC={selectedFailTC}
-                  setSelectedFailTC={setSelectedFailTC}
-                  historyDetailTab={historyDetailTab}
-                  setHistoryDetailTab={setHistoryDetailTab}
-                  retestCheckedIds={retestCheckedIds}
-                  setRetestCheckedIds={setRetestCheckedIds}
-                  setShowRetestNavModal={setShowRetestNavModal}
-                  selectedRunningForDetail={selectedRunningForDetail}
                   setSelectedRunningForDetail={setSelectedRunningForDetail}
                   advanceAgentStage={advanceAgentStage}
                   getNodeStatus={getNodeStatus}
-                  showCompletionModal={showCompletionModal}
                   setShowCompletionModal={setShowCompletionModal}
                 />
               ) : (
                 <TestPage
                   runningTests={runningTests}
                   setRunningTests={setRunningTests}
-                  selectedRunningTestId={selectedRunningTestId}
                   setSelectedRunningTestId={setSelectedRunningTestId}
                   setSelectedTestGroup={setSelectedTestGroup}
                   isTestRunning={isTestRunning}
@@ -743,8 +713,6 @@ export default function App() {
                   setExpandedTestCases={setExpandedTestCases}
                   highlightedLogIdx={highlightedLogIdx}
                   setHighlightedLogIdx={setHighlightedLogIdx}
-                  testSubTab={testSubTab}
-                  setTestSubTab={setTestSubTab}
                   historyFilter={historyFilter}
                   setHistoryFilter={setHistoryFilter}
                   historySearchQuery={historySearchQuery}
@@ -815,7 +783,7 @@ export default function App() {
                     id: `run-retest-${Date.now()}`,
                     name: `재테스트 시나리오 그룹 (${retestCheckedIds.size}건)`,
                     groupId: 'RETEST',
-                    startTime: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                    startTime: new Date().toISOString().slice(0, 16).replace('T', ' '),
                     status: 'running' as const,
                   };
                   setRunningTests(prev => [...prev, newRun]);
@@ -827,9 +795,8 @@ export default function App() {
                   setRetestCheckedIds(new Set());
                   setShowRetestNavModal(false);
                   setCurrentPage('테스트');
-                  setTestSubTab('INPROGRESS');
-                  setTestSubmenuExpanded(true);
-                  setScenarioSubmenuExpanded(false);
+                  setTestSubTab('HISTORY');
+                  setSelectedRunningForDetail(newRun.id);
                 }}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium text-sm hover:shadow-md transition-shadow"
               >

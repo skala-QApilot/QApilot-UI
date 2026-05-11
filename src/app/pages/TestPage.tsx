@@ -1,7 +1,7 @@
 import React, { type Dispatch, type SetStateAction } from 'react';
 import {
-  CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  Download, Eye, GitBranch, List, Loader2, Pause, Play, RotateCcw, XCircle,
+  CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  Eye, GitBranch, List, Loader2, Pause, Play, RotateCcw,
 } from 'lucide-react';
 import { SubHeader } from '../components/common/SubHeader';
 import { SearchBar } from '../components/common/SearchBar';
@@ -12,7 +12,6 @@ import { AgentProgressStrip } from '../components/common/AgentProgressStrip';
 import { StatusIcon } from '../components/common/StatusIcon';
 import { mockExecutionHistory, mockPassHistory, mockRTMData, mockScenarios, mockTestCases, mockTestLogs, mockTVEndpoints, type HttpMethod } from '../data/mockData';
 import { TestResultPage } from './TestResultPage';
-import { TestRunningPage } from './TestRunningPage';
 
 const METHOD_STYLE: Record<HttpMethod, string> = {
   GET:    'bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/20',
@@ -125,9 +124,9 @@ export const TestPage = ({
   setSelectedRunningForDetail,
   isTestRunning,
   setIsTestRunning,
-  completedAgentStages,
+  completedAgentStages: _completedAgentStages,
   setCompletedAgentStages,
-  currentAgentStage,
+  currentAgentStage: _currentAgentStage,
   setCurrentAgentStage,
   scenarioSidebarTab,
   setScenarioSidebarTab,
@@ -158,7 +157,7 @@ export const TestPage = ({
     const onMove = (ev: MouseEvent) => {
       if (!dragRef.current) return;
       const parentWidth = sidebarRef.current?.parentElement?.clientWidth ?? window.innerWidth;
-      setSidebarWidth(Math.max(240, Math.min(parentWidth - 420, startWRef.current + ev.clientX - startXRef.current)));
+      setSidebarWidth(Math.max(488, Math.min(parentWidth - 420, startWRef.current + ev.clientX - startXRef.current)));
     };
     const onUp = () => {
       dragRef.current = false;
@@ -188,28 +187,44 @@ export const TestPage = ({
   const allTCs     = mockScenarios.flatMap(s => (mockTestCases[s.id] || []).map(tc => ({ sId: s.id, tc })));
   const passedTCs  = allTCs.filter(({ tc }) => tc.status === 'passed' || tc.status === 'completed');
   const failedTCs  = allTCs.filter(({ tc }) => tc.status === 'failed');
-  const passedByTS = passedTCs.reduce((acc, item) => {
-    if (!acc[item.sId]) acc[item.sId] = [];
-    acc[item.sId].push(item);
-    return acc;
-  }, {} as Record<string, typeof passedTCs>);
-  const failedByTS = failedTCs.reduce((acc, item) => {
-    if (!acc[item.sId]) acc[item.sId] = [];
-    acc[item.sId].push(item);
-    return acc;
-  }, {} as Record<string, typeof failedTCs>);
 
-  const formatDuration = (startTime: string) => {
-    const parsed = Date.parse(startTime);
-    if (Number.isNaN(parsed)) return '';
-    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
-    const h = Math.floor(elapsedSeconds / 3600);
-    const m = Math.floor((elapsedSeconds % 3600) / 60);
-    const s = elapsedSeconds % 60;
+  const formatDuration = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
     if (h > 0) return `${h}h ${m}m ${s}s`;
     if (m > 0) return `${m}m ${s}s`;
     return `${s}s`;
   };
+
+  const formatDate  = (value: string) => value.split(' ')[0] ?? value;
+  const formatClock = (value: string) => value.split(' ').slice(-1)[0] ?? value;
+
+  // ── running detail: live elapsed counter ─────────────────────────────────
+  const detailRun = selectedRunningForDetail
+    ? (runningTests.find(r => r.id === selectedRunningForDetail) ?? null)
+    : null;
+
+  const [elapsedSeconds, setElapsedSeconds] = React.useState<number>(() => {
+    if (!detailRun) return 0;
+    const parsed = Date.parse(detailRun.startTime);
+    return Number.isNaN(parsed) ? 0 : Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  });
+
+  React.useEffect(() => {
+    if (!detailRun) { setElapsedSeconds(0); return; }
+    const parsed = Date.parse(detailRun.startTime);
+    if (!Number.isNaN(parsed)) {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - parsed) / 1000)));
+    } else {
+      setElapsedSeconds(0);
+    }
+    let id: number | null = null;
+    if (detailRun.status === 'running') {
+      id = window.setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+    }
+    return () => { if (id) window.clearInterval(id); };
+  }, [detailRun?.id, detailRun?.startTime, detailRun?.status]);
 
   // ── depth-0 data ──────────────────────────────────────────────────────────
   const activeRunningTests = runningTests.filter(t => t.status === 'running');
@@ -228,8 +243,6 @@ export const TestPage = ({
 
   // ── depth 1: running test detail ─────────────────────────────────────────
   if (selectedRunningForDetail) {
-    const detailRun = runningTests.find(r => r.id === selectedRunningForDetail) ?? null;
-
     return (
       <div className="flex h-full min-h-0 flex-col">
 
@@ -252,8 +265,9 @@ export const TestPage = ({
           titleExtra={(
             <div className="flex items-center gap-3 ml-1">
               <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#3615CF]/10 text-[#3615CF]">실행 중</span>
-              {detailRun && <span className="text-sm text-[#9ca3af]">{detailRun.startTime}</span>}
-              {detailRun && <span className="text-sm text-[#9ca3af]">{formatDuration(detailRun.startTime)}</span>}
+              {detailRun && <span className="text-sm text-[#9ca3af]">{formatDate(detailRun.startTime)}</span>}
+              {detailRun && <span className="text-sm text-[#9ca3af]">{formatClock(detailRun.startTime)}</span>}
+              <span className="text-sm text-[#9ca3af]">{formatDuration(elapsedSeconds)}</span>
             </div>
           )}
         />
@@ -537,12 +551,12 @@ export const TestPage = ({
       <div className="flex h-full min-h-0 flex-col bg-white">
 
         <SubHeader
-          title="실행 이력"
+          title="테스트 이력"
           rightContent={
             <SearchBar
               value={historySearchQuery}
               onChange={setHistorySearchQuery}
-              placeholder="실행 이력 검색..."
+              placeholder="테스트 이력 검색..."
               className="w-52"
             />
           }
@@ -559,7 +573,7 @@ export const TestPage = ({
           {/* Left: Running tests */}
           <div className="flex-1 flex flex-col overflow-hidden bg-white">
             <div className="h-12 px-8 py-2 border-b border-[#f0f0f0] flex-shrink-0 flex items-center gap-2">
-              <span className="text-xs font-bold text-[#9ca3af] uppercase tracking-widest">진행 중</span>
+              <span className="text-xs font-bold text-[#9ca3af] uppercase tracking-widest">실행 중</span>
               {activeRunningTests.length > 0 && (
                 <span className="px-1.5 py-0.5 bg-primary-blue/10 text-primary-blue text-[10px] font-bold rounded-full animate-pulse">
                   {activeRunningTests.length}
@@ -568,7 +582,7 @@ export const TestPage = ({
             </div>
             <div className="flex-1 overflow-y-auto">
               {activeRunningTests.length === 0 && (
-                <div className="py-16 text-center text-sm text-[#9ca3af]">진행 중인 테스트 없음</div>
+                <div className="py-16 text-center text-sm text-[#9ca3af]">실행 중인 테스트 없음</div>
               )}
               {activeRunningTests.map(run => (
                 <div key={run.id} className="h-[56px] px-8 border-b border-[#f5f5f5] flex items-center">
@@ -587,11 +601,11 @@ export const TestPage = ({
           {/* Right: Completed tests */}
           <div className="flex-1 flex flex-col overflow-hidden bg-white">
             <div className="h-12 px-8 py-2 border-b border-[#f0f0f0] flex-shrink-0 flex items-center gap-2">
-              <span className="text-xs font-bold text-[#9ca3af] uppercase tracking-widest">이력</span>
+              <span className="text-xs font-bold text-[#9ca3af] uppercase tracking-widest">실행 완료</span>
             </div>
             <div className="flex-1 overflow-y-auto">
               {filtered.length === 0 && (
-                <div className="py-16 text-center text-sm text-[#9ca3af]">조건에 맞는 실행 이력이 없습니다.</div>
+                <div className="py-16 text-center text-sm text-[#9ca3af]">조건에 맞는 테스트 이력이 없습니다.</div>
               )}
               {filtered.map(exec => (
                 <div key={exec.id} className="h-[56px] px-8 border-b border-[#f5f5f5] flex items-center">
