@@ -1,10 +1,11 @@
 import type { Dispatch, SetStateAction } from 'react';
-import { CheckCircle, Eye, RotateCcw, XCircle } from 'lucide-react';
+import { CheckCircle, ChevronLeft, Download, Eye, RotateCcw, XCircle } from 'lucide-react';
+import { SubHeader } from '../components/common/SubHeader';
 import { mockExecutionHistory } from '../data/mockData';
 
 type HistoryDetailTab = 'FAIL' | 'PASS';
 
-interface ExecutionHistoryPageDetailProps {
+interface TestResultPageProps {
   selectedExecutionId: string | null;
   setSelectedExecutionId: Dispatch<SetStateAction<string | null>>;
   selectedFailTC: string | null;
@@ -16,7 +17,7 @@ interface ExecutionHistoryPageDetailProps {
   setShowRetestNavModal: Dispatch<SetStateAction<boolean>>;
 }
 
-export const ExecutionHistoryPageDetail = ({
+export const TestResultPage = ({
   selectedExecutionId,
   setSelectedExecutionId,
   selectedFailTC,
@@ -26,7 +27,7 @@ export const ExecutionHistoryPageDetail = ({
   retestCheckedIds,
   setRetestCheckedIds,
   setShowRetestNavModal,
-}: ExecutionHistoryPageDetailProps) => {
+}: TestResultPageProps) => {
   const mockDetailErrors = [
     {
       id: 'TS3_TC1', scenario: 'TS3', testCase: 'TC1', tcName: '상품 추가',
@@ -93,8 +94,33 @@ export const ExecutionHistoryPageDetail = ({
   const activeError = historyDetailTab === 'FAIL' ? (mockDetailErrors.find(e => e.id === selectedFailTC) ?? mockDetailErrors[0]) : null;
   const activePass = historyDetailTab === 'PASS' ? (mockPassCases.find(p => p.id === selectedFailTC) ?? null) : null;
 
+  const formatDuration = (duration: string) => duration;
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
+      <SubHeader
+        leftContent={(
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedExecutionId(null);
+              setSelectedFailTC(null);
+            }}
+            className="p-1 text-[#6b7280] hover:text-[#3615CF]"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+        )}
+        title="실행 이력"
+        titleExtra={(
+          <div className="flex items-center gap-3 ml-2">
+            <span className="text-sm font-semibold text-[#1a1a2e]">{exec.groupId}</span>
+            <span className="text-[13px] text-[#6b7280]">{exec.startDate}</span>
+            <span className="text-[13px] text-[#3615CF] font-medium">{formatDuration(exec.duration)}</span>
+          </div>
+        )}
+       
+      />
       <div className="flex flex-1 overflow-hidden">
         <div className="w-64 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
           <div className="px-4 border-b border-[#f0f0f0] flex items-center gap-0 flex-shrink-0">

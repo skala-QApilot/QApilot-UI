@@ -75,6 +75,7 @@ setRunningTests,
 setTestSubTab,
 setSelectedRunningTestId,
 setSelectedTestGroup,
+setSelectedRunningForDetail,
 viewMode: viewModeProp = 'table',
 setViewMode: setViewModeProp,
 }: ScenarioPageProps) => {
@@ -84,11 +85,21 @@ setViewMode: setViewModeProp,
 
   // 시나리오 생성 오버레이
   const [showGeneratingOverlay, setShowGeneratingOverlay] = React.useState(false);
+  const [showReviewActions, setShowReviewActions] = React.useState(false);
+  const [isGeneratingCode, setIsGeneratingCode] = React.useState(false);
+  const generateCodeTimerRef = React.useRef<number | null>(null);
 
   // TV JSON editor state
   const [tvEditingKey, setTvEditingKey] = React.useState<string | null>(null);
   const [tvEditContent, setTvEditContent] = React.useState('');
   const [tvCopied, setTvCopied] = React.useState<string | null>(null);
+
+  // 예약하기 모달 state
+  const [showScheduleModal, setShowScheduleModal] = React.useState(false);
+  const [selectedGroupForSchedule, setSelectedGroupForSchedule] = React.useState<string | null>(null);
+  const [scheduleDate, setScheduleDate] = React.useState('');
+  const [scheduleTime, setScheduleTime] = React.useState('09:00');
+  const [scheduleRepeat, setScheduleRepeat] = React.useState('once');
 
   // Resizable left sidebar (graph mode only)
   const [leftSidebarWidth, setLeftSidebarWidth] = React.useState(300);
@@ -242,6 +253,35 @@ setViewMode: setViewModeProp,
   const deferredAIIds = Object.entries(_aiItemActions)
     .filter(([, value]) => value === 'deferred')
     .map(([id]) => id);
+  const pendingAIReviewCount = _dynamicScenarios.filter((scenario) => {
+    const isDeferred = _aiItemActions[scenario.id] === 'deferred';
+    const isRejected = _aiItemActions[scenario.id] === 'rejected';
+    const isApproved = _aiItemActions[scenario.id] === 'approved';
+    const isCodeChangeItem = codeChangeDetected && scenario.id === 'TS1' && !_aiItemActions.TS1 && !_dynamicAIItems.TS1;
+    const hasAIItem = isCodeChangeItem || !!_dynamicAIItems[scenario.id];
+    return hasAIItem && !isDeferred && !isRejected && !isApproved;
+  }).length;
+  const hasPendingAIReview = pendingAIReviewCount > 0;
+
+  const handleApproveAIItem = (itemId: string) => {
+    setAiItemActions(prev => ({ ...prev, [itemId]: 'approved' }));
+    setIsGeneratingCode(true);
+    if (generateCodeTimerRef.current) window.clearTimeout(generateCodeTimerRef.current);
+    generateCodeTimerRef.current = window.setTimeout(() => {
+      setIsGeneratingCode(false);
+      generateCodeTimerRef.current = null;
+    }, 2000);
+  };
+
+  React.useEffect(() => {
+    if (hasPendingAIReview) setShowReviewActions(false);
+  }, [hasPendingAIReview]);
+
+  React.useEffect(() => {
+    return () => {
+      if (generateCodeTimerRef.current) window.clearTimeout(generateCodeTimerRef.current);
+    };
+  }, []);
 
   // ── TS 흐름 그래프 노드 데이터 ──────────────────────────────
   const tsFlowNodes = _dynamicScenarios.map(s => ({
@@ -414,93 +454,78 @@ setViewMode: setViewModeProp,
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── [1] Version Timeline — 맨 좌측 ── */}
-        <div className="w-14 bg-white border-r border-[#e5e7eb] flex flex-col items-center py-4 flex-shrink-0" style={{ overflow: 'visible', zIndex: 20 }}>
+        <div className="w-14 bg-white border-r border-[#e5e7eb] flex flex-col items-center py-4 flex-shrink-0" style={{ overflow: 'visible', zIndex: 50, position: 'relative' }}>
           <div className="text-[9px] text-[#9ca3af] font-semibold uppercase tracking-wide mb-4">VER</div>
-          <div className="relative flex flex-col items-center w-full" style={{ overflow: 'visible' }}>
-            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-[#e5e7eb]" style={{ zIndex: 0 }} />
-            {mockScenarioVersions.some(v => v.hasChange) && (() => {
-              const latestChange = [...mockScenarioVersions].reverse().find(v => v.hasChange)!;
-              const isSelected = selectedScenarioVersion === latestChange.id;
-              return (
-                <div className="relative flex flex-col items-center mb-5" style={{ zIndex: 10, overflow: 'visible' }}
-                  onMouseEnter={() => handleVersionEnter(latestChange.id)}
-                  onMouseLeave={handleVersionLeave}>
-                  <button onClick={() => setSelectedScenarioVersion(latestChange.id)} className="relative flex items-center justify-center">
-                    <svg width={20} height={20} style={{ overflow: 'visible' }}>
-                      <circle cx={10} cy={10} r={8}
-                        fill={isSelected ? '#EAE8F9' : 'white'}
-                        stroke="#3615CF" strokeWidth={1.5} strokeDasharray="4 2.5" />
-                    </svg>
-                  </button>
-                  <span className="text-[8px] text-[#c4c9d4]">{latestChange.date}</span>
-                  {hoveredVersionId === latestChange.id && (
-                    <div className="absolute left-full ml-1 top-0 bg-white rounded-xl shadow-2xl border border-[#e5e7eb] p-3 w-52"
-                      style={{ zIndex: 9999 }}
-                      onMouseEnter={() => handleVersionEnter(latestChange.id)}
-                      onMouseLeave={handleVersionLeave}>
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <Sparkles className="w-3.5 h-3.5 text-[#3615CF]" />
-                        <span className="text-xs font-semibold text-[#1a1a2e]">변경 감지</span>
-                      </div>
-                      <div className="text-[10px] text-[#6b7280] mb-3 leading-relaxed">{latestChange.changeDesc}</div>
-                      <div className="text-[10px] font-semibold text-[#1a1a2e] mb-2">버전을 분리할까요?</div>
-                      <div className="flex gap-2">
-                        <button onClick={() => setHoveredVersionId(null)}
-                          className="flex-1 px-2 py-1.5 bg-white border border-[#e5e7eb] rounded-lg text-[10px] hover:bg-gray-50 font-medium">No</button>
-                        <button onClick={() => setHoveredVersionId(null)}
-                          className="flex-1 px-2 py-1.5 bg-[#3615CF] text-white rounded-lg text-[10px] font-medium">Yes</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-            {mockScenarioVersions.filter(v => !v.hasChange).map(ver => {
-              const isSelected = selectedScenarioVersion === ver.id;
-              const isFav = favoriteVersionIds.has(ver.id);
-              return (
-                <div key={ver.id} className="relative flex flex-col items-center mb-5" style={{ zIndex: 10, overflow: 'visible' }}
-                  onMouseEnter={() => handleVersionEnter(ver.id)}
-                  onMouseLeave={handleVersionLeave}>
-                  <button onClick={() => setSelectedScenarioVersion(ver.id)} className="relative flex items-center justify-center">
-                    <div className={`w-5 h-5 rounded-full border-2 transition-all ${
-                      isSelected ? 'bg-[#EAE8F9] border-[#3615CF] shadow-md shadow-[#3615CF]/20' : 'bg-white border-[#d1d5db] hover:border-[#3615CF]'
-                    }`} />
-                    {isFav && <Star className="absolute -right-3 -top-1 w-3 h-3 text-yellow-400 fill-yellow-400" />}
-                  </button>
-                  {ver.label && (
-                    <span className={`text-[9px] mt-0.5 font-medium leading-none ${isSelected ? 'text-[#3615CF]' : 'text-[#9ca3af]'}`}>{ver.label}</span>
-                  )}
-                  <span className="text-[8px] text-[#c4c9d4]">{ver.date}</span>
-                  {hoveredVersionId === ver.id && (
-                    <div
-                      className="absolute left-full ml-1 top-0 bg-white rounded-xl shadow-2xl border border-[#e5e7eb] p-3 w-52"
-                      style={{ zIndex: 9999 }}
-                      onMouseEnter={() => handleVersionEnter(ver.id)}
-                      onMouseLeave={handleVersionLeave}>
-                      <div>
-                        <div className="text-[10px] font-semibold text-[#1a1a2e] mb-0.5">{ver.label || '버전'}</div>
-                        <div className="text-[9px] text-[#9ca3af] mb-3">{ver.date}</div>
-                        <div className="space-y-0.5">
-                          <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[11px] text-[#6b7280] hover:text-[#1a1a2e]">
-                            <RotateCcw className="w-3 h-3 flex-shrink-0" /> 되돌리기
-                          </button>
-                          <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[11px] text-[#6b7280] hover:text-[#1a1a2e]">
-                            <Trash2 className="w-3 h-3 flex-shrink-0" /> 삭제
-                          </button>
-                          <button
-                            onClick={() => setFavoriteVersionIds(prev => { const n = new Set(prev); n.has(ver.id) ? n.delete(ver.id) : n.add(ver.id); return n; })}
-                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-yellow-50 text-[11px] text-[#6b7280] hover:text-yellow-600">
-                            <Star className={`w-3 h-3 flex-shrink-0 ${isFav ? 'fill-yellow-400 text-yellow-400' : ''}`} />
-                            즐겨찾기 {isFav ? '해제' : '추가'}
-                          </button>
+          <div className="flex-1 w-full " style={{ overflowX: 'visible' }}>
+            <div className="flex min-h-full flex-col items-center justify-end pb-4">
+              <div className="relative flex flex-col items-center gap-5">
+                <div className="absolute top-[10px] bottom-[10px] left-1/2 -translate-x-1/2 w-px bg-[#e5e7eb]" style={{ zIndex: 0 }} />
+              {mockScenarioVersions.some(v => v.hasChange) && (() => {
+                const latestChange = [...mockScenarioVersions].reverse().find(v => v.hasChange)!;
+                const isSelected = selectedScenarioVersion === latestChange.id;
+                return (
+                  <div className="relative flex flex-col items-center" style={{ zIndex: 10, overflow: 'visible' }}
+                    onMouseEnter={() => handleVersionEnter(latestChange.id)}
+                    onMouseLeave={handleVersionLeave}>
+                    <button onClick={() => setSelectedScenarioVersion(latestChange.id)} className="relative flex items-center justify-center">
+                      <svg width={20} height={20} style={{ overflow: 'visible' }}>
+                        <circle cx={10} cy={10} r={8}
+                          fill={isSelected ? '#EAE8F9' : 'white'}
+                          stroke="#3615CF" strokeWidth={1.5} strokeDasharray={showReviewActions ? undefined : '4 2.5'} />
+                      </svg>
+                    </button>
+                    <span className="text-[8px] text-[#c4c9d4]">{latestChange.date}</span>
+                  </div>
+                );
+              })()}
+              {mockScenarioVersions.filter(v => !v.hasChange).map(ver => {
+                const isSelected = selectedScenarioVersion === ver.id;
+                const isFav = favoriteVersionIds.has(ver.id);
+                return (
+                  <div key={ver.id} className="relative flex flex-col items-center" style={{ zIndex: 10, overflow: 'visible' }}
+                    onMouseEnter={() => handleVersionEnter(ver.id)}
+                    onMouseLeave={handleVersionLeave}>
+                    <button onClick={() => setSelectedScenarioVersion(ver.id)} className="relative flex items-center justify-center">
+                      <div className={`w-5 h-5 rounded-full border-2 transition-all ${
+                        isSelected ? 'bg-[#EAE8F9] border-[#3615CF] shadow-md shadow-[#3615CF]/20' : 'bg-white border-[#d1d5db] hover:border-[#3615CF]'
+                      }`} />
+                      {isFav && <Star className="absolute -right-3 -top-1 w-3 h-3 text-yellow-400 fill-yellow-400" />}
+                    </button>
+                    {ver.label && (
+                      <span className={`text-[9px] mt-0.5 font-medium leading-none ${isSelected ? 'text-[#3615CF]' : 'text-[#9ca3af]'}`}>{ver.label}</span>
+                    )}
+                    <span className="text-[8px] text-[#c4c9d4]">{ver.date}</span>
+                    {hoveredVersionId === ver.id && (
+                      <div
+                        className="absolute -translate-y-30 bg-white rounded-xl shadow-2xl border border-[#e5e7eb] p-3 w-52 pointer-events-auto"
+                        style={{ left: 'calc(100% + 8px)', zIndex: 100 }}
+                        onMouseEnter={() => handleVersionEnter(ver.id)}
+                        onMouseLeave={handleVersionLeave}>
+                        <div>
+                          <div className="text-[10px] font-semibold text-[#1a1a2e] mb-0.5">{ver.label || '버전'}</div>
+                          <div className="text-[9px] text-[#9ca3af] mb-3">{ver.date}</div>
+                          <div className="space-y-0.5">
+                            <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[11px] text-[#6b7280] hover:text-[#1a1a2e]">
+                              <RotateCcw className="w-3 h-3 flex-shrink-0" /> 되돌리기
+                            </button>
+                            <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[11px] text-[#6b7280] hover:text-[#1a1a2e]">
+                              <Trash2 className="w-3 h-3 flex-shrink-0" /> 삭제
+                            </button>
+                            <button
+                              onClick={() => setFavoriteVersionIds(prev => { const n = new Set(prev); n.has(ver.id) ? n.delete(ver.id) : n.add(ver.id); return n; })}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-yellow-50 text-[11px] text-[#6b7280] hover:text-yellow-600">
+                              <Star className={`w-3 h-3 flex-shrink-0 ${isFav ? 'fill-yellow-400 text-yellow-400' : ''}`} />
+                              즐겨찾기 {isFav ? '해제' : '추가'}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    )}
+                  </div>
+                );
+              })}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -589,7 +614,7 @@ setViewMode: setViewModeProp,
                       </div>
                       <div className="text-[#92400e] mb-1 leading-relaxed">{triggerLabel} · {ai.reason}</div>
                       <div className="flex gap-1">
-                        <button onClick={() => setAiItemActions(prev => ({ ...prev, [tsId]: 'approved' }))}
+                        <button onClick={() => handleApproveAIItem(tsId)}
                           className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium">승인</button>
                         <button onClick={() => setAiItemActions(prev => ({ ...prev, [tsId]: 'rejected' }))}
                           className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-red-50 hover:text-red-500 hover:border-red-200">거절</button>
@@ -642,10 +667,10 @@ setViewMode: setViewModeProp,
                     <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTSEditing) { setSelectedScenario(scenario.id); setDetailPanelRow({ level: 'TS', tsId: scenario.id }); } }}>
                       <div className="flex items-center gap-1">
                         <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tsBadge}`}>TS</span>
-                        <span className={`text-xs font-semibold ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{scenario.id}</span>
+                        <span className={`text-sm font-semibold ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{scenario.id}</span>
                         {isTSEditing
-                          ? sidebarEditInput('text-[10px]')
-                          : <span className={`text-[10px] truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{scenario.name}</span>}
+                          ? sidebarEditInput('text-xs')
+                          : <span className={`text-xs truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{scenario.name}</span>}
                       </div>
                     </div>
                     {/* TS 액션 아이콘 */}
@@ -679,7 +704,7 @@ setViewMode: setViewModeProp,
                       <span className="text-[9px] text-[#d97706] flex-shrink-0">{triggerLabel}</span>
                       <span className="text-[9px] text-[#f59e0b] truncate flex-1">{aiInfo!.reason}</span>
                       <div className="flex gap-1 flex-shrink-0">
-                        <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'approved' }))}
+                        <button onClick={() => handleApproveAIItem(scenario.id)}
                           className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium hover:bg-[#b45309]">승인</button>
                         <button onClick={() => { setAiItemActions(prev => ({ ...prev, [scenario.id]: 'deferred' })); setShowDeferredAIItems(true); }}
                           className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-[#fffbeb]">보류</button>
@@ -710,10 +735,10 @@ setViewMode: setViewModeProp,
                           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTCEditing) setDetailPanelRow({ level: 'TC', tsId: scenario.id, tcId: tc.id }); }}>
                             <div className="flex items-center gap-1 flex-wrap">
                               <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tcBadge}`}>TC</span>
-                              <span className={`text-[11px] font-medium flex-shrink-0 ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
+                              <span className={`text-xs font-medium flex-shrink-0 ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
                               {isTCEditing
-                                ? sidebarEditInput('text-[10px]')
-                                : <span className={`text-[10px] truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{tc.name}</span>}
+                                ? sidebarEditInput('text-xs')
+                                : <span className={`text-xs truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{tc.name}</span>}
                               {!isTCEditing && frEntries.map(fr => (
                                 <div key={fr.frId} className="relative group/fr flex-shrink-0">
                                   <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/15 cursor-help">{fr.frId}</span>
@@ -909,24 +934,43 @@ setViewMode: setViewModeProp,
                     </button>
                   )}
                 </div>
-                {/* E2E TEST 실행 */}
-                <button
-                  onClick={() => setCurrentPage('테스트')}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#3615CF] text-white text-xs font-semibold hover:shadow-md hover:bg-[#3615CF]/90 transition-all">
-                  <Play className="w-3.5 h-3.5" />
-                  E2E TEST 실행
-                </button>
-                {/* 그룹 생성 버튼 */}
-                <button
-                  onClick={() => someSelected && setShowTestGroupModal(true)}
-                  className={`w-full py-2 rounded-lg border border-dashed flex items-center justify-center gap-1.5 text-xs transition-all ${
-                    someSelected
-                      ? 'border-[#3615CF]/30 text-[#3615CF] hover:bg-[#EAE8F9]'
-                      : 'border-[#e5e7eb] text-[#c4c9d4] cursor-default'
-                  }`}>
-                  <Plus className="w-3 h-3" />
-                  {someSelected ? `${_selectedTCIds.length}개 TC로 그룹 생성` : 'TC를 선택하면 그룹을 생성할 수 있어요'}
-                </button>
+                {!showReviewActions ? (
+                  <button
+                    onClick={() => !hasPendingAIReview && !isGeneratingCode && setShowReviewActions(true)}
+                    disabled={hasPendingAIReview || isGeneratingCode}
+                    className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      hasPendingAIReview || isGeneratingCode
+                        ? 'bg-[#cfd5dd] text-white cursor-not-allowed'
+                        : 'bg-[#3615CF] text-white hover:shadow-md hover:bg-[#3615CF]/90'
+                    }`}>
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    {isGeneratingCode ? '코드 생성중...' : hasPendingAIReview ? `검토 확인 (${pendingAIReviewCount})` : '검토 확인'}
+                  </button>
+                ) : (
+                  <>
+                    {/* E2E TEST 실행 */}
+                    <button
+                      onClick={() => {
+                        setCurrentPage('테스트');
+                        (setTestSubTab as any)('INPROGRESS');
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#3615CF] text-white text-xs font-semibold hover:shadow-md hover:bg-[#3615CF]/90 transition-all">
+                      <Play className="w-3.5 h-3.5" />
+                      E2E TEST 실행
+                    </button>
+                    {/* 그룹 생성 버튼 */}
+                    <button
+                      onClick={() => someSelected && setShowTestGroupModal(true)}
+                      className={`w-full py-2 rounded-lg border flex items-center justify-center gap-1.5 text-xs transition-all ${
+                        someSelected
+                          ? 'border-[#3615CF]/30 text-[#3615CF] hover:bg-[#EAE8F9]'
+                          : 'border-[#e5e7eb] text-[#c4c9d4] cursor-default'
+                      } ${showReviewActions ? 'border-solid' : 'border-dashed'}`}>
+                      <Plus className="w-3 h-3" />
+                      {someSelected ? `${_selectedTCIds.length}개 TC로 그룹 생성` : 'TC를 선택하면 그룹을 생성할 수 있어요'}
+                    </button>
+                  </>
+                )}
               </div>
 
               <div className="m-2 mx-2 h-[2px] bg-[#f0f0f0] flex-shrink-0" />
@@ -969,7 +1013,11 @@ setViewMode: setViewModeProp,
                       {/* Run button */}
                       <div className="mt-2.5 flex justify-end gap-1.5">
                         <button
-                          onClick={e => e.stopPropagation()}
+                          onClick={e => {
+                            e.stopPropagation();
+                            setSelectedGroupForSchedule(group.id);
+                            setShowScheduleModal(true);
+                          }}
                           className="flex items-center gap-1 px-2.5 py-1 bg-white border border-[#e5e7eb] text-[#6b7280] rounded text-[10px] font-medium hover:border-[#3615CF]/40 hover:text-[#3615CF] transition-colors">
                           <Calendar className="w-2.5 h-2.5" /> 예약하기
                         </button>
@@ -986,6 +1034,7 @@ setViewMode: setViewModeProp,
                             (setRunningTests as any)(prev => [...prev, newRun]);
                             (setSelectedRunningTestId as any)(newRun.id);
                             (setSelectedTestGroup as any)(group.name);
+                            (setSelectedRunningForDetail as any)(newRun.id);
                             setCurrentPage('테스트');
                             (setTestSubTab as any)('HISTORY');
                           }}
@@ -1004,6 +1053,71 @@ setViewMode: setViewModeProp,
         })()}
       </div>
 
+      {/* Schedule Modal */}
+      {showScheduleModal && selectedGroupForSchedule && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl shadow-xl max-w-md w-full">
+            <div className="font-semibold mb-4 text-base">테스트 예약</div>
+            <div className="space-y-4">
+              {/* 예약 날짜 */}
+              <div>
+                <label className="block text-sm font-medium text-[#1a1a2e] mb-1">예약 날짜</label>
+                <input
+                  type="date"
+                  value={scheduleDate}
+                  onChange={e => setScheduleDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-[#e5e7eb] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#3615CF] text-sm"
+                />
+              </div>
+              {/* 예약 시간 */}
+              <div>
+                <label className="block text-sm font-medium text-[#1a1a2e] mb-1">예약 시간</label>
+                <input
+                  type="time"
+                  value={scheduleTime}
+                  onChange={e => setScheduleTime(e.target.value)}
+                  className="w-full px-3 py-2 border border-[#e5e7eb] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#3615CF] text-sm"
+                />
+              </div>
+              {/* 반복 설정 */}
+              <div>
+                <label className="block text-sm font-medium text-[#1a1a2e] mb-1">반복</label>
+                <select
+                  value={scheduleRepeat}
+                  onChange={e => setScheduleRepeat(e.target.value)}
+                  className="w-full px-3 py-2 border border-[#e5e7eb] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#3615CF] text-sm">
+                  <option value="once">일회</option>
+                  <option value="daily">매일</option>
+                  <option value="weekly">매주</option>
+                  <option value="monthly">매월</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-2">
+              <button
+                onClick={() => {
+                  setShowScheduleModal(false);
+                  setSelectedGroupForSchedule(null);
+                  setScheduleDate('');
+                  setScheduleTime('09:00');
+                  setScheduleRepeat('once');
+                }}
+                className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium">
+                예약
+              </button>
+              <button
+                onClick={() => {
+                  setShowScheduleModal(false);
+                  setSelectedGroupForSchedule(null);
+                }}
+                className="flex-1 px-4 py-2 bg-white border border-[#f0f0f0] rounded-lg hover:bg-gray-50">
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Test Group Modal */}
       {showTestGroupModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1018,7 +1132,23 @@ setViewMode: setViewModeProp,
               ))}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { setShowTestGroupModal(false); setSelectedTCIds([]); }}
+              <button onClick={() => {
+                setShowTestGroupModal(false);
+                setSelectedTCIds([]);
+                const newRun = {
+                  id: `run-${Date.now()}`,
+                  name: `테스트 (${selectedTCs.length}개 TC)`,
+                  groupId: `group-${Date.now()}`,
+                  startTime: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                  status: 'running' as const,
+                };
+                (setRunningTests as any)(prev => [...prev, newRun]);
+                (setSelectedRunningTestId as any)(newRun.id);
+                (setSelectedTestGroup as any)(`테스트 (${selectedTCs.length}개 TC)`);
+                (setSelectedRunningForDetail as any)(newRun.id);
+                setCurrentPage('테스트');
+                (setTestSubTab as any)('HISTORY');
+              }}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium">
                 생성 확인
               </button>

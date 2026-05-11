@@ -9,6 +9,7 @@ interface Tab {
 
 interface SubHeaderProps {
   title: string;
+  leftContent?: ReactNode;
   titleExtra?: ReactNode;
   tabs?: Tab[];
   activeTab?: string;
@@ -16,10 +17,11 @@ interface SubHeaderProps {
   rightContent?: ReactNode;
 }
 
-export const SubHeader = ({ title, titleExtra, tabs, activeTab, onTabChange, rightContent }: SubHeaderProps) => (
+export const SubHeader = ({ title, leftContent, titleExtra, tabs, activeTab, onTabChange, rightContent }: SubHeaderProps) => (
   <div className={`bg-[#f7f8f9] px-8 flex-shrink-0 ${tabs ? 'pt-[11.5px] pb-0' : 'py-[11.5px]'}`}>
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
+        {leftContent}
         {title && <span className="text-[15px] font-bold text-[#1a1a2e] leading-none">{title}</span>}
         {titleExtra}
       </div>

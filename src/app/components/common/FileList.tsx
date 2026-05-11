@@ -22,9 +22,7 @@ export const FileList = ({ showNewButton = true }: FileListProps) => (
     <div className="space-y-1">
       {mockFiles.map(file => (
         <div key={file.id} className="flex items-center gap-3 py-2.5 group">
-          <div className="w-9 h-9 rounded-xl bg-[#f0f0f0] flex items-center justify-center flex-shrink-0">
-            <Folder className="w-5 h-5 text-[#9ca3af]" strokeWidth={1.5} />
-          </div>
+          <Folder className="w-5 h-5 flex-shrink-0 text-[#a0a8b4]" fill="currentColor" strokeWidth={0} />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-[#1a1a2e]">{file.name}</div>
             <div className="text-xs text-[#9ca3af]">{file.version} · {file.date}</div>

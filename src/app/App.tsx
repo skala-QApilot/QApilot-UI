@@ -2,22 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 import ScenarioNetworkGraph from './components/ScenarioNetworkGraph';
 import { StatusIcon } from './components/common/StatusIcon';
 import { SubHeader } from './components/common/SubHeader';
+import { SearchBar } from './components/common/SearchBar';
 import { LeftNavigation } from './components/common/LeftNavigation';
 import { FileList } from './components/common/FileList';
 import { HomePage } from './pages/HomePage';
-import { ExecutionHistoryPage as ExecutionHistoryPageView } from './pages/ExecutionHistoryPage';
+import { TestRunningPage } from './pages/TestRunningPage';
 import { RTMPage } from './pages/RTMPage';
-import { SettingsPage } from './pages/SettingsPage';
 import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import {
   ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Clock, Plus,
   Eye, AlertCircle, CheckCircle, X,
-  RotateCcw, Pause, ChevronLeft, Send,
+  RotateCcw, Pause, Send,
   History, BarChart2, Users, Settings,
   Network, GitBranch,
-  Sparkles, Star, FolderOpen, Download,
+  Sparkles, Star, FolderOpen,
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
 import {
@@ -54,7 +54,7 @@ export default function App() {
   const [scenarioSearchQuery, setScenarioSearchQuery] = useState('');
   const [scenarioChangeFilter, setScenarioChangeFilter] = useState(false);
   const [selectedScenarioVersion, setSelectedScenarioVersion] = useState('change-2');
-  const [favoriteVersionIds, setFavoriteVersionIds] = useState<Set<string>>(new Set(['v1.1']));
+  const [favoriteVersionIds, setFavoriteVersionIds] = useState<Set<string>>(new Set());
   const [hoveredVersionId, setHoveredVersionId] = useState<string | null>(null);
   const [selectedNetworkNodeId, setSelectedNetworkNodeId] = useState<string | null>(null);
   const [expandedTSForTC, setExpandedTSForTC] = useState<string[]>(['TS1']);
@@ -124,7 +124,7 @@ export default function App() {
   const [runningTests, setRunningTests] = useState<Array<{
     id: string; name: string; groupId: string; startTime: string; status: 'running' | 'completed';
   }>>([
-    { id: 'run-001', name: '나의 진행 중인 테스트', groupId: 'TG-001', startTime: '14:32', status: 'running' },
+    { id: 'run-001', name: '나의 진행 중인 테스트', groupId: 'TG-001', startTime: '2026-05-12 14:32', status: 'running' },
   ]);
   const [selectedRunningTestId, setSelectedRunningTestId] = useState<string | null>('run-001');
   const [retestCheckedIds, setRetestCheckedIds] = useState<Set<string>>(new Set());
@@ -139,9 +139,9 @@ export default function App() {
   // 테스트 결과
   const [historyFilter, setHistoryFilter] = useState<string>('ALL');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [rtmSearchQuery, setRtmSearchQuery] = useState('');
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [selectedRunningForDetail, setSelectedRunningForDetail] = useState<string | null>(null);
-  const [runningElapsed, setRunningElapsed] = useState(0);
   const [selectedFailTC, setSelectedFailTC] = useState<string | null>(null);
   const [historyDetailTab, setHistoryDetailTab] = useState<'FAIL' | 'PASS'>('FAIL');
 
@@ -264,18 +264,14 @@ export default function App() {
     };
   }, []);
 
-  const isHistoryDetail = currentPage === '테스트' && testSubTab === 'HISTORY' && (!!selectedExecutionId || !!selectedRunningForDetail);
-  const selectedExec = selectedExecutionId ? mockExecutionHistory.find(e => e.id === selectedExecutionId) ?? null : null;
-  const selectedRunningTest = selectedExecutionId ? runningTests.find(r => r.id === selectedExecutionId) ?? null : null;
-  const isExecRunning = !!selectedRunningTest && selectedRunningTest.status === 'running';
-  const detailRunningTest = selectedRunningForDetail ? runningTests.find(r => r.id === selectedRunningForDetail) ?? null : null;
-  const isDetailRunning = !!detailRunningTest && detailRunningTest.status === 'running';
-
+  // 테스트 페이지 밖으로 나가면 detail 상태 초기화 → SubHeader 정상 표시
   useEffect(() => {
-    if (!isExecRunning && !isDetailRunning) { setRunningElapsed(0); return; }
-    const interval = setInterval(() => setRunningElapsed(s => s + 1), 1000);
-    return () => clearInterval(interval);
-  }, [isExecRunning, isDetailRunning]);
+    if (currentPage !== '테스트') {
+      setSelectedRunningForDetail(null);
+      setSelectedExecutionId(null);
+    }
+  }, [currentPage]);
+
 
   const advanceAgentStage = () => {
     const order = ['UI', 'API', 'DB', 'Cross-check', '원인 분석', 'Report 생성'];
@@ -458,96 +454,65 @@ export default function App() {
               onClose={() => setShowAgentTrace(false)}
             />
           )}
-          <SubHeader
-            title={
-              isHistoryDetail ? '' :
-              currentPage === 'HOME' ? '대시보드' :
-              currentPage === '시나리오' ? '시나리오' :
-              currentPage === '테스트' ? (testSubTab === 'HISTORY' ? '실행 이력' : '테스트 실행') :
-              currentPage === 'RTM' ? 'RTM' :
-              currentPage === '설정' ? '설정' : ''
-            }
-            titleExtra={isHistoryDetail ? (
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => {
-                    if (selectedRunningForDetail) setSelectedRunningForDetail(null);
-                    else setSelectedExecutionId(null);
-                  }}
-                  className="flex items-center gap-0.5 text-[#9ca3af] hover:text-[#1a1a2e] transition-colors"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  <span className="text-sm">이력</span>
-                </button>
-                <div className="w-px h-4 bg-[#e5e7eb]" />
-                <span className="text-[15px] font-bold text-[#1a1a2e]">
-                  {detailRunningTest?.name ?? selectedExec?.groupId ?? selectedRunningTest?.groupId ?? ''}
-                </span>
-                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#3615CF]/10 text-[#3615CF] ${(isExecRunning || isDetailRunning) ? 'animate-pulse' : ''}`}>
-                  {(isExecRunning || isDetailRunning) ? '실행 중' : `#${selectedExec?.executionNumber}번째 실행`}
-                </span>
-                <span className="text-xs text-[#9ca3af]">
-                  {detailRunningTest?.startTime ?? selectedExec?.startDate ?? selectedRunningTest?.startTime ?? ''}
-                </span>
-                <span className="text-xs text-[#9ca3af]">
-                  {(isExecRunning || isDetailRunning)
-                    ? `${Math.floor(runningElapsed / 60)}m ${runningElapsed % 60}s`
-                    : (selectedExec?.duration ?? '')}
-                </span>
-              </div>
-            ) : undefined}
-            tabs={currentPage === 'HOME' ? [
-              { key: 'overview', label: 'Overview', icon: BarChart2 },
-              { key: 'people',   label: 'People',   icon: Users, count: 6 },
-              { key: 'settings', label: 'Settings', icon: Settings },
-            ] : undefined}
-            activeTab={homeTab}
-            onTabChange={setHomeTab}
-            rightContent={
-              (isHistoryDetail && !isExecRunning && !isDetailRunning) ? (
+          {currentPage !== '테스트' && (
+            <SubHeader
+              title={
+                currentPage === 'HOME' ? '대시보드' :
+                currentPage === '시나리오' ? '시나리오' :
+                currentPage === 'RTM' ? 'RTM' :
+                currentPage === '설정' ? '설정' : ''
+              }
+              tabs={currentPage === 'HOME' ? [
+                { key: 'overview', label: 'Overview', icon: BarChart2 },
+                { key: 'people',   label: 'People',   icon: Users, count: 6 },
+                { key: 'settings', label: 'Settings', icon: Settings },
+              ] : undefined}
+              activeTab={homeTab}
+              onTabChange={setHomeTab}
+              rightContent={
+                currentPage === 'RTM' ? (
+                  <SearchBar
+                    value={rtmSearchQuery}
+                    onChange={setRtmSearchQuery}
+                    placeholder="요구사항 검색..."
+                    className="w-52"
+                  />
+                ) : currentPage === '시나리오' ? (
                 <div className="flex items-center gap-2">
-                  <button className="h-7 flex items-center gap-1.5 px-3 text-[11px] font-medium text-[#6b7280] rounded-lg border border-[#e5e7eb] hover:bg-gray-50 transition-colors">
-                    <Download className="w-3 h-3" /> CSV
+                  <button
+                    onClick={() => setScenarioViewMode(scenarioViewMode === 'table' ? 'graph' : 'table')}
+                    title={scenarioViewMode === 'table' ? '그래프 보기' : '목록 보기'}
+                    className={`inline-flex h-7 items-center justify-center rounded-lg px-2 text-xs leading-none transition-colors ${
+                      scenarioViewMode === 'graph'
+                        ? 'bg-[#3615CF] text-white'
+                        : 'text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/8'
+                    }`}>
+                    <Network className="w-4 h-4" />
                   </button>
-                  <button className="h-7 flex items-center gap-1.5 px-3 text-[11px] font-medium text-[#6b7280] rounded-lg border border-[#e5e7eb] hover:bg-gray-50 transition-colors">
-                    <Download className="w-3 h-3" /> PDF
+                  <div className="w-px h-4 bg-[#e5e7eb]" />
+                  <button
+                    onClick={() => setShowLinkedFiles(true)}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs leading-none text-[#6b7280] hover:text-[#6b7280] hover:bg-[#fef3c7] transition-colors">
+                    <FolderOpen className="w-3.5 h-3.5" /> Files
+                  </button>
+                  <button
+                    onClick={triggerCodeChangeDetection}
+                    disabled={codeChangeDetected}
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs leading-none transition-colors ${
+                      codeChangeDetected
+                        ? 'text-[#6b7280] bg-[#fef3c7]'
+                        : 'text-[#6b7280] hover:text-[#6b7280] hover:bg-[#fef3c7]'
+                    }`}>
+                    <GitBranch className="w-3.5 h-3.5" /> 코드 변경 탐지
+                    {codeChangeDetected && <span className="w-1.5 h-1.5 rounded-full bg-[#6b7280]" />}
                   </button>
                 </div>
-              ) : currentPage === '시나리오' ? (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setScenarioViewMode(scenarioViewMode === 'table' ? 'graph' : 'table')}
-                  title={scenarioViewMode === 'table' ? '그래프 보기' : '목록 보기'}
-                  className={`inline-flex h-7 items-center justify-center rounded-lg px-2 text-xs leading-none transition-colors ${
-                    scenarioViewMode === 'graph'
-                      ? 'bg-[#3615CF] text-white'
-                      : 'text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/8'
-                  }`}>
-                  <Network className="w-4 h-4" />
-                </button>
-                <div className="w-px h-4 bg-[#e5e7eb]" />
-                <button
-                  onClick={() => setShowLinkedFiles(true)}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs leading-none text-[#6b7280] hover:text-[#6b7280] hover:bg-[#fef3c7] transition-colors">
-                  <FolderOpen className="w-3.5 h-3.5" /> Files
-                </button>
-                <button
-                  onClick={triggerCodeChangeDetection}
-                  disabled={codeChangeDetected}
-                  className={`inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs leading-none transition-colors ${
-                    codeChangeDetected
-                      ? 'text-[#6b7280] bg-[#fef3c7]'
-                      : 'text-[#6b7280] hover:text-[#6b7280] hover:bg-[#fef3c7]'
-                  }`}>
-                  <GitBranch className="w-3.5 h-3.5" /> 코드 변경 탐지
-                  {codeChangeDetected && <span className="w-1.5 h-1.5 rounded-full bg-[#6b7280]" />}
-                </button>
-              </div>
-            ) : undefined}
-          />
+              ) : undefined}
+            />
+          )}
           <div className="flex-1 overflow-hidden flex">
             <div className="flex-1 overflow-hidden">
-            {currentPage === 'HOME' && <HomePage setCurrentPage={setCurrentPage} navigateToHistory={navigateToHistory} />}
+            {currentPage === 'HOME' && <HomePage setCurrentPage={setCurrentPage} navigateToHistory={navigateToHistory} activeTab={homeTab} />}
             {currentPage === '시나리오' && (
               <ScenarioPage
                 selectedScenario={selectedScenario}
@@ -615,56 +580,101 @@ export default function App() {
                 setTestSubTab={setTestSubTab}
                 setSelectedRunningTestId={setSelectedRunningTestId}
                 setSelectedTestGroup={setSelectedTestGroup}
+                setSelectedRunningForDetail={setSelectedRunningForDetail}
                 viewMode={scenarioViewMode}
                 setViewMode={setScenarioViewMode}
               />
             )}
             {currentPage === '테스트' && (
-              <TestPage
-                runningTests={runningTests}
-                setRunningTests={setRunningTests}
-                selectedRunningTestId={selectedRunningTestId}
-                setSelectedRunningTestId={setSelectedRunningTestId}
-                setSelectedTestGroup={setSelectedTestGroup}
-                isTestRunning={isTestRunning}
-                setIsTestRunning={setIsTestRunning}
-                completedAgentStages={completedAgentStages}
-                setCompletedAgentStages={setCompletedAgentStages}
-                currentAgentStage={currentAgentStage}
-                setCurrentAgentStage={setCurrentAgentStage}
-                scenarioSidebarTab={scenarioSidebarTab}
-                setScenarioSidebarTab={setScenarioSidebarTab}
-                expandedScenarios={expandedScenarios}
-                setExpandedScenarios={setExpandedScenarios}
-                expandedTestCases={expandedTestCases}
-                setExpandedTestCases={setExpandedTestCases}
-                highlightedLogIdx={highlightedLogIdx}
-                setHighlightedLogIdx={setHighlightedLogIdx}
-                testSubTab={testSubTab}
-                setTestSubTab={setTestSubTab}
-                historyFilter={historyFilter}
-                setHistoryFilter={setHistoryFilter}
-                historySearchQuery={historySearchQuery}
-                setHistorySearchQuery={setHistorySearchQuery}
-                selectedExecutionId={selectedExecutionId}
-                setSelectedExecutionId={setSelectedExecutionId}
-                selectedFailTC={selectedFailTC}
-                setSelectedFailTC={setSelectedFailTC}
-                historyDetailTab={historyDetailTab}
-                setHistoryDetailTab={setHistoryDetailTab}
-                retestCheckedIds={retestCheckedIds}
-                setRetestCheckedIds={setRetestCheckedIds}
-                setShowRetestNavModal={setShowRetestNavModal}
-                selectedRunningForDetail={selectedRunningForDetail}
-                setSelectedRunningForDetail={setSelectedRunningForDetail}
-                advanceAgentStage={advanceAgentStage}
-                getNodeStatus={getNodeStatus}
-                showCompletionModal={showCompletionModal}
-                setShowCompletionModal={setShowCompletionModal}
-              />
+              testSubTab === 'INPROGRESS' ? (
+                <TestRunningPage
+                  runningTests={runningTests}
+                  setRunningTests={setRunningTests}
+                  selectedRunningTestId={selectedRunningTestId}
+                  setSelectedRunningTestId={setSelectedRunningTestId}
+                  setSelectedTestGroup={setSelectedTestGroup}
+                  isTestRunning={isTestRunning}
+                  setIsTestRunning={setIsTestRunning}
+                  completedAgentStages={completedAgentStages}
+                  setCompletedAgentStages={setCompletedAgentStages}
+                  currentAgentStage={currentAgentStage}
+                  setCurrentAgentStage={setCurrentAgentStage}
+                  scenarioSidebarTab={scenarioSidebarTab}
+                  setScenarioSidebarTab={setScenarioSidebarTab}
+                  expandedScenarios={expandedScenarios}
+                  setExpandedScenarios={setExpandedScenarios}
+                  expandedTestCases={expandedTestCases}
+                  setExpandedTestCases={setExpandedTestCases}
+                  highlightedLogIdx={highlightedLogIdx}
+                  setHighlightedLogIdx={setHighlightedLogIdx}
+                  testSubTab={testSubTab}
+                  setTestSubTab={setTestSubTab}
+                  historyFilter={historyFilter}
+                  setHistoryFilter={setHistoryFilter}
+                  historySearchQuery={historySearchQuery}
+                  setHistorySearchQuery={setHistorySearchQuery}
+                  selectedExecutionId={selectedExecutionId}
+                  setSelectedExecutionId={setSelectedExecutionId}
+                  selectedFailTC={selectedFailTC}
+                  setSelectedFailTC={setSelectedFailTC}
+                  historyDetailTab={historyDetailTab}
+                  setHistoryDetailTab={setHistoryDetailTab}
+                  retestCheckedIds={retestCheckedIds}
+                  setRetestCheckedIds={setRetestCheckedIds}
+                  setShowRetestNavModal={setShowRetestNavModal}
+                  selectedRunningForDetail={selectedRunningForDetail}
+                  setSelectedRunningForDetail={setSelectedRunningForDetail}
+                  advanceAgentStage={advanceAgentStage}
+                  getNodeStatus={getNodeStatus}
+                  showCompletionModal={showCompletionModal}
+                  setShowCompletionModal={setShowCompletionModal}
+                />
+              ) : (
+                <TestPage
+                  runningTests={runningTests}
+                  setRunningTests={setRunningTests}
+                  selectedRunningTestId={selectedRunningTestId}
+                  setSelectedRunningTestId={setSelectedRunningTestId}
+                  setSelectedTestGroup={setSelectedTestGroup}
+                  isTestRunning={isTestRunning}
+                  setIsTestRunning={setIsTestRunning}
+                  completedAgentStages={completedAgentStages}
+                  setCompletedAgentStages={setCompletedAgentStages}
+                  currentAgentStage={currentAgentStage}
+                  setCurrentAgentStage={setCurrentAgentStage}
+                  scenarioSidebarTab={scenarioSidebarTab}
+                  setScenarioSidebarTab={setScenarioSidebarTab}
+                  expandedScenarios={expandedScenarios}
+                  setExpandedScenarios={setExpandedScenarios}
+                  expandedTestCases={expandedTestCases}
+                  setExpandedTestCases={setExpandedTestCases}
+                  highlightedLogIdx={highlightedLogIdx}
+                  setHighlightedLogIdx={setHighlightedLogIdx}
+                  testSubTab={testSubTab}
+                  setTestSubTab={setTestSubTab}
+                  historyFilter={historyFilter}
+                  setHistoryFilter={setHistoryFilter}
+                  historySearchQuery={historySearchQuery}
+                  setHistorySearchQuery={setHistorySearchQuery}
+                  selectedExecutionId={selectedExecutionId}
+                  setSelectedExecutionId={setSelectedExecutionId}
+                  selectedFailTC={selectedFailTC}
+                  setSelectedFailTC={setSelectedFailTC}
+                  historyDetailTab={historyDetailTab}
+                  setHistoryDetailTab={setHistoryDetailTab}
+                  retestCheckedIds={retestCheckedIds}
+                  setRetestCheckedIds={setRetestCheckedIds}
+                  setShowRetestNavModal={setShowRetestNavModal}
+                  selectedRunningForDetail={selectedRunningForDetail}
+                  setSelectedRunningForDetail={setSelectedRunningForDetail}
+                  advanceAgentStage={advanceAgentStage}
+                  getNodeStatus={getNodeStatus}
+                  showCompletionModal={showCompletionModal}
+                  setShowCompletionModal={setShowCompletionModal}
+                />
+              )
             )}
             {currentPage === 'RTM' && <RTMPage />}
-            {currentPage === '설정' && <SettingsPage />}
           </div>
         </div>
       </div>

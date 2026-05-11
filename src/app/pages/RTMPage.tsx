@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, XCircle } from 'lucide-react';
-import { Cell, Pie, PieChart } from 'recharts';
+import { RTMDonutChart } from '../components/common/RTMDonutChart';
 import { mockRTMRequirements, mockRTMVersions } from '../data/mockData';
 
 export const RTMPage = () => {
@@ -19,10 +19,6 @@ export const RTMPage = () => {
   const overallPassTotal = mockRTMRequirements.reduce((s, r) => s + r.passCount, 0);
   const overallTotal = mockRTMRequirements.reduce((s, r) => s + r.totalCount, 0);
   const overallPct = overallTotal > 0 ? Math.round((overallPassTotal / overallTotal) * 100) : 0;
-  const overallPieData = overallTotal > 0
-    ? [{ value: overallPassTotal }, { value: overallTotal - overallPassTotal }]
-    : [{ value: 0 }, { value: 1 }];
-
   const mockTesters: Record<string, string> = {
     'TS1_TC1': '김지수', 'TS1_TC2': '이민준', 'TS1_TC3': '박서연',
     'TS2_TC1': '최현우', 'TS3_TC3': '정유진',
@@ -78,41 +74,14 @@ export const RTMPage = () => {
 
         {/* Overall donut + summary */}
         <div className="px-5 py-5 border-b border-[#f0f0f0] flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-shrink-0" style={{ width: 120, height: 120 }}>
-              <PieChart width={120} height={120}>
-                <Pie data={overallPieData} cx={55} cy={55} innerRadius={36} outerRadius={54}
-                  dataKey="value" startAngle={90} endAngle={-270} strokeWidth={0}>
-                  <Cell fill="var(--status-pass)" />
-                  <Cell fill="#E5E7EB" />
-                </Pie>
-              </PieChart>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-sm font-bold text-[#1a1a2e]">{overallPct}%</span>
-              </div>
-            </div>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-[#9ca3af] w-8">전체</span>
-                <span className="font-semibold text-[#1a1a2e]">{totalReqs}건</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-status-pass flex-shrink-0" />
-                <span className="text-[#9ca3af] w-8">충족</span>
-                <span className="font-semibold text-status-pass">{metReqs}건</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-tertiary-blue flex-shrink-0" />
-                <span className="text-[#9ca3af] w-8">미충족</span>
-                <span className="font-semibold text-primary-blue">{unmetReqs}건</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#BFC6C4] flex-shrink-0" />
-                <span className="text-[#9ca3af] w-8">미실행</span>
-                <span className="font-semibold text-[#9ca3af]">{unrunReqs}건</span>
-              </div>
-            </div>
-          </div>
+          <RTMDonutChart
+            metReqs={metReqs}
+            unmetReqs={unmetReqs}
+            unrunReqs={unrunReqs}
+            totalReqs={totalReqs}
+            overallPct={overallPct}
+            size="sm"
+          />
         </div>
 
         {/* FR list */}
@@ -120,11 +89,14 @@ export const RTMPage = () => {
           {mockRTMRequirements.map(req => {
             const isActive = selectedFrId === req.frId;
             const pct = req.totalCount > 0 ? Math.round((req.passCount / req.totalCount) * 100) : 0;
-            const fillColor = req.totalCount === 0 ? '#BFC6C4' : req.status === '충족' ? 'var(--status-pass)' : 'var(--tertiary-blue)';
-            const statusLabel = req.totalCount === 0 ? '미실행' : req.status;
+            const fillColor = isActive
+              ? (req.totalCount === 0 ? '#d1d5db' : req.status === '충족' ? '#3615CF' : '#C5C0EC')
+              : (req.totalCount === 0 ? '#d1d5db' : '#6b7280');
+            const trackColor = isActive ? '#E5E7EB' : '#f3f4f6';
+            const statusLabel = req.totalCount === 0 ? '미측정' : req.status;
             const statusClass = req.totalCount === 0
-              ? 'bg-gray-100 text-[#9ca3af]'
-              : req.status === '충족' ? 'bg-green-100 text-status-pass' : 'bg-tertiary-blue text-primary-blue';
+              ? 'bg-[#f3f4f6] text-[#9ca3af]'
+              : req.status === '충족' ? 'bg-[#EAE8F9] text-[#3615CF]' : 'bg-[#EAE8F9]/60 text-[#6b7280]';
 
             return (
               <button
@@ -132,14 +104,14 @@ export const RTMPage = () => {
                 onClick={() => setSelectedFrId(req.frId)}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-[#f0f0f0] ${
                   isActive
-                    ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/8 border-l-[3px] border-l-[#f78ca0]'
+                    ? 'bg-[#EAE8F9]/50 border-l-[3px] border-l-[#3615CF]'
                     : 'hover:bg-gray-50'
                 }`}
               >
                 {/* Mini donut */}
                 <div className="relative flex-shrink-0" style={{ width: 40, height: 40 }}>
                   <svg width={40} height={40}>
-                    <circle cx={20} cy={20} r={16} fill="none" stroke="#E5E7EB" strokeWidth={4} />
+                    <circle cx={20} cy={20} r={16} fill="none" stroke={trackColor} strokeWidth={4} />
                     <circle
                       cx={20} cy={20} r={16}
                       fill="none"
@@ -159,7 +131,7 @@ export const RTMPage = () => {
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className={`text-[10px] font-mono font-bold ${isActive ? 'text-[#f78ca0]' : 'text-[#9ca3af]'}`}>
+                    <span className={`text-[10px] font-mono font-bold ${isActive ? 'text-[#3615CF]' : 'text-[#9ca3af]'}`}>
                       {req.frId}
                     </span>
                     <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass}`}>
@@ -169,7 +141,7 @@ export const RTMPage = () => {
                   <div className="text-xs text-[#1a1a2e] truncate leading-snug">{req.content}</div>
                 </div>
 
-                <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${isActive ? 'text-[#f78ca0]' : 'text-[#d1d5db]'}`} />
+                <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${isActive ? 'text-[#3615CF]' : 'text-[#d1d5db]'}`} />
               </button>
             );
           })}
@@ -183,9 +155,9 @@ export const RTMPage = () => {
         <div className="bg-white border-b border-[#f0f0f0] px-6 py-4 flex items-center gap-3 flex-shrink-0">
           <span className="font-mono text-sm font-bold text-[#1a1a2e]">{selectedFr.frId}</span>
           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-            selectedFr.totalCount === 0 ? 'bg-gray-100 text-[#9ca3af]' :
-            selectedFr.status === '충족' ? 'bg-green-100 text-status-pass' : 'bg-tertiary-blue text-primary-blue'
-          }`}>{selectedFr.totalCount === 0 ? '미실행' : selectedFr.status}</span>
+            selectedFr.totalCount === 0 ? 'bg-[#f3f4f6] text-[#9ca3af]' :
+            selectedFr.status === '충족' ? 'bg-[#EAE8F9] text-[#3615CF]' : 'bg-[#EAE8F9]/60 text-[#6b7280]'
+          }`}>{selectedFr.totalCount === 0 ? '미측정' : selectedFr.status}</span>
           <span className="text-sm text-[#6b7280] flex-1 min-w-0 truncate">{selectedFr.content}</span>
           <span className="text-xs text-[#9ca3af] flex-shrink-0 font-mono">
             {selectedFr.passCount}/{selectedFr.totalCount} PASS
@@ -227,7 +199,7 @@ export const RTMPage = () => {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-r from-[#f78ca0]/20 to-[#fe9a8b]/20 flex items-center justify-center text-[10px] font-semibold text-[#f78ca0] flex-shrink-0">
+                          <div className="w-6 h-6 rounded-full bg-[#EAE8F9] flex items-center justify-center text-[10px] font-semibold text-[#3615CF] flex-shrink-0">
                             {tester !== '—' ? tester[0] : '?'}
                           </div>
                           <span className="text-xs text-[#6b7280]">{tester}</span>
@@ -235,7 +207,9 @@ export const RTMPage = () => {
                       </td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          row.pass ? 'bg-green-100 text-status-pass' : 'bg-red-100 text-status-fail'
+                          row.pass
+                            ? 'bg-green-100 text-status-pass'
+                            : 'bg-red-100 text-status-fail'
                         }`}>
                           {row.pass
                             ? <CheckCircle className="w-3 h-3" />

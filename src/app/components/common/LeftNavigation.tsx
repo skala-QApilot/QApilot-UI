@@ -46,12 +46,12 @@ export const LeftNavigation = ({
         onClick={onClick}
         title={label}
         style={{ zIndex: 1 }}
-        className={`relative w-full flex items-center justify-center h-[58px] transition-colors group ${
-          active ? 'bg-white' : 'hover:bg-black/5'
+        className={`relative w-full flex items-center justify-center h-[58px] rounded-l-[18px] ml-2 transition-colors group ${
+          active ? 'bg-white' : ':bg-black/5'
         }`}
       >
         <span className="relative flex items-center justify-center">
-          <Icon className={`w-6 h-6 transition-colors ${
+          <Icon className={`w-6 h-6 transition-colors  ${
             active ? 'text-[#3615CF]' : 'text-[#9ca3af] group-hover:text-[#6b7280]'
           }`} />
           {badge !== undefined && badge > 0 && (
