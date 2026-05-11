@@ -18,9 +18,9 @@ interface Camera { x: number; y: number; scale: number; }
 
 // ── style map ──────────────────────────────────────────────────────────────────
 const EDGE_COLOR: Record<TSFlowEdgeType, { stroke: string; label: string; dash: number[] }> = {
-  success: { stroke: '#9AB17A', label: '#9AB17A', dash: [] },
-  failure: { stroke: '#f87171', label: '#f87171', dash: [6, 3] },
-  branch:  { stroke: '#60a5fa', label: '#60a5fa', dash: [4, 3] },
+  success: { stroke: '#5E9E7E', label: '#5E9E7E', dash: [] },
+  failure: { stroke: '#C27272', label: '#C27272', dash: [6, 3] },
+  branch:  { stroke: '#7B61D4', label: '#7B61D4', dash: [4, 3] },
   default: { stroke: '#c0c6d0', label: '#9ca3af', dash: [] },
 };
 
@@ -376,25 +376,25 @@ export default function ScenarioFlowGraph({
         // Drop shadow
         if (isSel || isHov) {
           ctx.shadowBlur   = 18 / cam.scale;
-          ctx.shadowColor  = isSel ? 'rgba(247,140,160,0.45)' : 'rgba(0,0,0,0.12)';
+          ctx.shadowColor  = isSel ? 'rgba(54,21,207,0.35)' : 'rgba(0,0,0,0.12)';
           ctx.shadowOffsetY = 2 / cam.scale;
         }
 
         // Node body
         rrect(ctx, n.x, n.y, n.w, n.h, 10);
-        ctx.fillStyle = isSel ? '#f78ca0' : 'white';
+        ctx.fillStyle = isSel ? '#3615CF' : 'white';
         ctx.fill();
         ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
         // Border
         rrect(ctx, n.x, n.y, n.w, n.h, 10);
-        ctx.strokeStyle = isSel ? '#f78ca0' : isHov ? '#f9b4c2' : '#e5e7eb';
+        ctx.strokeStyle = isSel ? '#3615CF' : isHov ? '#5b35e8' : '#e5e7eb';
         ctx.lineWidth   = (isSel ? 2.5 : isHov ? 1.8 : 1.2) / cam.scale;
         ctx.stroke();
 
         // Left accent bar
         if (!isSel) {
-          ctx.fillStyle = '#f78ca0';
+          ctx.fillStyle = '#3615CF';
           rrect(ctx, n.x, n.y + 10, 3, n.h - 20, 2);
           ctx.fill();
         }
@@ -402,9 +402,9 @@ export default function ScenarioFlowGraph({
         // TS badge
         const bx = n.x + 10, by = n.y + 10;
         rrect(ctx, bx, by, 24, 14, 3);
-        ctx.fillStyle = isSel ? 'rgba(255,255,255,0.25)' : 'rgba(247,140,160,0.12)';
+        ctx.fillStyle = isSel ? 'rgba(255,255,255,0.25)' : 'rgba(54,21,207,0.10)';
         ctx.fill();
-        ctx.fillStyle = isSel ? 'white' : '#f78ca0';
+        ctx.fillStyle = isSel ? 'white' : '#3615CF';
         ctx.font = 'bold 8px -apple-system, sans-serif';
         ctx.textAlign   = 'center';
         ctx.textBaseline = 'middle';
@@ -425,7 +425,9 @@ export default function ScenarioFlowGraph({
         ctx.restore();
       });
 
-      // ── 3. Legend ────────────────────────────────────────────────────────────
+      ctx.restore();
+
+      // ── 3. Legend (screen space — fixed) ─────────────────────────────────────
       const legend: Array<{ type: TSFlowEdgeType; label: string }> = [
         { type: 'success', label: '성공 분기' },
         { type: 'failure', label: '실패 분기' },
@@ -450,7 +452,7 @@ export default function ScenarioFlowGraph({
         ctx.restore();
       });
 
-      // ── 4. Zoom badge ────────────────────────────────────────────────────────
+      // ── 4. Zoom badge (screen space — fixed) ─────────────────────────────────
       if (Math.abs(cam.scale - 1) > 0.08) {
         const pct = Math.round(cam.scale * 100);
         const bx = width - 44, by = height - 20;
@@ -464,8 +466,6 @@ export default function ScenarioFlowGraph({
         ctx.fillText(`${pct}%`, bx, by);
         ctx.restore();
       }
-
-      ctx.restore();
       rafRef.current = requestAnimationFrame(tick);
     };
 

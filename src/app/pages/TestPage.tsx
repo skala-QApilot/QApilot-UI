@@ -4,6 +4,7 @@ import {
   Download, Eye, GitBranch, List, Loader2, Pause, Play, RotateCcw, XCircle,
 } from 'lucide-react';
 import { SubHeader } from '../components/common/SubHeader';
+import { SearchBar } from '../components/common/SearchBar';
 import { PassRateChart } from '../components/common/PassRateChart';
 import { ExecutionHistoryRow } from '../components/common/ExecutionHistoryRow';
 import { RuntimeTerminal, TerminalFrame } from '../components/common/RuntimeTerminal';
@@ -66,6 +67,7 @@ interface ExecutionHistoryPageProps {
   historyFilter: string;
   setHistoryFilter: Dispatch<SetStateAction<string>>;
   historySearchQuery?: string;
+  setHistorySearchQuery?: Dispatch<SetStateAction<string>>;
   selectedExecutionId: string | null;
   setSelectedExecutionId: Dispatch<SetStateAction<string | null>>;
   selectedFailTC: string | null;
@@ -105,6 +107,7 @@ export const TestPage = ({
   historyFilter,
   setHistoryFilter: _setHistoryFilter,
   historySearchQuery = '',
+  setHistorySearchQuery,
   selectedExecutionId,
   setSelectedExecutionId,
   selectedFailTC,
@@ -232,20 +235,25 @@ export const TestPage = ({
 
         <SubHeader
           leftContent={(
-            <button
-              type="button"
-              onClick={() => setSelectedRunningForDetail(null)}
-              className="p-1 text-[#6b7280] hover:text-[#3615CF]"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setSelectedRunningForDetail(null)}
+                className="flex items-center gap-1 text-[#9ca3af] hover:text-[#3615CF] transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span className="text-sm">이력</span>
+              </button>
+              <div className="w-px h-4 bg-[#e5e7eb]" />
+            </>
           )}
-          title={detailRun?.name ?? '테스트 실행'}
+          title={detailRun?.name ?? '나의 진행 중인 테스트'}
+          className="!py-[14px]"
           titleExtra={(
-            <div className="flex items-center gap-3 ml-2">
-              <span className="text-sm font-semibold text-[#1a1a2e]">{detailRun?.name ?? '나의 진행 중인 테스트'}</span>
-              {detailRun && <span className="text-[13px] text-[#6b7280]">{detailRun.startTime}</span>}
-              {detailRun && <span className="text-[13px] text-[#3615CF] font-medium">{formatDuration(detailRun.startTime)}</span>}
+            <div className="flex items-center gap-3 ml-1">
+              <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#3615CF]/10 text-[#3615CF]">실행 중</span>
+              {detailRun && <span className="text-sm text-[#9ca3af]">{detailRun.startTime}</span>}
+              {detailRun && <span className="text-sm text-[#9ca3af]">{formatDuration(detailRun.startTime)}</span>}
             </div>
           )}
         />
@@ -527,6 +535,18 @@ export const TestPage = ({
   return (
     <>
       <div className="flex h-full min-h-0 flex-col bg-white">
+
+        <SubHeader
+          title="실행 이력"
+          rightContent={
+            <SearchBar
+              value={historySearchQuery}
+              onChange={setHistorySearchQuery}
+              placeholder="실행 이력 검색..."
+              className="w-52"
+            />
+          }
+        />
 
         {/* Graph */}
         <div className="border-b border-[#f0f0f0] px-8 pt-3 pb-2 flex-shrink-0 bg-white">

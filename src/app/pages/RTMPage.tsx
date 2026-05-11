@@ -1,14 +1,10 @@
 import { useState } from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Clock, Download, XCircle } from 'lucide-react';
+import { CheckCircle, ChevronRight, Clock, XCircle } from 'lucide-react';
 import { RTMDonutChart } from '../components/common/RTMDonutChart';
-import { mockRTMRequirements, mockRTMVersions } from '../data/mockData';
+import { mockRTMRequirements } from '../data/mockData';
 
 export const RTMPage = () => {
   const [selectedFrId, setSelectedFrId] = useState(mockRTMRequirements[0].frId);
-  const [selectedRtmVersion, setSelectedRtmVersion] = useState(mockRTMVersions[0].id);
-  const [rtmVersionOpen, setRtmVersionOpen] = useState(false);
-
-  const currentRtmVersion = mockRTMVersions.find(v => v.id === selectedRtmVersion) ?? mockRTMVersions[0];
 
   const selectedFr = mockRTMRequirements.find(r => r.frId === selectedFrId) ?? mockRTMRequirements[0];
   const totalReqs = mockRTMRequirements.length;
@@ -29,48 +25,6 @@ export const RTMPage = () => {
 
       {/* ── Left Panel — FR list ── */}
       <div className="w-72 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
-
-        {/* Header — RTM 버전 선택 + CSV */}
-        <div className="px-5 py-2.5 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
-          <div className="relative">
-            <button
-              onClick={() => setRtmVersionOpen(!rtmVersionOpen)}
-              className="flex items-center gap-1.5 group"
-            >
-              <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-100 group-hover:bg-gray-200 transition-colors">
-                <span className="text-[10px] font-medium text-[#6b7280]">{currentRtmVersion.id}</span>
-                <ChevronDown className="w-3 h-3 text-[#9ca3af]" />
-              </div>
-            </button>
-            {rtmVersionOpen && (
-              <div className="absolute left-0 top-full mt-1 w-72 bg-white rounded-lg shadow-lg border border-[#f0f0f0] z-50">
-                <div className="p-2">
-                  <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wide px-2 py-1.5">RTM 버전 선택</div>
-                  {mockRTMVersions.map(ver => (
-                    <button
-                      key={ver.id}
-                      onClick={() => { setSelectedRtmVersion(ver.id); setRtmVersionOpen(false); }}
-                      className={`w-full flex items-start gap-2 px-2 py-2 rounded text-left hover:bg-gray-50 transition-colors ${
-                        selectedRtmVersion === ver.id ? 'bg-gradient-to-r from-[#f78ca0]/10 to-[#fe9a8b]/5' : ''
-                      }`}
-                    >
-                      <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${selectedRtmVersion === ver.id ? 'bg-[#f78ca0]' : 'bg-gray-300'}`} />
-                      <div className="min-w-0">
-                        <div className={`text-xs font-semibold ${selectedRtmVersion === ver.id ? 'text-[#f78ca0]' : 'text-[#1a1a2e]'}`}>
-                          {ver.label}
-                        </div>
-                        <div className="text-[10px] text-[#9ca3af] mt-0.5">{ver.date} · {ver.basedOn}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <button className="px-3 py-1.5 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5">
-            <Download className="w-3.5 h-3.5" /> CSV
-          </button>
-        </div>
 
         {/* Overall donut + summary */}
         <div className="px-5 py-5 border-b border-[#f0f0f0] flex-shrink-0">

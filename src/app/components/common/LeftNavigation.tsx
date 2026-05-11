@@ -45,8 +45,7 @@ export const LeftNavigation = ({
       <button
         onClick={onClick}
         title={label}
-        style={{ zIndex: 1 }}
-        className={`relative w-full flex items-center justify-center h-[58px] rounded-l-[18px] ml-2 transition-colors group ${
+        className={`relative w-[calc(100%-8px)] flex items-center justify-center h-[58px] rounded-l-[18px] ml-2 transition-colors group ${
           active ? 'bg-white' : ':bg-black/5'
         }`}
       >
@@ -65,7 +64,7 @@ export const LeftNavigation = ({
   );
 
   return (
-    <div className="h-full w-[68px] flex flex-col pt-4 pb-2.5 flex-shrink-0" style={{ background: SB }}>
+    <div className="h-full w-[68px] flex flex-col pt-4 pb-2.5 flex-shrink-0" style={{ background: SB, isolation: 'isolate' }}>
       <div className="flex-1 flex flex-col items-center justify-center pb-16" style={{ gap: N, overflow: 'visible' }}>
         <NavItem icon={Home} label="홈" active={currentPage === 'HOME'}
           onClick={() => setCurrentPage('HOME')} />

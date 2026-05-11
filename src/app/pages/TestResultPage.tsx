@@ -100,26 +100,39 @@ export const TestResultPage = ({
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       <SubHeader
         leftContent={(
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedExecutionId(null);
-              setSelectedFailTC(null);
-            }}
-            className="p-1 text-[#6b7280] hover:text-[#3615CF]"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedExecutionId(null);
+                setSelectedFailTC(null);
+              }}
+              className="flex items-center gap-1 text-[#9ca3af] hover:text-[#3615CF] transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="text-sm">이력</span>
+            </button>
+            <div className="w-px h-4 bg-[#e5e7eb]" />
+          </>
         )}
-        title="실행 이력"
+        title={exec.groupId}
         titleExtra={(
-          <div className="flex items-center gap-3 ml-2">
-            <span className="text-sm font-semibold text-[#1a1a2e]">{exec.groupId}</span>
-            <span className="text-[13px] text-[#6b7280]">{exec.startDate}</span>
-            <span className="text-[13px] text-[#3615CF] font-medium">{formatDuration(exec.duration)}</span>
+          <div className="flex items-center gap-3 ml-1">
+            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#3615CF]/10 text-[#3615CF]">#{exec.executionNumber}번째 실행</span>
+            <span className="text-sm text-[#9ca3af]">{exec.startDate}</span>
+            <span className="text-sm text-[#9ca3af]">{formatDuration(exec.duration)}</span>
           </div>
         )}
-       
+        rightContent={(
+          <>
+            <button className="px-3 py-1.5 bg-transparent border border-[#e5e7eb] rounded-lg text-xs text-[#6b7280] hover:text-[#1a1a2e] hover:bg-white flex items-center gap-1.5 transition-colors">
+              <Download className="w-3.5 h-3.5" /> CSV
+            </button>
+            <button className="px-3 py-1.5 bg-transparent border border-[#e5e7eb] rounded-lg text-xs text-[#6b7280] hover:text-[#1a1a2e] hover:bg-white flex items-center gap-1.5 transition-colors">
+              <Download className="w-3.5 h-3.5" /> PDF
+            </button>
+          </>
+        )}
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="w-64 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
