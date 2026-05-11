@@ -15,10 +15,11 @@ interface SubHeaderProps {
   activeTab?: string;
   onTabChange?: (key: string) => void;
   rightContent?: ReactNode;
+  className?: string;
 }
 
-export const SubHeader = ({ title, leftContent, titleExtra, tabs, activeTab, onTabChange, rightContent }: SubHeaderProps) => (
-  <div className={`bg-[#f7f8f9] px-8 flex-shrink-0 ${tabs ? 'pt-[11.5px] pb-0' : 'py-[11.5px]'}`}>
+export const SubHeader = ({ title, leftContent, titleExtra, tabs, activeTab, onTabChange, rightContent, className = '' }: SubHeaderProps) => (
+  <div className={`bg-[#f7f8f9] px-8 flex-shrink-0 ${tabs ? 'pt-[11.5px] pb-0' : 'py-[11.5px]'} ${className}`}>
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         {leftContent}

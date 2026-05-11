@@ -16,13 +16,14 @@ import {
   Eye, AlertCircle, CheckCircle, X,
   RotateCcw, Pause, Send,
   History, BarChart2, Users, Settings,
-  Network, GitBranch,
+  Network, GitBranch, Download,
   Sparkles, Star, FolderOpen,
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
 import {
   mockAIItems,
   mockAgentTrace,
+  mockFiles,
   mockNotifications,
   mockScenarioHistory,
   mockScenarios,
@@ -31,6 +32,7 @@ import {
   mockTestCases,
   mockTestGroups,
   mockTestLogs,
+  mockRTMVersions,
   type TestCaseMap,
 } from './data/mockData';
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
@@ -54,6 +56,7 @@ export default function App() {
   const [scenarioSearchQuery, setScenarioSearchQuery] = useState('');
   const [scenarioChangeFilter, setScenarioChangeFilter] = useState(false);
   const [selectedScenarioVersion, setSelectedScenarioVersion] = useState('change-2');
+  const [scenarioVersions, setScenarioVersions] = useState([...mockScenarioVersions]);
   const [favoriteVersionIds, setFavoriteVersionIds] = useState<Set<string>>(new Set());
   const [hoveredVersionId, setHoveredVersionId] = useState<string | null>(null);
   const [selectedNetworkNodeId, setSelectedNetworkNodeId] = useState<string | null>(null);
@@ -117,6 +120,8 @@ export default function App() {
   const [inlineDiffId, setInlineDiffId] = useState<string | null>(null);
   const [highlightedBotRow, setHighlightedBotRow] = useState<string | null>(null);
   const codeChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [fileChangeDetected, setFileChangeDetected] = useState(false);
 
   // 테스트 페이지 (진행중 / 이력)
   const [testSubTab, setTestSubTab] = useState<'INPROGRESS' | 'HISTORY'>('INPROGRESS');
@@ -147,6 +152,9 @@ export default function App() {
 
   // RTM
   const [expandedRTMItems, setExpandedRTMItems] = useState<string[]>([]);
+  const [selectedRtmVersion, setSelectedRtmVersion] = useState(mockRTMVersions[0].id);
+  const [rtmVersionOpen, setRtmVersionOpen] = useState(false);
+  const currentRtmVersion = mockRTMVersions.find(v => v.id === selectedRtmVersion) ?? mockRTMVersions[0];
 
   // derived
   const unreadNotifications = mockNotifications.filter(n => !n.read).length;
@@ -209,6 +217,23 @@ export default function App() {
     ]);
   };
 
+  const onReviewConfirm = () => {
+    const stableVersions = scenarioVersions.filter(v => !v.hasChange);
+    const latestLabel = stableVersions[stableVersions.length - 1]?.label ?? 'v1.0';
+    const match = latestLabel.match(/^v(\d+)\.(\d+)$/);
+    const [major, minor] = match ? [parseInt(match[1]), parseInt(match[2])] : [1, 0];
+    const newLabel = `v${major}.${minor + 1}`;
+    const today = new Date();
+    const date = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    setScenarioVersions([
+      ...stableVersions,
+      { id: newLabel, label: newLabel, date, hasChange: false, isFavorite: false },
+    ]);
+    setSelectedScenarioVersion(newLabel);
+    setAiItemActions({});
+    setDynamicAIItems({});
+  };
+
   const triggerCodeChangeDetection = () => {
     if (codeChangeTimerRef.current) window.clearTimeout(codeChangeTimerRef.current);
     setCodeChangeDetected(true);
@@ -225,6 +250,31 @@ export default function App() {
       setExpandedTSForTC(prev => prev.includes('TS1') ? prev : [...prev, 'TS1']);
       setCodeChangeDetected(false);
       codeChangeTimerRef.current = null;
+    }, 1800);
+  };
+
+  const triggerFileChangeDetection = () => {
+    setShowLinkedFiles(false);
+    setCurrentPage('시나리오');
+    if (fileChangeTimerRef.current) window.clearTimeout(fileChangeTimerRef.current);
+    setFileChangeDetected(true);
+
+    fileChangeTimerRef.current = window.setTimeout(() => {
+      const unreflected = mockFiles.filter(f => !f.reflected);
+      unreflected.forEach(file => {
+        const targetId = 'TS2';
+        setDynamicAIItems(prev => ({
+          ...prev,
+          [targetId]: prev[targetId] ?? {
+            reason: `${file.name} ${file.version} 업데이트 내용 시나리오 반영 필요`,
+            trigger: 'file' as const,
+            timestamp: new Date().toISOString().slice(0, 16).replace('T', ' '),
+          },
+        }));
+        setExpandedTSForTC(prev => prev.includes(targetId) ? prev : [...prev, targetId]);
+      });
+      setFileChangeDetected(false);
+      fileChangeTimerRef.current = null;
     }, 1800);
   };
 
@@ -261,6 +311,7 @@ export default function App() {
   useEffect(() => {
     return () => {
       if (codeChangeTimerRef.current) window.clearTimeout(codeChangeTimerRef.current);
+      if (fileChangeTimerRef.current) window.clearTimeout(fileChangeTimerRef.current);
     };
   }, []);
 
@@ -462,6 +513,41 @@ export default function App() {
                 currentPage === 'RTM' ? 'RTM' :
                 currentPage === '설정' ? '설정' : ''
               }
+              titleExtra={currentPage === 'RTM' ? (
+                <div className="relative ml-1">
+                  <button
+                    onClick={() => setRtmVersionOpen(v => !v)}
+                    className="flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-[#3615CF]/10 hover:bg-[#3615CF]/15 transition-colors"
+                  >
+                    <span className="text-[11px] font-semibold text-[#3615CF]">{currentRtmVersion.id}</span>
+                    <ChevronDown className="w-3 h-3 text-[#3615CF]" />
+                  </button>
+                  {rtmVersionOpen && (
+                    <div className="absolute left-0 top-full mt-1 w-72 bg-white rounded-lg shadow-lg border border-[#f0f0f0] z-50">
+                      <div className="p-2">
+                        <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wide px-2 py-1.5">RTM 버전 선택</div>
+                        {mockRTMVersions.map(ver => (
+                          <button
+                            key={ver.id}
+                            onClick={() => { setSelectedRtmVersion(ver.id); setRtmVersionOpen(false); }}
+                            className={`w-full flex items-start gap-2 px-2 py-2 rounded text-left hover:bg-gray-50 transition-colors ${
+                              selectedRtmVersion === ver.id ? 'bg-[#3615CF]/8' : ''
+                            }`}
+                          >
+                            <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${selectedRtmVersion === ver.id ? 'bg-[#3615CF]' : 'bg-gray-300'}`} />
+                            <div className="min-w-0">
+                              <div className={`text-xs font-semibold ${selectedRtmVersion === ver.id ? 'text-[#3615CF]' : 'text-[#1a1a2e]'}`}>
+                                {ver.label}
+                              </div>
+                              <div className="text-[10px] text-[#9ca3af] mt-0.5">{ver.date} · {ver.basedOn}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : undefined}
               tabs={currentPage === 'HOME' ? [
                 { key: 'overview', label: 'Overview', icon: BarChart2 },
                 { key: 'people',   label: 'People',   icon: Users, count: 6 },
@@ -471,12 +557,17 @@ export default function App() {
               onTabChange={setHomeTab}
               rightContent={
                 currentPage === 'RTM' ? (
-                  <SearchBar
-                    value={rtmSearchQuery}
-                    onChange={setRtmSearchQuery}
-                    placeholder="요구사항 검색..."
-                    className="w-52"
-                  />
+                  <>
+                    <SearchBar
+                      value={rtmSearchQuery}
+                      onChange={setRtmSearchQuery}
+                      placeholder="요구사항 검색..."
+                      className="w-52"
+                    />
+                    <button className="px-3 py-1.5 bg-transparent border border-[#e5e7eb] rounded-lg text-xs text-[#6b7280] hover:text-[#1a1a2e] hover:bg-white flex items-center gap-1.5 transition-colors">
+                      <Download className="w-3.5 h-3.5" /> CSV
+                    </button>
+                  </>
                 ) : currentPage === '시나리오' ? (
                 <div className="flex items-center gap-2">
                   <button
@@ -525,6 +616,8 @@ export default function App() {
                 setScenarioChangeFilter={setScenarioChangeFilter}
                 selectedScenarioVersion={selectedScenarioVersion}
                 setSelectedScenarioVersion={setSelectedScenarioVersion}
+                scenarioVersions={scenarioVersions}
+                onReviewConfirm={onReviewConfirm}
                 favoriteVersionIds={favoriteVersionIds}
                 setFavoriteVersionIds={setFavoriteVersionIds}
                 hoveredVersionId={hoveredVersionId}
@@ -693,7 +786,7 @@ export default function App() {
                 닫기
               </button>
               <button
-                onClick={() => { setShowLinkedFiles(false); setChatbarActive(true); setChatPanelExpanded(true); setChatContextTag('연관 파일 변경 반영'); }}
+                onClick={triggerFileChangeDetection}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:shadow-md transition-shadow">
                 수정 요청
                 <Sparkles className="w-3.5 h-3.5" />
@@ -754,7 +847,7 @@ export default function App() {
       )}
 
       {/* ── Scenario Chatbot (bottom bar) ── */}
-      {currentPage === '시나리오' && (
+      {currentPage === '시나리오' && !showLinkedFiles && (
         <>
           {/* Hover-trigger zone at the bottom of the content area */}
           <div

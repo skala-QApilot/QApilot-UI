@@ -3,7 +3,7 @@ import { Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit
 import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
 import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
 import { SearchBar } from '../components/common/SearchBar';
-import { mockRTMData, mockScenarioVersions, mockTestGroups, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
+import { mockRTMData, mockTestGroups, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
 
 interface ScenarioPageProps {
   [key: string]: any;
@@ -66,6 +66,8 @@ allTCsSelected,
 someSelected,
 openAiWithContext,
 triggerCodeChangeDetection,
+scenarioVersions,
+onReviewConfirm,
 ScenarioManagerPanel,
 setCurrentPage,
 setTestDepth,
@@ -460,27 +462,23 @@ setViewMode: setViewModeProp,
             <div className="flex min-h-full flex-col items-center justify-end pb-4">
               <div className="relative flex flex-col items-center gap-5">
                 <div className="absolute top-[10px] bottom-[10px] left-1/2 -translate-x-1/2 w-px bg-[#e5e7eb]" style={{ zIndex: 0 }} />
-              {mockScenarioVersions.some(v => v.hasChange) && (() => {
-                const latestChange = [...mockScenarioVersions].reverse().find(v => v.hasChange)!;
-                const isSelected = selectedScenarioVersion === latestChange.id;
-                return (
-                  <div className="relative flex flex-col items-center" style={{ zIndex: 10, overflow: 'visible' }}
-                    onMouseEnter={() => handleVersionEnter(latestChange.id)}
+              {[...(scenarioVersions as any[])].reverse().map(ver => {
+                const isSelected = selectedScenarioVersion === ver.id;
+                const isFav = favoriteVersionIds.has(ver.id);
+                if (ver.hasChange) return (
+                  <div key={ver.id} className="relative flex flex-col items-center" style={{ zIndex: 10, overflow: 'visible' }}
+                    onMouseEnter={() => handleVersionEnter(ver.id)}
                     onMouseLeave={handleVersionLeave}>
-                    <button onClick={() => setSelectedScenarioVersion(latestChange.id)} className="relative flex items-center justify-center">
+                    <button onClick={() => setSelectedScenarioVersion(ver.id)} className="relative flex items-center justify-center">
                       <svg width={20} height={20} style={{ overflow: 'visible' }}>
                         <circle cx={10} cy={10} r={8}
                           fill={isSelected ? '#EAE8F9' : 'white'}
                           stroke="#3615CF" strokeWidth={1.5} strokeDasharray={showReviewActions ? undefined : '4 2.5'} />
                       </svg>
                     </button>
-                    <span className="text-[8px] text-[#c4c9d4]">{latestChange.date}</span>
+                    <span className="text-[8px] text-[#c4c9d4]">{ver.date}</span>
                   </div>
                 );
-              })()}
-              {mockScenarioVersions.filter(v => !v.hasChange).map(ver => {
-                const isSelected = selectedScenarioVersion === ver.id;
-                const isFav = favoriteVersionIds.has(ver.id);
                 return (
                   <div key={ver.id} className="relative flex flex-col items-center" style={{ zIndex: 10, overflow: 'visible' }}
                     onMouseEnter={() => handleVersionEnter(ver.id)}
@@ -512,7 +510,7 @@ setViewMode: setViewModeProp,
                               <Trash2 className="w-3 h-3 flex-shrink-0" /> 삭제
                             </button>
                             <button
-                              onClick={() => setFavoriteVersionIds(prev => { const n = new Set(prev); n.has(ver.id) ? n.delete(ver.id) : n.add(ver.id); return n; })}
+                              onClick={() => setFavoriteVersionIds((prev: Set<string>) => { const n = new Set(prev); n.has(ver.id) ? n.delete(ver.id) : n.add(ver.id); return n; })}
                               className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-yellow-50 text-[11px] text-[#6b7280] hover:text-yellow-600">
                               <Star className={`w-3 h-3 flex-shrink-0 ${isFav ? 'fill-yellow-400 text-yellow-400' : ''}`} />
                               즐겨찾기 {isFav ? '해제' : '추가'}
@@ -936,7 +934,7 @@ setViewMode: setViewModeProp,
                 </div>
                 {!showReviewActions ? (
                   <button
-                    onClick={() => !hasPendingAIReview && !isGeneratingCode && setShowReviewActions(true)}
+                    onClick={() => { if (!hasPendingAIReview && !isGeneratingCode) { onReviewConfirm?.(); setShowReviewActions(true); } }}
                     disabled={hasPendingAIReview || isGeneratingCode}
                     className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
                       hasPendingAIReview || isGeneratingCode
