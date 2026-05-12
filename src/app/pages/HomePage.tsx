@@ -185,15 +185,15 @@ export function HomePage({
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
       {activeTab === 'overview' && (
-        <div className="flex-1 flex flex-col overflow-y-auto">
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
 
           {/* 상단 — RTM + PASS율 */}
-          <div className="flex items-start gap-10 px-10 py-9 border-b border-[#f0f0f0]">
+          <div className="flex-shrink-0 flex items-start gap-10 px-10 py-6 border-b border-[#f0f0f0]">
 
             {/* RTM */}
             <div className="flex-shrink-0">
               <Label>RTM</Label>
-              <div className="flex items-center gap-6 mt-6">
+              <div className="flex items-center gap-6 mt-[28px]">
                 <RTMDonutChart
                   metReqs={metReqs}
                   unmetReqs={unmetReqs}
@@ -211,13 +211,12 @@ export function HomePage({
                 data={mockPassHistory}
                 height={260}
                 stickyAxes
-                scrollMinWidth={700}
               />
             </div>
           </div>
 
           {/* 하단 — FILES + 이력 2분할 */}
-          <div className="flex gap-8 px-12 py-10">
+          <div className="flex-1 min-h-0 overflow-y-auto flex gap-8 px-12 py-10">
 
             {/* FILES */}
             <div className="flex-1 min-w-0 rounded-[2.5rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm px-8 py-7">

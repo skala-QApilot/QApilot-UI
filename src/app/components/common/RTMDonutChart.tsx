@@ -21,11 +21,11 @@ export const RTMDonutChart = ({
   const isLg = size === 'lg';
   const isXl = size === 'xl';
 
-  const chartSize   = isXl ? 240 : isLg ? 175 : 120;
-  const cx          = isXl ? 117 : isLg ? 80  : 55;
-  const cy          = isXl ? 117 : isLg ? 80  : 55;
-  const innerRadius = isXl ? 68  : isLg ? 48  : 36;
-  const outerRadius = isXl ? 108 : isLg ? 78  : 54;
+  const chartSize   = isXl ? 200 : isLg ? 175 : 120;
+  const cx          = isXl ? 97  : isLg ? 80  : 55;
+  const cy          = isXl ? 97  : isLg ? 80  : 55;
+  const innerRadius = isXl ? 56  : isLg ? 48  : 36;
+  const outerRadius = isXl ? 90  : isLg ? 78  : 54;
 
   const counts = [metReqs, unmetReqs, unrunReqs];
   const total  = counts.reduce((a, b) => a + b, 0);
@@ -50,14 +50,14 @@ export const RTMDonutChart = ({
           </Pie>
         </PieChart>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`font-bold text-[#1a1a2e] ${isXl ? 'text-3xl' : isLg ? 'text-xl' : 'text-sm'}`}>
+          <span className={`font-bold text-[#1a1a2e] ${isXl ? 'text-[28px]' : isLg ? 'text-xl' : 'text-sm'}`}>
             {overallPct}%
           </span>
         </div>
       </div>
 
       {/* Legend */}
-      <div className={isXl ? 'space-y-5' : isLg ? 'space-y-4' : 'space-y-2'}>
+      <div className={isXl ? 'space-y-5' : isLg ? 'space-y-4' : 'space-y-2'} style={{ paddingTop: isXl ? 40 : 0 }}>
         {COLORS.map((c, i) => (
           <div key={c.label} className="flex items-center" style={{ gap: isXl ? 14 : isLg ? 12 : 8 }}>
             <span
@@ -68,15 +68,15 @@ export const RTMDonutChart = ({
                 background: c.fill,
               }}
             />
-            <span className={`text-[#9ca3af] ${isXl ? 'text-base w-14' : isLg ? 'text-sm w-12' : 'text-xs w-10'}`}>
+            <span className={`text-[#9ca3af] ${isXl ? 'text-sm w-14' : isLg ? 'text-sm w-12' : 'text-xs w-10'}`}>
               {c.label}
             </span>
-            <span className={`font-semibold ${isXl ? 'text-lg text-[#374151]' : isLg ? 'text-base text-[#374151]' : `text-xs ${c.textClass}`}`}>
+            <span className={`font-semibold ${isXl ? 'text-sm text-[#374151]' : isLg ? 'text-base text-[#374151]' : `text-xs ${c.textClass}`}`}>
               {counts[i]}건
             </span>
           </div>
         ))}
-        <div className={`text-[#d1d5db] pt-1 ${isXl ? 'text-sm' : isLg ? 'text-xs' : 'text-[10px]'}`}>
+        <div className={`text-[#d1d5db] pt-1 ${isXl ? 'text-[12px]' : isLg ? 'text-xs' : 'text-[10px]'}`}>
           전체 {totalReqs}건
         </div>
       </div>

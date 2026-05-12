@@ -1,3 +1,4 @@
+import React from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 interface LineConfig {
@@ -17,7 +18,6 @@ interface PassRateChartProps {
   customTooltip?: React.ReactNode;
   className?: string;
   stickyAxes?: boolean;
-  scrollMinWidth?: number;
 }
 
 const Label = ({ children }: { children: React.ReactNode }) => (
@@ -35,7 +35,6 @@ export const PassRateChart = ({
   legend,
   className,
   stickyAxes = false,
-  scrollMinWidth = 600,
 }: PassRateChartProps) => {
   const defaultLines: LineConfig[] = [
     { dataKey: 'pass', stroke: 'var(--status-pass)', strokeWidth: 2.5, name: 'PASS' },
@@ -70,10 +69,58 @@ export const PassRateChart = ({
     </div>
   );
 
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!stickyAxes) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const update = () => setContainerWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // 이미 가로 스크롤 중이면 패스
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, [stickyAxes]);
+
+  const PX_PER_POINT = 60;
+  const chartWidth = Math.max(containerWidth, data.length * PX_PER_POINT);
+
   if (stickyAxes) {
     return (
       <div className={className ?? 'flex-1 min-w-0'}>
-        {header}
+        {/* stickyAxes 전용 헤더: Y축 너비만큼 offset 후 범례 우측 정렬 */}
+        <div className="flex items-center mb-3">
+          <div className="flex-shrink-0 whitespace-nowrap">
+            <Label>{title}</Label>
+          </div>
+          <div className="flex-1 flex justify-end" style={{ paddingRight: 10 }}>
+            <div className="flex items-center gap-5">
+              {chartLegend.map(({ color, label, dashed }) => (
+                <div key={label} className="flex items-center gap-1.5">
+                  <svg width="18" height="10">
+                    <line x1="0" y1="5" x2="18" y2="5"
+                      stroke={color} strokeWidth="2"
+                      strokeDasharray={dashed ? '3 2' : undefined} />
+                  </svg>
+                  <span className="text-xs text-[#9ca3af]">{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
         <div className="flex" style={{ height }}>
 
           {/* Fixed Y-axis panel */}
@@ -95,12 +142,16 @@ export const PassRateChart = ({
           </div>
 
           {/* Scrollable data + X-axis */}
-          <div className="flex-1 min-w-0 overflow-x-auto">
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 min-w-0 overflow-x-auto no-scrollbar"
+            style={{ scrollbarWidth: 'none' } as React.CSSProperties}
+          >
             <LineChart
-              width={scrollMinWidth}
+              width={chartWidth}
               height={height}
               data={data}
-              margin={{ top: 2, right: 4, bottom: 0, left: 0 }}
+              margin={{ top: 2, right: 10, bottom: 0, left: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
               <XAxis
