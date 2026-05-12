@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Link, MoreHorizontal, Plus, Shield, ShieldCheck, Users } from 'lucide-react';
+import { Download, MoreHorizontal, Plus, Shield, ShieldCheck, Users } from 'lucide-react';
 import { SearchBar } from '../components/common/SearchBar';
 import { FileList } from '../components/common/FileList';
 import { ExecutionHistoryRow } from '../components/common/ExecutionHistoryRow';
@@ -188,24 +188,32 @@ export function HomePage({
         <div className="flex-1 flex flex-col overflow-y-auto">
 
           {/* 상단 — RTM + PASS율 */}
-          <div className="flex items-start gap-12 px-10 py-9 border-b border-[#f0f0f0]">
+          <div className="flex items-start gap-10 px-10 py-9 border-b border-[#f0f0f0]">
 
             {/* RTM */}
             <div className="flex-shrink-0">
               <Label>RTM</Label>
-              <div className="flex items-center gap-6 mt-4">
+              <div className="flex items-center gap-6 mt-6">
                 <RTMDonutChart
                   metReqs={metReqs}
                   unmetReqs={unmetReqs}
                   unrunReqs={unrunReqs}
                   totalReqs={totalReqs}
                   overallPct={overallPct}
-                  size="lg"
+                  size="xl"
                 />
               </div>
             </div>
 
-            <PassRateChart data={mockPassHistory} />
+            {/* PASS율 — Y축 고정, 데이터만 가로 스크롤 */}
+            <div className="flex-1 min-w-0">
+              <PassRateChart
+                data={mockPassHistory}
+                height={260}
+                stickyAxes
+                scrollMinWidth={700}
+              />
+            </div>
           </div>
 
           {/* 하단 — FILES + 이력 2분할 */}
