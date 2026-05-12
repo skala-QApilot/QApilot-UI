@@ -5,6 +5,7 @@ import { SubHeader } from './components/common/SubHeader';
 import { SearchBar } from './components/common/SearchBar';
 import { LeftNavigation } from './components/common/LeftNavigation';
 import { FileList } from './components/common/FileList';
+import { NavBar } from './components/common/NavBar';
 import { HomePage } from './pages/HomePage';
 import { TestRunningPage } from './pages/TestRunningPage';
 import { RTMPage } from './pages/RTMPage';
@@ -12,6 +13,8 @@ import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import { DashHomePage, type Service } from './pages/DashHomePage';
 import { ServiceSetupPage } from './pages/ServiceSetupPage';
+import { LandingPage } from './pages/LandingPage';
+import { LoginPage } from './pages/LoginPage';
 import {
   ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Clock, Plus,
@@ -50,7 +53,7 @@ export default function App() {
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>('svc-1');
 
   // navigation
-  const [currentPage, setCurrentPage] = useState<string>('SERVICES');
+  const [currentPage, setCurrentPage] = useState<string>('LANDING');
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [homeTab, setHomeTab] = useState('overview');
   const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
@@ -370,87 +373,6 @@ export default function App() {
     setCurrentPage('시나리오');
   };
 
-  // ── NavBar ──────────────────────────────────────────────────────────────────
-
-  const NavBar = () => (
-    <div className="h-[72px] bg-white border-b border-[#e5e7eb] flex items-center px-5 gap-4 z-10 flex-shrink-0">
-      {/* 로고 + 서비스 breadcrumb */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <button
-          onClick={() => setCurrentPage('SERVICES')}
-          className="text-[18px] font-extrabold text-[#3615CF] tracking-tight hover:opacity-80 transition-opacity"
-        >
-          QApilot
-        </button>
-        {selectedService && currentPage !== 'SERVICES' && (
-          <>
-            <ChevronRight className="w-4 h-4 text-[#d1d5db]" />
-            <button
-              onClick={() => setCurrentPage('HOME')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <span className="text-sm font-medium text-[#374151]">{selectedService.name}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#9ca3af]" />
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="flex-1" />
-
-      {/* 우측: 예약알람 + pill + 캐릭터 + 벨 */}
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {scheduledAlarms.length > 0 && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3615CF]/8 rounded-lg border border-[#3615CF]/20">
-            <Clock className="w-3.5 h-3.5 text-[#3615CF]" />
-            <span className="text-xs font-medium text-[#3615CF]">
-              {scheduledAlarms.map(a => a.time).join(', ')}
-            </span>
-          </div>
-        )}
-        {/* 말풍선 + 캐릭터 */}
-        <div className="flex items-center">
-          <div className="flex items-center gap-2 px-5 py-1.5 bg-[#3615CF] rounded-full text-white text-sm font-semibold shadow-sm select-none">
-            <span>[QA 프로젝트 #1] cross check 중</span>
-            <span className="speech-ellipsis" aria-hidden="true">
-              <span>.</span>
-              <span>.</span>
-              <span>.</span>
-            </span>
-          </div>
-          {/* 말풍선 꼬리 */}
-          <div className="w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-l-[8px] border-l-[#3615CF] -ml-px flex-shrink-0" />
-        </div>
-        <div className="relative flex-shrink-0">
-          <button
-            onClick={() => setNotificationOpen(prev => !prev)}
-            className="relative w-11 h-11 rounded-full  flex items-center justify-center select-none focus:outline-none focus:ring-2 focus:ring-[#3615CF]/20"
-            aria-label="알람 열기"
-          >
-            <img src={qapilotAgent} alt="QApilot" className="w-full h-full object-cover" />
-            {unreadNotifications > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-[#3615CF] text-white text-[10px] rounded-full flex items-center justify-center font-bold shadow-sm">
-                {unreadNotifications}
-              </span>
-            )}
-          </button> 
-          {notificationOpen && (
-            <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-[#e5e7eb] z-50">
-              <div className="p-4 border-b border-[#f0f0f0] font-semibold text-[#1a1a2e]">알림</div>
-              <div className="max-h-96 overflow-y-auto">
-                {mockNotifications.map(notif => (
-                  <div key={notif.id} className={`p-4 border-b border-[#f0f0f0] hover:bg-gray-50 ${!notif.read ? 'bg-[#3615CF]/5' : ''}`}>
-                    <div className="text-sm text-[#1a1a2e]">{notif.message}</div>
-                    <div className="text-xs text-[#6b7280] mt-1">{notif.time}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 
   // ── 시나리오 관리봇 Panel ───────────────────────────────────────────────────
 
@@ -468,7 +390,7 @@ export default function App() {
     }
     return (
       <div className="w-80 h-full bg-white border-l border-[#f0f0f0] flex flex-col shadow-lg flex-shrink-0">
-        <div className="p-4 border-b border-[#f0f0f0] flex justify-between items-center bg-[#EAE8F9]">
+        <div className="p-4 flex justify-between items-center bg-[#EAE8F9]">
           <div className="font-semibold text-[#1a1a2e]">시나리오 관리봇</div>
           <button onClick={() => setAiPanelOpen(false)} className="p-1 hover:bg-white/50 rounded">
             <ChevronRight className="w-5 h-5 text-[#6b7280]" />
@@ -529,9 +451,32 @@ export default function App() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  if (currentPage === 'LANDING') {
+    return <LandingPage onGetStarted={() => setCurrentPage('LOGIN')} />;
+  }
+
+  if (currentPage === 'LOGIN') {
+    return (
+      <LoginPage
+        onLogin={() => setCurrentPage('SERVICES')}
+        onBack={() => setCurrentPage('LANDING')}
+      />
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <NavBar />
+      <NavBar
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        selectedService={selectedService}
+        scheduledAlarms={scheduledAlarms}
+        notificationOpen={notificationOpen}
+        setNotificationOpen={setNotificationOpen}
+        unreadNotifications={unreadNotifications}
+        notifications={mockNotifications}
+        agentImageSrc={qapilotAgent}
+      />
 
       {currentPage === 'SERVICES' ? (
         <DashHomePage
