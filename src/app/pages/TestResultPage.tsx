@@ -31,38 +31,32 @@ export const TestResultPage = ({
   const mockDetailErrors = [
     {
       id: 'TS3_TC1', scenario: 'TS3', testCase: 'TC1', tcName: '상품 추가',
-      category: 'UI오류',
-      description: '장바구니 아이콘 수량 표시 오류',
-      details: '장바구니에 상품 3개 추가 후 아이콘에 표시되는 수량이 2개로 잘못 표시됨',
-      analysis: 'UI 상태 업데이트 로직에서 마지막 추가 항목이 반영되지 않음',
+      errorCode: 'UI_RENDER_ERROR',
+      summary: 'UI 상태 업데이트 로직에서 마지막 추가 항목이 반영되지 않음',
       solutions: [
-        '1. CartIcon 컴포넌트의 useEffect 의존성 배열에 cartItems 추가',
-        '2. Redux store의 cartSlice에서 addItem action 후 즉시 count 재계산',
-        '3. API 응답 후 UI 강제 리렌더링 트리거',
+        { cause: 'CartIcon 컴포넌트의 useEffect가 cartItems 변경을 감지하지 못함', solution: 'useEffect 의존성 배열에 cartItems 추가' },
+        { cause: 'Redux store의 addItem action 후 count 재계산 누락', solution: 'cartSlice에서 addItem action 후 즉시 count 재계산 로직 추가' },
+        { cause: 'API 응답 후 UI 동기화 미처리', solution: 'API 응답 후 UI 강제 리렌더링 트리거' },
       ],
       errorLog: 'Error: Cart count mismatch\n  at CartIcon.updateCount (CartIcon.tsx:42:15)\n  at Array.forEach (<anonymous>)\n  at updateState (store.js:128:8)',
     },
     {
       id: 'TS1_TC2', scenario: 'TS1', testCase: 'TC2', tcName: '비밀번호 오류',
-      category: 'API오류',
-      description: '비밀번호 오류 메시지 미표시',
-      details: '잘못된 비밀번호 입력 시 오류 메시지가 표시되지 않고 빈 화면 상태 유지됨',
-      analysis: 'API /auth/login 응답의 error 필드가 UI 컴포넌트에 바인딩되지 않음',
+      errorCode: '401',
+      summary: 'API /auth/login 응답의 error 필드가 UI 컴포넌트에 바인딩되지 않음',
       solutions: [
-        '1. AuthForm 컴포넌트에서 API error 응답 처리 로직 추가',
-        '2. error state를 useState로 관리하고 렌더링 조건 수정',
+        { cause: 'AuthForm에서 API error 응답 처리 로직 부재', solution: 'AuthForm 컴포넌트에서 API error 응답 처리 로직 추가' },
+        { cause: 'error state 관리 미흡으로 렌더링 조건 누락', solution: 'error state를 useState로 관리하고 렌더링 조건 수정' },
       ],
       errorLog: 'TypeError: Cannot read property "message" of undefined\n  at AuthForm.handleError (AuthForm.tsx:88:22)\n  at async login (auth.ts:34:5)',
     },
     {
       id: 'TS2_TC1', scenario: 'TS2', testCase: 'TC1', tcName: '검색어 입력',
-      category: '데이터불일치',
-      description: '검색 자동완성 목록 누락',
-      details: '3자 이상 입력 시 자동완성 API 호출은 성공하나 목록이 UI에 반영되지 않음',
-      analysis: 'AutoComplete 컴포넌트의 useEffect에서 deps 배열 누락으로 재렌더링 안됨',
+      errorCode: 'UI_STALE_STATE',
+      summary: 'AutoComplete 컴포넌트의 useEffect에서 deps 배열 누락으로 재렌더링 안됨',
       solutions: [
-        '1. useEffect deps 배열에 searchQuery 추가',
-        '2. 자동완성 목록 상태를 부모 컴포넌트로 lift up',
+        { cause: 'useEffect deps 배열에 searchQuery 누락', solution: 'useEffect deps 배열에 searchQuery 추가' },
+        { cause: '자동완성 상태 관리 위치 부적절', solution: '자동완성 목록 상태를 부모 컴포넌트로 lift up' },
       ],
       errorLog: 'Warning: Missing dependency "searchQuery" in useEffect hook\n  at AutoComplete (AutoComplete.tsx:56)\n  Expected items to update but state was stale',
     },
@@ -267,29 +261,30 @@ export const TestResultPage = ({
                 <span className="font-semibold text-[#1a1a2e]">{activeError.scenario} › {activeError.testCase}</span>
               </div>
               <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
-                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">① 장애 분류</div>
+                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">① 에러 코드</div>
                 <span className="inline-block px-3 py-1 bg-red-50 text-red-700 text-sm rounded border border-red-200 font-medium">
-                  {activeError.category}
+                  {activeError.errorCode}
                 </span>
               </div>
               <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
-                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">② 장애 분류 상세</div>
-                <div className="text-sm font-medium text-[#1a1a2e] mb-1">{activeError.description}</div>
-                <div className="text-sm text-[#6b7280]">{activeError.details}</div>
+                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">② 현재 상태 요약</div>
+                <div className="text-sm text-[#6b7280]">{activeError.summary}</div>
               </div>
               <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
-                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">③ 원인 분석</div>
-                <div className="text-sm text-[#6b7280]">{activeError.analysis}</div>
-              </div>
-              <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
-                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-3">④ 해결 방안</div>
+                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-3">③ 원인 분석 및 해결 방안</div>
                 <div className="space-y-2">
                   {activeError.solutions.map((sol, i) => (
                     <div key={i} className="flex gap-3 p-3 bg-gray-50 rounded border border-[#f0f0f0]">
                       <span className="w-5 h-5 rounded-full bg-status-fail text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
                         {i + 1}
                       </span>
-                      <div className="text-sm text-[#6b7280]">{sol.replace(/^\d+\.\s*/, '')}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-[#1a1a2e]">{sol.cause}</div>
+                        <div className="mt-2 rounded border border-[#e5e7eb] bg-white px-3 py-2">
+                          <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-1">해결 방안</div>
+                          <div className="text-sm text-[#6b7280]">{sol.solution}</div>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

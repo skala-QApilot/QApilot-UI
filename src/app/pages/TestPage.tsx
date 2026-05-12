@@ -564,7 +564,7 @@ export const TestPage = ({
 
         {/* Graph */}
         <div className="border-b border-[#f0f0f0] px-8 pt-3 pb-2 flex-shrink-0 bg-white">
-          <PassRateChart data={mockPassHistory} />
+          <PassRateChart data={mockPassHistory} stickyAxes height={165} />
         </div>
 
         {/* 2-col body */}
