@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, ChevronRight, X } from 'lucide-react';
+import { Plus, ChevronRight, X, User } from 'lucide-react';
 
 export interface Service {
   id: string;
@@ -33,7 +33,17 @@ export function DashHomePage({ services, onServiceSelect, onCreateService }: Das
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#f9f8ff] overflow-hidden">
+    <div className="flex-1 flex bg-[#f9f8ff] overflow-hidden">
+      {/* 좌측 하단 유저 아이콘 — 사이드바와 동일 위치 */}
+      <div className="w-[68px] flex-shrink-0 flex flex-col items-center justify-end pb-2.5">
+        <button
+          title="프로필"
+          className="w-full flex items-center justify-center h-12 text-[#9ca3af] hover:text-[#6b7280] transition-colors"
+        >
+          <User className="w-5 h-5" />
+        </button>
+      </div>
+
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 py-12">
 
