@@ -7,6 +7,32 @@ import { PassRateChart } from '../components/common/PassRateChart';
 import { RTMDonutChart } from '../components/common/RTMDonutChart';
 import { mockExecutionHistory, mockPassHistory, mockRTMRequirements } from '../data/mockData';
 
+export interface ProjectMeta {
+  project_slug: string;
+  display_name: string;
+  local_path: string;
+  config_path: string;
+  index_path: string;
+  framework: string;
+  language: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectSummary {
+  file_count: number;
+  endpoint_count: number;
+  model_count: number;
+  last_scanned_at: string;
+  has_index?: boolean;
+  endpoints?: Array<{
+    path: string;
+    method: string;
+    handler: string;
+    file: string;
+  }>;
+}
+
 const MOCK_MEMBERS = [
   { id: '1', name: '김지수',  username: 'kshyun00',        role: '관리자', teams: 2, roles: 1, twoFa: true,  avatar: null, color: '#3615CF' },
   { id: '2', name: '이민준',  username: 'flsrinn',          role: '개발자', teams: 1, roles: 1, twoFa: true,  avatar: null, color: '#10b981' },
@@ -59,14 +85,28 @@ function CopyBlock({ label, icon, value }: { label: string; icon: React.ReactNod
   );
 }
 
-function SettingsTab({ serviceName }: { serviceName: string }) {
+function SettingsTab({
+  serviceName,
+  projectSlug,
+  dashboardUrl,
+  localPath,
+  framework,
+  language,
+}: {
+  serviceName: string;
+  projectSlug?: string;
+  dashboardUrl?: string;
+  localPath?: string;
+  framework?: string;
+  language?: string;
+}) {
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(serviceName);
   const [descVal, setDescVal] = useState('');
   const [savedName, setSavedName] = useState(serviceName);
   const [savedDesc, setSavedDesc] = useState('');
 
-  const slug = savedName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-') || 'my-project';
+  const slug = projectSlug || savedName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-') || 'my-project';
 
   const handleEdit = () => { setNameVal(savedName); setDescVal(savedDesc); setEditing(true); };
   const handleCancel = () => setEditing(false);
@@ -151,13 +191,24 @@ function SettingsTab({ serviceName }: { serviceName: string }) {
           <CopyBlock
             label="URL"
             icon={<Link2 className="w-4 h-4 text-[#9ca3af]" />}
-            value={`https://qapilot.io/dashboard/${slug}`}
+            value={dashboardUrl || `http://localhost:8080/${slug}`}
           />
           <CopyBlock
             label="서버 인증 토큰"
             icon={<KeyRound className="w-4 h-4 text-[#9ca3af]" />}
             value={`qap_${slug}_tok_a3f8d2c1e9b4`}
           />
+          <CopyBlock
+            label="로컬 경로"
+            icon={<Link2 className="w-4 h-4 text-[#9ca3af]" />}
+            value={localPath || '(로컬 경로 없음)'}
+          />
+          <div className="mt-6 rounded-2xl border border-[#ece9fb] bg-[#f9f8ff] px-5 py-4">
+            <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#9ca3af] mb-2">Project Runtime</div>
+            <div className="text-sm text-[#374151]">
+              {framework || '-'} / {language || '-'}
+            </div>
+          </div>
         </div>
 
       </div>
@@ -269,11 +320,17 @@ export function HomePage({
   navigateToHistory,
   activeTab = 'overview',
   serviceName = 'My Project',
+  projectSlug,
+  projectMeta,
+  projectSummary,
 }: {
   setCurrentPage: (page: string) => void;
   navigateToHistory: (filter: string) => void;
   activeTab?: string;
   serviceName?: string;
+  projectSlug?: string;
+  projectMeta?: ProjectMeta | null;
+  projectSummary?: ProjectSummary | null;
 }) {
   void navigateToHistory;
 
@@ -284,12 +341,10 @@ export function HomePage({
   const overallPassTotal = mockRTMRequirements.reduce((s, r) => s + r.passCount, 0);
   const overallTotal = mockRTMRequirements.reduce((s, r) => s + r.totalCount, 0);
   const overallPct = overallTotal > 0 ? Math.round((overallPassTotal / overallTotal) * 100) : 0;
-
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
       {activeTab === 'overview' && (
         <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-
           {/* 상단 — RTM + PASS율 */}
           <div className="flex-shrink-0 flex items-start gap-10 px-10 py-6 border-b border-[#f0f0f0]">
 
@@ -348,7 +403,16 @@ export function HomePage({
         <PeopleTab />
       )}
 
-      {activeTab === 'settings' && <SettingsTab serviceName={serviceName} />}
+      {activeTab === 'settings' && (
+        <SettingsTab
+          serviceName={serviceName}
+          projectSlug={projectSlug}
+          dashboardUrl={projectSlug ? `http://localhost:8080/${projectSlug}` : undefined}
+          localPath={projectMeta?.local_path}
+          framework={projectMeta?.framework}
+          language={projectMeta?.language}
+        />
+      )}
     </div>
   );
 }

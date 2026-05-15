@@ -6,7 +6,7 @@ import { SearchBar } from './components/common/SearchBar';
 import { LeftNavigation } from './components/common/LeftNavigation';
 import { FileList } from './components/common/FileList';
 import { NavBar } from './components/common/NavBar';
-import { HomePage } from './pages/HomePage';
+import { HomePage, type ProjectMeta, type ProjectSummary } from './pages/HomePage';
 import { TestRunningPage } from './pages/TestRunningPage';
 import { RTMPage } from './pages/RTMPage';
 import { TestPage } from './pages/TestPage';
@@ -42,21 +42,57 @@ import {
 } from './data/mockData';
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
 
+interface ProjectDashboardResponse {
+  project: ProjectMeta;
+  summary: ProjectSummary;
+}
+
+function getProjectSlugFromPath(pathname: string): string | null {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  if (normalized === '/') return null;
+  const segment = normalized.split('/').filter(Boolean)[0] || '';
+  return segment || null;
+}
+
+function getProjectPageFromPath(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  const segments = normalized.split('/').filter(Boolean);
+  const pageSegment = segments[1]?.toLowerCase() || '';
+  if (pageSegment === 'setup') return 'SETUP';
+  if (pageSegment === 'scenarios') return '시나리오';
+  if (pageSegment === 'results' || pageSegment === 'test') return '테스트';
+  if (pageSegment === 'rtm') return 'RTM';
+  return 'HOME';
+}
+
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const initialProjectSlug = getProjectSlugFromPath(window.location.pathname);
+  const isProjectRoute = Boolean(initialProjectSlug);
+  const initialProjectPage = getProjectPageFromPath(window.location.pathname);
+
   // services (top-level dashboard list)
-  const [services, setServices] = useState<Service[]>([
-    { id: 'svc-1', name: 'Frontend App', isNew: false, createdAt: '2026-01-15' },
-    { id: 'svc-2', name: 'Backend API', isNew: false, createdAt: '2026-02-20' },
-  ]);
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>('svc-1');
+  const [services, setServices] = useState<Service[]>(
+    isProjectRoute
+      ? []
+      : [
+          { id: 'svc-1', name: 'Frontend App', isNew: false, createdAt: '2026-01-15' },
+          { id: 'svc-2', name: 'Backend API', isNew: false, createdAt: '2026-02-20' },
+        ]
+  );
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(initialProjectSlug || 'svc-1');
 
   // navigation
-  const [currentPage, setCurrentPage] = useState<string>('LANDING');
+  const [currentPage, setCurrentPage] = useState<string>(isProjectRoute ? initialProjectPage : 'LANDING');
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [homeTab, setHomeTab] = useState('overview');
   const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
+  const [projectMeta, setProjectMeta] = useState<ProjectMeta | null>(null);
+  const [projectSummary, setProjectSummary] = useState<ProjectSummary | null>(null);
+  const [projectLoadState, setProjectLoadState] = useState<'idle' | 'loading' | 'loaded' | 'missing' | 'error'>(
+    isProjectRoute ? 'loading' : 'idle'
+  );
 
   // pipeline header
   const [showAgentTrace, setShowAgentTrace] = useState(false);
@@ -165,6 +201,48 @@ export default function App() {
   const [selectedRtmVersion, setSelectedRtmVersion] = useState(mockRTMVersions[0].id);
   const [rtmVersionOpen, setRtmVersionOpen] = useState(false);
   const currentRtmVersion = mockRTMVersions.find(v => v.id === selectedRtmVersion) ?? mockRTMVersions[0];
+
+  useEffect(() => {
+    if (!initialProjectSlug) return;
+
+    let cancelled = false;
+    setProjectLoadState('loading');
+
+    fetch(`/api/projects/${encodeURIComponent(initialProjectSlug)}`)
+      .then(async response => {
+        if (response.status === 404) {
+          throw new Error('not-found');
+        }
+        if (!response.ok) {
+          throw new Error('load-failed');
+        }
+        return response.json() as Promise<ProjectDashboardResponse>;
+      })
+      .then(data => {
+        if (cancelled) return;
+        setProjectMeta(data.project);
+        setProjectSummary(data.summary);
+        setServices([
+          {
+            id: data.project.project_slug,
+            name: data.project.display_name,
+            isNew: false,
+            createdAt: (data.project.updated_at || data.project.created_at || '').slice(0, 10),
+          },
+        ]);
+        setSelectedServiceId(data.project.project_slug);
+        setCurrentPage(initialProjectPage);
+        setProjectLoadState('loaded');
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setProjectLoadState(error instanceof Error && error.message === 'not-found' ? 'missing' : 'error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialProjectPage, initialProjectSlug]);
 
   // derived
   const unreadNotifications = mockNotifications.filter(n => !n.read).length;
@@ -353,6 +431,47 @@ export default function App() {
 
   const selectedService = services.find(s => s.id === selectedServiceId) ?? null;
 
+  if (isProjectRoute && (projectLoadState === 'loading' || projectLoadState === 'idle')) {
+    return (
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f4f0ff_0%,#ffffff_60%)] text-[#1a1a2e] flex items-center justify-center px-6">
+        <div className="max-w-lg w-full rounded-[2rem] border border-[#ece9fb] bg-white/90 shadow-xl px-8 py-10 text-center">
+          <div className="text-xs font-bold uppercase tracking-[0.24em] text-[#9ca3af]">QApilot</div>
+          <h1 className="mt-3 text-3xl font-bold">프로젝트 대시보드를 불러오는 중입니다</h1>
+          <p className="mt-3 text-sm text-[#6b7280]">/{initialProjectSlug} 등록 정보와 코드 인덱스 요약을 확인하고 있어요.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isProjectRoute && projectLoadState === 'missing') {
+    return (
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_58%)] text-[#1a1a2e] flex items-center justify-center px-6">
+        <div className="max-w-xl w-full rounded-[2rem] border border-[#f5d6c0] bg-white shadow-xl px-8 py-10">
+          <div className="text-xs font-bold uppercase tracking-[0.24em] text-[#d97706]">Project Missing</div>
+          <h1 className="mt-3 text-3xl font-bold">등록되지 않은 프로젝트입니다</h1>
+          <p className="mt-3 text-sm text-[#6b7280]">
+            <span className="font-semibold text-[#1a1a2e]">/{initialProjectSlug}</span> 에 해당하는 프로젝트를 찾지 못했습니다.
+            먼저 로컬 레포에서 <code className="rounded bg-[#f9f8ff] px-1.5 py-0.5">qapilot init</code> 을 실행해 등록해 주세요.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isProjectRoute && projectLoadState === 'error') {
+    return (
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#fee2e2_0%,#ffffff_58%)] text-[#1a1a2e] flex items-center justify-center px-6">
+        <div className="max-w-xl w-full rounded-[2rem] border border-[#fecaca] bg-white shadow-xl px-8 py-10">
+          <div className="text-xs font-bold uppercase tracking-[0.24em] text-[#dc2626]">Load Error</div>
+          <h1 className="mt-3 text-3xl font-bold">프로젝트 대시보드를 불러오지 못했습니다</h1>
+          <p className="mt-3 text-sm text-[#6b7280]">
+            QApilot API 서버가 실행 중인지 확인하고, 다시 <code className="rounded bg-[#fff1f2] px-1.5 py-0.5">/{initialProjectSlug}</code> 로 접속해 주세요.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const handleServiceSelect = (service: Service) => {
     setSelectedServiceId(service.id);
     setCurrentPage(service.isNew ? 'SETUP' : 'HOME');
@@ -451,11 +570,11 @@ export default function App() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  if (currentPage === 'LANDING') {
+  if (!isProjectRoute && currentPage === 'LANDING') {
     return <LandingPage onGetStarted={() => setCurrentPage('LOGIN')} />;
   }
 
-  if (currentPage === 'LOGIN') {
+  if (!isProjectRoute && currentPage === 'LOGIN') {
     return (
       <LoginPage
         onLogin={() => setCurrentPage('SERVICES')}
@@ -599,7 +718,17 @@ export default function App() {
           )}
           <div className="flex-1 overflow-hidden flex">
             <div className="flex-1 overflow-hidden">
-            {currentPage === 'HOME' && <HomePage setCurrentPage={setCurrentPage} navigateToHistory={navigateToHistory} activeTab={homeTab} serviceName={selectedService?.name} />}
+            {currentPage === 'HOME' && (
+              <HomePage
+                setCurrentPage={setCurrentPage}
+                navigateToHistory={navigateToHistory}
+                activeTab={homeTab}
+                serviceName={selectedService?.name}
+                projectSlug={projectMeta?.project_slug || initialProjectSlug || undefined}
+                projectMeta={projectMeta}
+                projectSummary={projectSummary}
+              />
+            )}
             {currentPage === '시나리오' && (
               <ScenarioPage
                 selectedScenario={selectedScenario}
@@ -737,6 +866,9 @@ export default function App() {
             {currentPage === 'SETUP' && selectedService && (
               <ServiceSetupPage
                 serviceName={selectedService.name}
+                projectSlug={projectMeta?.project_slug}
+                projectMeta={projectMeta}
+                projectSummary={projectSummary}
                 onGenerateScenarios={handleGenerateScenarios}
               />
             )}
