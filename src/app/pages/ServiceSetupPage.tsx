@@ -1,16 +1,56 @@
-import React, { useState, useRef } from 'react';
-import { Link2, Upload, Sparkles, FileText } from 'lucide-react';
+import React, { useState, useRef, useMemo } from 'react';
+import { Link2, Upload, Sparkles, FileText, Copy, Check, KeyRound } from 'lucide-react';
 
 interface ServiceSetupPageProps {
   serviceName: string;
   onGenerateScenarios: () => void;
 }
 
+function toSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-') || 'my-project';
+}
+
+function CopyBlock({ label, icon, value }: { label: string; icon: React.ReactNode; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="mb-6">
+      <label className="flex items-center gap-1.5 text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">
+        {icon}
+        {label}
+      </label>
+      <div className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-[#e5e7eb] bg-[#f9fafb]">
+        <span className="flex-1 text-sm text-[#1a1a2e] font-mono truncate">{value}</span>
+        <button
+          onClick={handleCopy}
+          className="shrink-0 flex items-center gap-1 text-xs text-[#6b7280] hover:text-[#3615CF] transition-colors"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-[#10b981]" /> : <Copy className="w-3.5 h-3.5" />}
+          <span>{copied ? '복사됨' : '복사'}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ServiceSetupPage({ serviceName, onGenerateScenarios }: ServiceSetupPageProps) {
-  const [url, setUrl] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const slug = useMemo(() => toSlug(serviceName), [serviceName]);
+  const dashboardUrl = `https://qapilot.io/dashboard/${slug}`;
+  const serverToken = useMemo(() => `qap_${slug}_tok_a3f8d2c1e9b4`, [slug]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -28,7 +68,7 @@ export function ServiceSetupPage({ serviceName, onGenerateScenarios }: ServiceSe
     <div className="h-full flex flex-col items-center justify-center bg-white px-6">
       <div className="w-full max-w-md">
 
-        <div className="text-center mb-8">
+        <div className="text-center mb-15">
           <div className="w-14 h-14 rounded-2xl bg-[#EAE8F9] flex items-center justify-center mx-auto mb-4">
             <span className="text-xl font-bold text-[#3615CF]">{serviceName.slice(0, 1)}</span>
           </div>
@@ -38,28 +78,29 @@ export function ServiceSetupPage({ serviceName, onGenerateScenarios }: ServiceSe
           </p>
         </div>
 
-        {/* URL input */}
-        <div className="mb-4">
-          <label className="flex items-center gap-1.5 text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">
-            <Link2 className="w-3.5 h-3.5" />
-            URL
-          </label>
-          <input
-            type="url"
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-            placeholder="https://example.com"
-            className="w-full px-4 py-3 rounded-xl border border-[#e5e7eb] focus:border-[#3615CF]/40 focus:ring-2 focus:ring-[#3615CF]/10 focus:outline-none text-sm text-[#1a1a2e] placeholder-[#c4c9d4] transition-all"
-          />
-        </div>
+        <CopyBlock
+          label="URL"
+          icon={<Link2 className="w-3.5 h-3.5" />}
+          value={dashboardUrl}
+        />
+
+        <CopyBlock
+          label="서버 인증 토큰"
+          icon={<KeyRound className="w-3.5 h-3.5" />}
+          value={serverToken}
+        />
 
         {/* File upload zone */}
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-[#6b7280] tracking-wide mb-2 mt-2">
+          <Upload className="w-3.5 h-3.5" />
+          프로젝트 관련 파일 (PRD, 인터페이스 정의서, 정책 등.)
+        </label>
         <div
           onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`w-full h-36 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed cursor-pointer transition-all mb-6 ${
+          className={`w-full h-36 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed cursor-pointer transition-all mb-20 ${
             isDragOver
               ? 'border-[#3615CF] bg-[#3615CF]/5'
               : uploadedFile

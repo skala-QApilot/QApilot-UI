@@ -47,8 +47,8 @@ const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).hre
 export default function App() {
   // services (top-level dashboard list)
   const [services, setServices] = useState<Service[]>([
-    { id: 'svc-1', name: '서비스A', isNew: false, createdAt: '2026-01-15' },
-    { id: 'svc-2', name: '서비스B', isNew: false, createdAt: '2026-02-20' },
+    { id: 'svc-1', name: 'Frontend App', isNew: false, createdAt: '2026-01-15' },
+    { id: 'svc-2', name: 'Backend API', isNew: false, createdAt: '2026-02-20' },
   ]);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>('svc-1');
 
@@ -599,7 +599,7 @@ export default function App() {
           )}
           <div className="flex-1 overflow-hidden flex">
             <div className="flex-1 overflow-hidden">
-            {currentPage === 'HOME' && <HomePage setCurrentPage={setCurrentPage} navigateToHistory={navigateToHistory} activeTab={homeTab} />}
+            {currentPage === 'HOME' && <HomePage setCurrentPage={setCurrentPage} navigateToHistory={navigateToHistory} activeTab={homeTab} serviceName={selectedService?.name} />}
             {currentPage === '시나리오' && (
               <ScenarioPage
                 selectedScenario={selectedScenario}

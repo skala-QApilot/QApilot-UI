@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, MoreHorizontal, Plus, Shield, ShieldCheck, Users } from 'lucide-react';
+import { Copy, Check, Download, Edit2, KeyRound, Link2, MoreHorizontal, Plus, Shield, ShieldCheck, Users, X } from 'lucide-react';
 import { SearchBar } from '../components/common/SearchBar';
 import { FileList } from '../components/common/FileList';
 import { ExecutionHistoryRow } from '../components/common/ExecutionHistoryRow';
@@ -30,39 +30,140 @@ const Field = ({ label, placeholder, type = 'text' }: { label: string; placehold
   </div>
 );
 
-const SettingsTab = () => (
-  <div className="flex-1 overflow-y-auto px-10 py-8">
-    <div className="max-w-2xl">
-      {/* General */}
-      <div className="border-b border-[#f0f0f0] pb-2 mb-7">
-        <h2 className="text-xl font-bold text-[#1a1a2e]">General</h2>
-      </div>
+function CopyBlock({ label, icon, value }: { label: string; icon: React.ReactNode; value: string }) {
+  const [copied, setCopied] = useState(false);
 
-      <Field label="서비스 표시 이름" placeholder="QAPilot Org" />
-     
-      <div className="mb-6">
-        <label className="block text-sm font-semibold text-[#1a1a2e] mb-1.5">설명</label>
-        <textarea
-          rows={3}
-          placeholder="서비스에 대한 간단한 설명을 입력하세요"
-          className="w-full max-w-lg px-3 py-2 rounded-lg bg-[#f3f4f6] border border-transparent focus:border-[#3615CF]/40 focus:bg-white focus:outline-none text-sm text-[#374151] resize-none transition-colors placeholder-[#9ca3af]"
-        />
-      </div>
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
-      <Field label="URL" placeholder="https://qapilot.io" />
-
-      {/* Save */}
-      <div className="mt-8 flex items-center gap-3">
-        <button className="px-5 py-2 bg-[#3615CF] text-white text-sm font-semibold rounded-lg hover:bg-[#3615CF]/90 transition-colors">
-          저장
-        </button>
-        <button className="px-5 py-2 border border-[#e5e7eb] text-sm text-[#6b7280] rounded-lg hover:bg-gray-50 transition-colors">
-          취소
+  return (
+    <div className="mb-6">
+      <label className="flex items-center gap-1.5 text-sm font-semibold text-[#1a1a2e] mb-1.5">
+        {icon}
+        {label}
+      </label>
+      <div className="w-full max-w-lg flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e5e7eb] bg-[#f9fafb]">
+        <span className="flex-1 text-sm text-[#374151] font-mono truncate">{value}</span>
+        <button
+          onClick={handleCopy}
+          className="shrink-0 flex items-center gap-1 text-xs text-[#6b7280] hover:text-[#3615CF] transition-colors"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-[#10b981]" /> : <Copy className="w-3.5 h-3.5" />}
+          <span>{copied ? '복사됨' : '복사'}</span>
         </button>
       </div>
     </div>
-  </div>
-);
+  );
+}
+
+function SettingsTab({ serviceName }: { serviceName: string }) {
+  const [editing, setEditing] = useState(false);
+  const [nameVal, setNameVal] = useState(serviceName);
+  const [descVal, setDescVal] = useState('');
+  const [savedName, setSavedName] = useState(serviceName);
+  const [savedDesc, setSavedDesc] = useState('');
+
+  const slug = savedName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-') || 'my-project';
+
+  const handleEdit = () => { setNameVal(savedName); setDescVal(savedDesc); setEditing(true); };
+  const handleCancel = () => setEditing(false);
+  const handleSave = () => { setSavedName(nameVal); setSavedDesc(descVal); setEditing(false); };
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="flex h-full px-20 py-12">
+
+        {/* Left */}
+        <div className="flex-1 pr-16">
+          <div className="border-b border-[#f0f0f0] pb-2 mb-7 flex items-center justify-between">
+            <h2 className="text-xl font-bold text-[#1a1a2e]">General</h2>
+            {editing ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSave}
+                  className="px-4 py-1.5 bg-[#3615CF] text-white text-xs font-semibold rounded-lg hover:bg-[#3615CF]/90 transition-colors"
+                >
+                  저장
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="flex items-center gap-1 px-4 py-1.5 border border-[#e5e7eb] text-xs text-[#6b7280] rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <X className="w-3 h-3" /> 취소
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleEdit}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#6b7280] border border-[#e5e7eb] rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <Edit2 className="w-3.5 h-3.5" /> 수정
+              </button>
+            )}
+          </div>
+
+          {/* 서비스 표시 이름 */}
+          <div className="mb-6">
+            <label className="block text-sm font-semibold text-[#1a1a2e] mb-1.5">서비스 표시 이름</label>
+            {editing ? (
+              <input
+                value={nameVal}
+                onChange={e => setNameVal(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-[#f3f4f6] border border-transparent focus:border-[#3615CF]/40 focus:bg-white focus:outline-none text-sm text-[#374151] transition-colors"
+              />
+            ) : (
+              <p className="text-sm text-[#374151] px-3 py-2 rounded-lg bg-[#f9fafb] border border-[#f0f0f0]">{savedName}</p>
+            )}
+          </div>
+
+          {/* 설명 */}
+          <div className="mb-6">
+            <label className="block text-sm font-semibold text-[#1a1a2e] mb-1.5">설명</label>
+            {editing ? (
+              <textarea
+                rows={4}
+                value={descVal}
+                onChange={e => setDescVal(e.target.value)}
+                placeholder="서비스에 대한 간단한 설명을 입력하세요"
+                className="w-full px-3 py-2 rounded-lg bg-[#f3f4f6] border border-transparent focus:border-[#3615CF]/40 focus:bg-white focus:outline-none text-sm text-[#374151] resize-none transition-colors placeholder-[#9ca3af]"
+              />
+            ) : (
+              <p className="text-sm text-[#9ca3af] px-3 py-2 rounded-lg bg-[#f9fafb] border border-[#f0f0f0] min-h-[80px]">
+                {savedDesc || '설명 없음'}
+              </p>
+            )}
+          </div>
+
+        </div>
+        
+       
+        {/* Divider */}
+        <div className="w-px bg-[#f0f0f0] self-stretch" />
+
+        {/* Right */}
+        <div className="flex-1 pl-16">
+          <div className="border-b border-[#f0f0f0] pb-2 mb-7">
+            <h2 className="text-xl font-bold text-[#1a1a2e]">연동 정보</h2>
+          </div>
+          <CopyBlock
+            label="URL"
+            icon={<Link2 className="w-4 h-4 text-[#9ca3af]" />}
+            value={`https://qapilot.io/dashboard/${slug}`}
+          />
+          <CopyBlock
+            label="서버 인증 토큰"
+            icon={<KeyRound className="w-4 h-4 text-[#9ca3af]" />}
+            value={`qap_${slug}_tok_a3f8d2c1e9b4`}
+          />
+        </div>
+
+      </div>
+    </div>
+  );
+}
 
 const PeopleTab = () => {
   const [search, setSearch] = useState('');
@@ -167,10 +268,12 @@ export function HomePage({
   setCurrentPage,
   navigateToHistory,
   activeTab = 'overview',
+  serviceName = 'My Project',
 }: {
   setCurrentPage: (page: string) => void;
   navigateToHistory: (filter: string) => void;
   activeTab?: string;
+  serviceName?: string;
 }) {
   void navigateToHistory;
 
@@ -245,7 +348,7 @@ export function HomePage({
         <PeopleTab />
       )}
 
-      {activeTab === 'settings' && <SettingsTab />}
+      {activeTab === 'settings' && <SettingsTab serviceName={serviceName} />}
     </div>
   );
 }
