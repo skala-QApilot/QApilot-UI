@@ -45,6 +45,19 @@ const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).hre
 interface ProjectDashboardResponse {
   project: ProjectMeta;
   summary: ProjectSummary;
+  credentials?: {
+    dashboard_url: string;
+    server_auth_token: string;
+  };
+}
+
+function getToken(): string | null {
+  return localStorage.getItem('qapilot_access_token');
+}
+
+function clearTokens() {
+  localStorage.removeItem('qapilot_access_token');
+  localStorage.removeItem('qapilot_refresh_token');
 }
 
 function getProjectSlugFromPath(pathname: string): string | null {
@@ -90,6 +103,9 @@ export default function App() {
   const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
   const [projectMeta, setProjectMeta] = useState<ProjectMeta | null>(null);
   const [projectSummary, setProjectSummary] = useState<ProjectSummary | null>(null);
+  const [projectCredentials, setProjectCredentials] = useState<{ dashboard_url: string; server_auth_token: string } | null>(null);
+  const [showAuthForProject, setShowAuthForProject] = useState(false);
+  const [authRetry, setAuthRetry] = useState(0);
   const [projectLoadState, setProjectLoadState] = useState<'idle' | 'loading' | 'loaded' | 'missing' | 'error'>(
     isProjectRoute ? 'loading' : 'idle'
   );
@@ -205,11 +221,25 @@ export default function App() {
   useEffect(() => {
     if (!initialProjectSlug) return;
 
+    const token = getToken();
+    if (!token) {
+      setProjectLoadState('idle');
+      setShowAuthForProject(true);
+      return;
+    }
+
     let cancelled = false;
     setProjectLoadState('loading');
+    setShowAuthForProject(false);
 
-    fetch(`/api/projects/${encodeURIComponent(initialProjectSlug)}`)
+    fetch(`/api/projects/${encodeURIComponent(initialProjectSlug)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then(async response => {
+        if (response.status === 401) {
+          clearTokens();
+          throw new Error('unauthenticated');
+        }
         if (response.status === 404) {
           throw new Error('not-found');
         }
@@ -222,6 +252,7 @@ export default function App() {
         if (cancelled) return;
         setProjectMeta(data.project);
         setProjectSummary(data.summary);
+        if (data.credentials) setProjectCredentials(data.credentials);
         setServices([
           {
             id: data.project.project_slug,
@@ -236,13 +267,19 @@ export default function App() {
       })
       .catch(error => {
         if (cancelled) return;
-        setProjectLoadState(error instanceof Error && error.message === 'not-found' ? 'missing' : 'error');
+        const msg = error instanceof Error ? error.message : '';
+        if (msg === 'unauthenticated') {
+          setShowAuthForProject(true);
+          setProjectLoadState('idle');
+        } else {
+          setProjectLoadState(msg === 'not-found' ? 'missing' : 'error');
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [initialProjectPage, initialProjectSlug]);
+  }, [initialProjectPage, initialProjectSlug, authRetry]);
 
   // derived
   const unreadNotifications = mockNotifications.filter(n => !n.read).length;
@@ -430,6 +467,19 @@ export default function App() {
   // ── Service navigation helpers ──────────────────────────────────────────────
 
   const selectedService = services.find(s => s.id === selectedServiceId) ?? null;
+
+  if (isProjectRoute && showAuthForProject) {
+    return (
+      <LoginPage
+        onLogin={() => {
+          setShowAuthForProject(false);
+          setAuthRetry(n => n + 1);
+        }}
+        onBack={() => {}}
+        projectSlug={initialProjectSlug ?? undefined}
+      />
+    );
+  }
 
   if (isProjectRoute && (projectLoadState === 'loading' || projectLoadState === 'idle')) {
     return (
@@ -727,6 +777,7 @@ export default function App() {
                 projectSlug={projectMeta?.project_slug || initialProjectSlug || undefined}
                 projectMeta={projectMeta}
                 projectSummary={projectSummary}
+                projectCredentials={projectCredentials}
               />
             )}
             {currentPage === '시나리오' && (

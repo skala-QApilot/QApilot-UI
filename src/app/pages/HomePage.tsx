@@ -89,6 +89,7 @@ function SettingsTab({
   serviceName,
   projectSlug,
   dashboardUrl,
+  serverAuthToken,
   localPath,
   framework,
   language,
@@ -96,6 +97,7 @@ function SettingsTab({
   serviceName: string;
   projectSlug?: string;
   dashboardUrl?: string;
+  serverAuthToken?: string;
   localPath?: string;
   framework?: string;
   language?: string;
@@ -196,7 +198,7 @@ function SettingsTab({
           <CopyBlock
             label="서버 인증 토큰"
             icon={<KeyRound className="w-4 h-4 text-[#9ca3af]" />}
-            value={`qap_${slug}_tok_a3f8d2c1e9b4`}
+            value={serverAuthToken || `qap_${slug}_tok_a3f8d2c1e9b4`}
           />
           <CopyBlock
             label="로컬 경로"
@@ -323,6 +325,7 @@ export function HomePage({
   projectSlug,
   projectMeta,
   projectSummary,
+  projectCredentials,
 }: {
   setCurrentPage: (page: string) => void;
   navigateToHistory: (filter: string) => void;
@@ -331,6 +334,7 @@ export function HomePage({
   projectSlug?: string;
   projectMeta?: ProjectMeta | null;
   projectSummary?: ProjectSummary | null;
+  projectCredentials?: { dashboard_url: string; server_auth_token: string } | null;
 }) {
   void navigateToHistory;
 
@@ -407,7 +411,8 @@ export function HomePage({
         <SettingsTab
           serviceName={serviceName}
           projectSlug={projectSlug}
-          dashboardUrl={projectSlug ? `http://localhost:8080/${projectSlug}` : undefined}
+          dashboardUrl={projectCredentials?.dashboard_url || (projectSlug ? `http://localhost:8080/${projectSlug}` : undefined)}
+          serverAuthToken={projectCredentials?.server_auth_token}
           localPath={projectMeta?.local_path}
           framework={projectMeta?.framework}
           language={projectMeta?.language}
