@@ -26,7 +26,7 @@ export function ServiceSetupPage({
   projectSummary,
 }: ServiceSetupPageProps) {
   const [isDragOver, setIsDragOver] = useState(false);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const slug = useMemo(() => projectSlug || toSlug(serviceName), [projectSlug, serviceName]);
@@ -40,13 +40,18 @@ export function ServiceSetupPage({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) setUploadedFile(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) setUploadedFiles(prev => [...prev, ...files]);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) setUploadedFile(file);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length) setUploadedFiles(prev => [...prev, ...files]);
+    e.target.value = '';
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -60,7 +65,7 @@ export function ServiceSetupPage({
           </div>
           <div>
             <h2 className="text-base font-bold text-[#1a1a2e]">{serviceName}</h2>
-            <p className="text-xs text-[#9ca3af] mt-0.5">서비스 URL 또는 문서를 추가하여 시나리오를 자동으로 생성하세요</p>
+            <p className="text-xs text-[#9ca3af] mt-0.5">서비스 문서를 추가하여 시나리오를 자동으로 생성하세요</p>
           </div>
         </div>
 
@@ -118,11 +123,9 @@ export function ServiceSetupPage({
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`w-full h-28 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed cursor-pointer transition-all mb-5 ${
+          className={`w-full flex flex-col items-center justify-center border-2 border-dashed cursor-pointer transition-all ${uploadedFiles.length ? 'h-10 mb-3 rounded-lg' : 'h-28 mb-5 rounded-2xl'} ${
             isDragOver
               ? 'border-[#3615CF] bg-[#3615CF]/5'
-              : uploadedFile
-              ? 'border-[#10b981] bg-[#10b981]/5'
               : 'border-[#e5e7eb] hover:border-[#3615CF]/30 hover:bg-gray-50'
           }`}
         >
@@ -131,22 +134,37 @@ export function ServiceSetupPage({
             type="file"
             className="hidden"
             accept=".pdf,.doc,.docx,.xlsx,.xls,.txt"
+            multiple
             onChange={handleFileChange}
           />
-          {uploadedFile ? (
-            <>
-              <FileText className="w-6 h-6 text-[#10b981] mb-1.5" />
-              <span className="text-sm font-medium text-[#10b981]">{uploadedFile.name}</span>
-              <span className="text-xs text-[#9ca3af] mt-0.5">클릭하여 변경</span>
-            </>
+          {uploadedFiles.length ? (
+            <Upload className={`w-4 h-4 transition-colors ${isDragOver ? 'text-[#3615CF]' : 'text-[#c4c9d4]'}`} />
           ) : (
             <>
               <Upload className={`w-6 h-6 mb-1.5 transition-colors ${isDragOver ? 'text-[#3615CF]' : 'text-[#c4c9d4]'}`} />
               <span className="text-sm text-[#9ca3af]">파일을 드래그하거나 클릭하여 업로드</span>
-              <span className="text-xs text-[#c4c9d4] mt-0.5">PDF, DOC, XLSX 지원</span>
+              <span className="text-xs text-[#c4c9d4] mt-0.5">PDF, DOC/X, XLS/X 지원</span>
             </>
           )}
         </div>
+
+        {/* Uploaded file list */}
+        {uploadedFiles.length > 0 && (
+          <ul className="flex flex-col gap-1.5 mb-5">
+            {uploadedFiles.map((file, i) => (
+              <li key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#f9f9fb] border border-[#f0f0f0]">
+                <FileText className="w-3.5 h-3.5 text-[#3615CF] flex-shrink-0" />
+                <span className="text-xs text-[#1a1a2e] flex-1 truncate">{file.name}</span>
+                <button
+                  onClick={() => handleRemoveFile(i)}
+                  className="text-[#c4c9d4] hover:text-[#6b7280] text-xs leading-none flex-shrink-0"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {/* Generate button */}
         <button
