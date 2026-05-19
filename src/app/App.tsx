@@ -563,11 +563,17 @@ export default function App() {
     navigate(`/${newService.id}/setup`);
   };
 
+  const [showScenarioGenerating, setShowScenarioGenerating] = useState(false);
+
   const handleGenerateScenarios = () => {
     if (selectedServiceId) {
       setServices(prev => prev.map(s => s.id === selectedServiceId ? { ...s, isNew: false } : s));
       navigate(`/${selectedServiceId}/scenarios`);
     }
+    setDynamicScenarios([]);
+    setDynamicAIItems({});
+    setDynamicTestCases({});
+    setShowScenarioGenerating(true);
   };
 
 
@@ -880,6 +886,15 @@ export default function App() {
                 setSelectedRunningForDetail={setSelectedRunningForDetail}
                 viewMode={scenarioViewMode}
                 setViewMode={setScenarioViewMode}
+                showGeneratingOverlay={showScenarioGenerating}
+                setShowGeneratingOverlay={(v: boolean) => {
+                  setShowScenarioGenerating(v);
+                  if (!v) {
+                    setDynamicScenarios([...mockScenarios]);
+                    setDynamicAIItems({ ...mockAIItems });
+                    setDynamicTestCases({ ...mockTestCases });
+                  }
+                }}
               />
             )}
             {currentPage === '테스트' && (
@@ -950,6 +965,7 @@ export default function App() {
                 projectSummary={projectSummary}
                 onGenerateScenarios={handleGenerateScenarios}
               />
+
             )}
           </div>
         </div>
