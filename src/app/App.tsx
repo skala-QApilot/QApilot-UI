@@ -420,6 +420,31 @@ export default function App() {
   };
 
   /**
+   * AI 제안 (change-request) 승인/거절/보류 처리.
+   * 1) 로컬 aiItemActions 즉시 갱신 (optimistic UX)
+   * 2) Spring PATCH /scenario-change-requests/{id} 호출하여 영속화
+   * 실패 시 로컬 상태는 유지 (사용자가 다시 시도 가능). 다음 로드 시 서버 상태가 진실.
+   */
+  const handleAIItemAction = async (
+    scenarioId: string,
+    status: 'approved' | 'deferred' | 'rejected',
+  ) => {
+    setAiItemActions(prev => ({ ...prev, [scenarioId]: status }));
+    if (!currentServiceId) return;
+    const aiItem = dynamicAIItems[scenarioId];
+    if (!aiItem?.requestId) return; // 백엔드에 매칭 change-request 없음 → 로컬만
+    try {
+      await useScenarioStore.getState().resolveChangeRequest(
+        currentServiceId,
+        aiItem.requestId,
+        status,
+      );
+    } catch (err) {
+      console.error('AI 제안 처리 실패', err);
+    }
+  };
+
+  /**
    * "검토 확인" 버튼 핸들러 — 검토 끝난 시나리오들로 코드 생성 trigger.
    * (이전 mock 흐름: scenario 버전 라벨링 + AI items 비우기) 는 트레이스 완료 시
    * scenarioStore.loadAll 결과로 자연스럽게 처리됨.
@@ -1021,6 +1046,7 @@ export default function App() {
                 codeGenStatus={codeGenPolling.status}
                 codeGenError={codeGenError}
                 onCodeGenClose={closeCodeGenOverlay}
+                onAIItemAction={handleAIItemAction}
               />
             )}
             {currentPage === '테스트' && (

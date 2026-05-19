@@ -88,6 +88,7 @@ showCodeGenOverlay = false,
 codeGenStatus = 'idle',
 codeGenError = null,
 onCodeGenClose,
+onAIItemAction,
 }: ScenarioPageProps) => {
 
   const viewMode = viewModeProp as 'table' | 'graph';
@@ -286,8 +287,12 @@ onCodeGenClose,
   const hasPendingAIReview = pendingAIReviewCount > 0;
 
   const handleApproveAIItem = (itemId: string) => {
-    // AI 제안 승인은 로컬 검토 상태만 변경 — 실제 코드 생성은 "검토 확인" 버튼에서 trigger.
-    setAiItemActions(prev => ({ ...prev, [itemId]: 'approved' }));
+    // AI 제안 승인: 로컬 검토 상태 갱신 + Spring change-request status='approved' 영속화.
+    if (onAIItemAction) {
+      onAIItemAction(itemId, 'approved');
+    } else {
+      setAiItemActions(prev => ({ ...prev, [itemId]: 'approved' }));
+    }
   };
 
   React.useEffect(() => {
@@ -643,7 +648,9 @@ onCodeGenClose,
                       <div className="flex gap-1">
                         <button onClick={() => handleApproveAIItem(tsId)}
                           className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium">승인</button>
-                        <button onClick={() => setAiItemActions(prev => ({ ...prev, [tsId]: 'rejected' }))}
+                        <button onClick={() => onAIItemAction
+                          ? onAIItemAction(tsId, 'rejected')
+                          : setAiItemActions(prev => ({ ...prev, [tsId]: 'rejected' }))}
                           className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-red-50 hover:text-red-500 hover:border-red-200">거절</button>
                       </div>
                     </div>
@@ -733,9 +740,15 @@ onCodeGenClose,
                       <div className="flex gap-1 flex-shrink-0">
                         <button onClick={() => handleApproveAIItem(scenario.id)}
                           className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium hover:bg-[#b45309]">승인</button>
-                        <button onClick={() => { setAiItemActions(prev => ({ ...prev, [scenario.id]: 'deferred' })); setShowDeferredAIItems(true); }}
+                        <button onClick={() => {
+                          if (onAIItemAction) onAIItemAction(scenario.id, 'deferred');
+                          else setAiItemActions(prev => ({ ...prev, [scenario.id]: 'deferred' }));
+                          setShowDeferredAIItems(true);
+                        }}
                           className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-[#fffbeb]">보류</button>
-                        <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'rejected' }))}
+                        <button onClick={() => onAIItemAction
+                          ? onAIItemAction(scenario.id, 'rejected')
+                          : setAiItemActions(prev => ({ ...prev, [scenario.id]: 'rejected' }))}
                           className="px-2 py-0.5 bg-white border border-red-200 text-red-500 rounded text-[9px] hover:bg-red-50">거절</button>
                       </div>
                     </div>
