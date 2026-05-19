@@ -162,32 +162,20 @@ export default function App() {
   // pipeline header
   const [showAgentTrace, setShowAgentTrace] = useState(false);
 
-  // scenario page
+  // scenario page (App.tsx 가 유지해야 하는 state — 다른 위젯이나 핸들러가 참조)
   const [selectedScenario, setSelectedScenario] = useState('TS1');
-  const [scenarioPageTab, setScenarioPageTab] = useState<'TOTAL' | 'CHANGE'>('TOTAL');
-  const [scenarioSearchQuery, setScenarioSearchQuery] = useState('');
-  const [scenarioChangeFilter, setScenarioChangeFilter] = useState(false);
   const [selectedScenarioVersion, setSelectedScenarioVersion] = useState('change-2');
   const [scenarioVersions, setScenarioVersions] = useState<UiScenarioVersion[]>([]);
   const [favoriteVersionIds, setFavoriteVersionIds] = useState<Set<string>>(new Set());
-  const [hoveredVersionId, setHoveredVersionId] = useState<string | null>(null);
-  const [selectedNetworkNodeId, setSelectedNetworkNodeId] = useState<string | null>(null);
-  const [expandedTSForTC, setExpandedTSForTC] = useState<string[]>(['TS1']);
   const [selectedTCIds, setSelectedTCIds] = useState<string[]>([]);
-  const [expandedTC, setExpandedTC] = useState<string[]>(['TC1']);
-  const [showTestGroupModal, setShowTestGroupModal] = useState(false);
   const [showLinkedFiles, setShowLinkedFiles] = useState(false);
   const [changeItemActions, setChangeItemActions] = useState<Record<number, 'approved' | 'deferred'>>({});
   const [aiItemActions, setAiItemActions] = useState<Record<string, 'approved' | 'deferred' | 'rejected'>>({});
-  const [showDeferredAIItems, setShowDeferredAIItems] = useState(false);
   const [codeChangeDetected, setCodeChangeDetected] = useState(false);
   const [dynamicScenarios, setDynamicScenarios] = useState<UiScenario[]>([]);
   const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, UiAIItem>>({});
   const [dynamicTestCases, setDynamicTestCases] = useState<TestCaseMap>({});
   const [loadingItemKey, setLoadingItemKey] = useState<string | null>(null);
-  const [editingDetailItem, setEditingDetailItem] = useState<{ type: 'ts' | 'tc' | 'tv'; key: string; value: string } | null>(null);
-  const [selectedTvId, setSelectedTvId] = useState<string | null>(null);
-  const [selectedScenarioNode, setSelectedScenarioNode] = useState<{ level: 'TS' | 'TC' | 'TV'; tsId: string; tcId?: string; tvId?: string }>({ level: 'TS', tsId: 'TS1' });
   const [highlightedScenarioRow, setHighlightedScenarioRow] = useState<string | null>(null);
   const [scenarioQuickOpen, setScenarioQuickOpen] = useState(false);
   const [scenarioHistoryOpen, setScenarioHistoryOpen] = useState(false);
@@ -217,10 +205,7 @@ export default function App() {
   const [expandedTestCases, setExpandedTestCases] = useState<string[]>(['TC1']);
   const [highlightedLogIdx, setHighlightedLogIdx] = useState<number | null>(null);
 
-  // detail panel & accordion for scenario page redesign
-  const [detailPanelRow, setDetailPanelRow] = useState<{ level: 'TS' | 'TC' | 'TV'; tsId: string; tcId?: string; tvId?: string } | null>(null);
-  const [expandedTSMain, setExpandedTSMain] = useState<string[]>(['TS1', 'TS2', 'TS3', 'TS4']);
-  const [expandedTCMain, setExpandedTCMain] = useState<string[]>([]);
+  // detailPanelRow / expandedTSMain / expandedTCMain 은 ScenarioPage 내부 UI 상태로 이전 (C9)
 
   // scenario bottom chatbot
   const chatbarClosedRef = useRef(false); // prevents hover zone from immediately reopening after X
@@ -1012,35 +997,17 @@ export default function App() {
               <ScenarioPage
                 selectedScenario={selectedScenario}
                 setSelectedScenario={setSelectedScenario}
-                scenarioPageTab={scenarioPageTab}
-                setScenarioPageTab={setScenarioPageTab}
-                scenarioSearchQuery={scenarioSearchQuery}
-                setScenarioSearchQuery={setScenarioSearchQuery}
-                scenarioChangeFilter={scenarioChangeFilter}
-                setScenarioChangeFilter={setScenarioChangeFilter}
                 selectedScenarioVersion={selectedScenarioVersion}
                 setSelectedScenarioVersion={setSelectedScenarioVersion}
                 scenarioVersions={scenarioVersions}
                 onReviewConfirm={onReviewConfirm}
                 favoriteVersionIds={favoriteVersionIds}
                 setFavoriteVersionIds={setFavoriteVersionIds}
-                hoveredVersionId={hoveredVersionId}
-                setHoveredVersionId={setHoveredVersionId}
-                selectedNetworkNodeId={selectedNetworkNodeId}
-                setSelectedNetworkNodeId={setSelectedNetworkNodeId}
-                expandedTSForTC={expandedTSForTC}
-                setExpandedTSForTC={setExpandedTSForTC}
                 selectedTCIds={selectedTCIds}
                 setSelectedTCIds={setSelectedTCIds}
-                expandedTC={expandedTC}
-                setExpandedTC={setExpandedTC}
-                showTestGroupModal={showTestGroupModal}
-                setShowTestGroupModal={setShowTestGroupModal}
                 setShowLinkedFiles={setShowLinkedFiles}
                 aiItemActions={aiItemActions}
                 setAiItemActions={setAiItemActions}
-                showDeferredAIItems={showDeferredAIItems}
-                setShowDeferredAIItems={setShowDeferredAIItems}
                 codeChangeDetected={codeChangeDetected}
                 dynamicScenarios={dynamicScenarios}
                 setDynamicScenarios={setDynamicScenarios}
@@ -1049,19 +1016,7 @@ export default function App() {
                 setDynamicTestCases={setDynamicTestCases}
                 loadingItemKey={loadingItemKey}
                 setLoadingItemKey={setLoadingItemKey}
-                editingDetailItem={editingDetailItem}
-                setEditingDetailItem={setEditingDetailItem}
-                selectedTvId={selectedTvId}
-                setSelectedTvId={setSelectedTvId}
-                selectedScenarioNode={selectedScenarioNode}
-                setSelectedScenarioNode={setSelectedScenarioNode}
                 highlightedScenarioRow={highlightedScenarioRow}
-                detailPanelRow={detailPanelRow}
-                setDetailPanelRow={setDetailPanelRow}
-                expandedTSMain={expandedTSMain}
-                setExpandedTSMain={setExpandedTSMain}
-                expandedTCMain={expandedTCMain}
-                setExpandedTCMain={setExpandedTCMain}
                 allTCsSelected={allTCsSelected}
                 someSelected={someSelected}
                 openAiWithContext={openAiWithContext}

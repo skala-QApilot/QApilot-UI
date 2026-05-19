@@ -12,33 +12,15 @@ interface ScenarioPageProps {
 export const ScenarioPage = ({
 selectedScenario,
 setSelectedScenario,
-scenarioPageTab,
-setScenarioPageTab,
-scenarioSearchQuery,
-setScenarioSearchQuery,
-scenarioChangeFilter,
-setScenarioChangeFilter,
 selectedScenarioVersion,
 setSelectedScenarioVersion,
 favoriteVersionIds,
 setFavoriteVersionIds,
-hoveredVersionId,
-setHoveredVersionId,
-selectedNetworkNodeId,
-setSelectedNetworkNodeId,
-expandedTSForTC,
-setExpandedTSForTC,
 selectedTCIds,
 setSelectedTCIds,
-expandedTC,
-setExpandedTC,
-showTestGroupModal,
-setShowTestGroupModal,
 setShowLinkedFiles,
 aiItemActions,
 setAiItemActions,
-showDeferredAIItems,
-setShowDeferredAIItems,
 codeChangeDetected,
 dynamicScenarios,
 setDynamicScenarios,
@@ -47,21 +29,9 @@ dynamicTestCases,
 setDynamicTestCases,
 loadingItemKey,
 setLoadingItemKey,
-editingDetailItem,
-setEditingDetailItem,
-selectedTvId,
-setSelectedTvId,
-selectedScenarioNode,
-setSelectedScenarioNode,
 highlightedScenarioRow,
 highlightedBotRow,
 setHighlightedBotRow,
-detailPanelRow,
-setDetailPanelRow,
-expandedTSMain,
-setExpandedTSMain,
-expandedTCMain,
-setExpandedTCMain,
 allTCsSelected,
 someSelected,
 openAiWithContext,
@@ -97,6 +67,29 @@ onStartTestRun,
   const [showReviewActions, setShowReviewActions] = React.useState(false);
   // 코드 생성 진행 여부는 상위에서 props.codeGenStatus 로 받음
   const isGeneratingCode = codeGenStatus === 'polling';
+
+  // ── C9: ScenarioPage 내부 UI 상태 (이전엔 App.tsx 에서 props 로 흘렸음) ─────
+  const [scenarioPageTab, setScenarioPageTab] = React.useState<'TOTAL' | 'CHANGE'>('TOTAL');
+  const [scenarioSearchQuery, setScenarioSearchQuery] = React.useState('');
+  const [scenarioChangeFilter, setScenarioChangeFilter] = React.useState(false);
+  const [hoveredVersionId, setHoveredVersionId] = React.useState<string | null>(null);
+  const [selectedNetworkNodeId, setSelectedNetworkNodeId] = React.useState<string | null>(null);
+  const [expandedTSForTC, setExpandedTSForTC] = React.useState<string[]>(['TS1']);
+  const [expandedTC, setExpandedTC] = React.useState<string[]>(['TC1']);
+  const [showTestGroupModal, setShowTestGroupModal] = React.useState(false);
+  const [showDeferredAIItems, setShowDeferredAIItems] = React.useState(false);
+  const [editingDetailItem, setEditingDetailItem] = React.useState<
+    { type: 'ts' | 'tc' | 'tv'; key: string; value: string } | null
+  >(null);
+  const [selectedTvId, setSelectedTvId] = React.useState<string | null>(null);
+  const [selectedScenarioNode, setSelectedScenarioNode] = React.useState<
+    { level: 'TS' | 'TC' | 'TV'; tsId: string; tcId?: string; tvId?: string }
+  >({ level: 'TS', tsId: 'TS1' });
+  const [detailPanelRow, setDetailPanelRow] = React.useState<
+    { level: 'TS' | 'TC' | 'TV'; tsId: string; tcId?: string; tvId?: string } | null
+  >(null);
+  const [expandedTSMain, setExpandedTSMain] = React.useState<string[]>([]);
+  const [expandedTCMain, setExpandedTCMain] = React.useState<string[]>([]);
 
   // TV JSON editor state
   const [tvEditingKey, setTvEditingKey] = React.useState<string | null>(null);
