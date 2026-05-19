@@ -81,6 +81,9 @@ viewMode: viewModeProp = 'table',
 setViewMode: setViewModeProp,
 showGeneratingOverlay = false,
 setShowGeneratingOverlay,
+scenarioGenStatus = 'idle',
+scenarioGenError = null,
+onScenarioGenClose,
 }: ScenarioPageProps) => {
 
   const viewMode = viewModeProp as 'table' | 'graph';
@@ -468,7 +471,12 @@ setShowGeneratingOverlay,
 
       {/* 시나리오 생성 오버레이 — 전체 페이지 커버 */}
       {showGeneratingOverlay && (
-        <ScenarioGeneratingOverlay onComplete={() => setShowGeneratingOverlay(false)} />
+        <ScenarioGeneratingOverlay
+          status={scenarioGenStatus}
+          errorMessage={scenarioGenError}
+          onComplete={() => setShowGeneratingOverlay(false)}
+          onClose={onScenarioGenClose ?? (() => setShowGeneratingOverlay(false))}
+        />
       )}
 
       <div className="flex flex-1 overflow-hidden">

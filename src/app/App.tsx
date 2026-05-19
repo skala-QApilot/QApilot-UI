@@ -27,7 +27,9 @@ import {
   Sparkles, Star, FolderOpen,
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
-import { onAuthExpired } from '../api/client';
+import { onAuthExpired, ApiError } from '../api/client';
+import { startScenarioGeneration } from '../api/agent';
+import { useTracePolling } from '../hooks/useTracePolling';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import { useRtmStore } from '../store/rtmStore';
@@ -573,16 +575,77 @@ export default function App() {
   };
 
   const [showScenarioGenerating, setShowScenarioGenerating] = useState(false);
+  const [scenarioGenTraceId, setScenarioGenTraceId] = useState<string | null>(null);
+  const [scenarioGenError, setScenarioGenError] = useState<string | null>(null);
 
-  const handleGenerateScenarios = () => {
-    if (selectedServiceId) {
-      markServiceSetupDone(selectedServiceId);
-      navigate(`/${selectedServiceId}/scenarios`);
+  // 시나리오 생성 trace 폴링 — trace 가 완료/실패 되면 상태 변경.
+  const scenarioGenPolling = useTracePolling(currentServiceId, scenarioGenTraceId);
+
+  // 폴링 완료/실패 → 데이터 재로드 + 오버레이 닫기 처리.
+  useEffect(() => {
+    if (!scenarioGenTraceId) return;
+    if (scenarioGenPolling.status === 'completed') {
+      if (currentServiceId) {
+        loadScenarioDomain(currentServiceId).then(() => {
+          const s = useScenarioStore.getState();
+          setDynamicScenarios(s.scenarios.map(toUiScenario));
+          const tcMap: TestCaseMap = {};
+          for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
+            tcMap[tsId] = list.map(toUiTestCase);
+          }
+          setDynamicTestCases(tcMap);
+          setDynamicAIItems(toUiAIItemsByScenario(s.changeRequests));
+          setScenarioVersions(s.versions.map(toUiVersion));
+        });
+      }
+      // overlay 가 'completed' 상태에서 자체 onComplete 콜백 호출 → 닫기
+    } else if (
+      scenarioGenPolling.status === 'failed' ||
+      scenarioGenPolling.status === 'error'
+    ) {
+      const msg = scenarioGenPolling.error?.message ?? '시나리오 생성에 실패했습니다.';
+      setScenarioGenError(msg);
     }
+  }, [scenarioGenPolling.status, scenarioGenTraceId, currentServiceId, loadScenarioDomain]);
+
+  const handleGenerateScenarios = async () => {
+    if (!currentServiceId) {
+      console.warn('handleGenerateScenarios: serviceId 미확보');
+      return;
+    }
+    // 라우팅 + 로컬 상태 초기화 (이전 결과 화면 보존 X)
+    markServiceSetupDone(projectSlug || selectedServiceId || '');
+    navigate(`/${projectSlug || selectedServiceId}/scenarios`);
     setDynamicScenarios([]);
     setDynamicAIItems({});
     setDynamicTestCases({});
+    setScenarioGenError(null);
     setShowScenarioGenerating(true);
+
+    try {
+      // 초기 셋업 직후의 생성은 trigger='init' 으로 호출.
+      const accessToken = useAuthStore.getState().accessToken;
+      if (!accessToken) throw new Error('인증 토큰이 없습니다.');
+      const resp = await startScenarioGeneration(
+        currentServiceId,
+        { trigger: 'init' },
+        accessToken,
+      );
+      setScenarioGenTraceId(resp.trace_id);
+    } catch (err) {
+      const msg = err instanceof ApiError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : '시나리오 생성 요청에 실패했습니다.';
+      setScenarioGenError(msg);
+    }
+  };
+
+  const closeScenarioGeneratingOverlay = () => {
+    setShowScenarioGenerating(false);
+    setScenarioGenTraceId(null);
+    setScenarioGenError(null);
   };
 
 
@@ -895,22 +958,15 @@ export default function App() {
                 setViewMode={setScenarioViewMode}
                 showGeneratingOverlay={showScenarioGenerating}
                 setShowGeneratingOverlay={(v: boolean) => {
-                  setShowScenarioGenerating(v);
-                  if (!v && currentServiceId) {
-                    // 오버레이 종료 → 시나리오 생성 결과를 백엔드에서 최신 상태로 다시 로드
-                    loadScenarioDomain(currentServiceId).then(() => {
-                      const s = useScenarioStore.getState();
-                      setDynamicScenarios(s.scenarios.map(toUiScenario));
-                      const tcMap: TestCaseMap = {};
-                      for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
-                        tcMap[tsId] = list.map(toUiTestCase);
-                      }
-                      setDynamicTestCases(tcMap);
-                      setDynamicAIItems(toUiAIItemsByScenario(s.changeRequests));
-                      setScenarioVersions(s.versions.map(toUiVersion));
-                    });
+                  if (!v) {
+                    closeScenarioGeneratingOverlay();
+                  } else {
+                    setShowScenarioGenerating(true);
                   }
                 }}
+                scenarioGenStatus={scenarioGenPolling.status}
+                scenarioGenError={scenarioGenError}
+                onScenarioGenClose={closeScenarioGeneratingOverlay}
               />
             )}
             {currentPage === '테스트' && (
