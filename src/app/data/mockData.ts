@@ -58,45 +58,45 @@ export type TestCase = {
   id: string;
   name: string;
   status: string;
-  testVariables: Array<{ id: string; name: string; status: string }>;
+  values: Array<{ id: string; name: string; status: string }>;
 };
 
 export type TestCaseMap = Record<string, TestCase[]>;
 
 export const mockTestCases: TestCaseMap = {
   TS1: [
-    { id: 'TC1', name: '정상 로그인', status: 'completed', testVariables: [
+    { id: 'TC1', name: '정상 로그인', status: 'completed', values: [
       { id: 'TV1', name: '유효한 이메일', status: 'completed' },
       { id: 'TV2', name: '유효한 비밀번호', status: 'completed' },
     ]},
-    { id: 'TC3', name: '로그아웃 성공', status: 'passed', testVariables: [
+    { id: 'TC3', name: '로그아웃 성공', status: 'passed', values: [
       { id: 'TV1', name: '로그아웃 버튼 클릭', status: 'passed' },
       { id: 'TV2', name: '로그인 화면 이동 확인', status: 'passed' },
     ]},
-    { id: 'TC2', name: '비밀번호 오류', status: 'failed', testVariables: [
+    { id: 'TC2', name: '비밀번호 오류', status: 'failed', values: [
       { id: 'TV1', name: '유효한 이메일', status: 'completed' },
       { id: 'TV2', name: '잘못된 비밀번호', status: 'failed' },
     ]},
   ],
   TS2: [
-    { id: 'TC2', name: '검색 결과 노출', status: 'passed', testVariables: [
+    { id: 'TC2', name: '검색 결과 노출', status: 'passed', values: [
       { id: 'TV1', name: '검색 결과 목록 확인', status: 'passed' },
     ]},
-    { id: 'TC1', name: '상품 검색', status: 'running', testVariables: [
+    { id: 'TC1', name: '상품 검색', status: 'running', values: [
       { id: 'TV1', name: '검색어 입력', status: 'running' },
     ]},
   ],
   TS3: [
-    { id: 'TC1', name: '장바구니 담기', status: 'completed', testVariables: [
+    { id: 'TC1', name: '장바구니 담기', status: 'completed', values: [
       { id: 'TV1', name: '상품 선택', status: 'completed' },
     ]},
-    { id: 'TC2', name: '수량 변경', status: 'failed', testVariables: [
+    { id: 'TC2', name: '수량 변경', status: 'failed', values: [
       { id: 'TV1', name: '수량 입력', status: 'failed' },
     ]},
-    { id: 'TC3', name: '상품 추가', status: 'failed', testVariables: [] },
+    { id: 'TC3', name: '상품 추가', status: 'failed', values: [] },
   ],
   TS4: [
-    { id: 'TC1', name: '결제 진행', status: 'pending', testVariables: [] },
+    { id: 'TC1', name: '결제 진행', status: 'pending', values: [] },
   ],
 };
 

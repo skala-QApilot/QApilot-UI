@@ -31,21 +31,29 @@ import { onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import { useRtmStore } from '../store/rtmStore';
+import {
+  useScenarioStore,
+  toUiScenario,
+  toUiTestCase,
+  toUiVersion,
+  toUiAIItemsByScenario,
+  type UiScenario,
+  type UiTestCase,
+  type UiScenarioVersion,
+  type UiAIItem,
+} from '../store/scenarioStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import {
-  mockAIItems,
   mockAgentTrace,
   mockFiles,
   mockNotifications,
   mockScenarioHistory,
-  mockScenarios,
   mockExecutionHistory,
-  mockScenarioVersions,
-  mockTestCases,
-  mockTestGroups,
   mockTestLogs,
-  type TestCaseMap,
 } from './data/mockData';
+// 시나리오 도메인 데이터 (scenarios/TC/versions/AI items) 는 scenarioStore 에서 derive.
+// 로컬 편집 상태는 동일 shape 의 useState 로 유지하며, 서비스 진입 시 store 로 한 번 sync.
+type TestCaseMap = Record<string, UiTestCase[]>;
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
 
 // 예약 최상위 경로(프로젝트 slug가 아닌 라우트)
@@ -156,7 +164,7 @@ export default function App() {
   const [scenarioSearchQuery, setScenarioSearchQuery] = useState('');
   const [scenarioChangeFilter, setScenarioChangeFilter] = useState(false);
   const [selectedScenarioVersion, setSelectedScenarioVersion] = useState('change-2');
-  const [scenarioVersions, setScenarioVersions] = useState([...mockScenarioVersions]);
+  const [scenarioVersions, setScenarioVersions] = useState<UiScenarioVersion[]>([]);
   const [favoriteVersionIds, setFavoriteVersionIds] = useState<Set<string>>(new Set());
   const [hoveredVersionId, setHoveredVersionId] = useState<string | null>(null);
   const [selectedNetworkNodeId, setSelectedNetworkNodeId] = useState<string | null>(null);
@@ -169,9 +177,9 @@ export default function App() {
   const [aiItemActions, setAiItemActions] = useState<Record<string, 'approved' | 'deferred' | 'rejected'>>({});
   const [showDeferredAIItems, setShowDeferredAIItems] = useState(false);
   const [codeChangeDetected, setCodeChangeDetected] = useState(false);
-  const [dynamicScenarios, setDynamicScenarios] = useState([...mockScenarios]);
-  const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }>>({ ...mockAIItems });
-  const [dynamicTestCases, setDynamicTestCases] = useState<TestCaseMap>({ ...mockTestCases });
+  const [dynamicScenarios, setDynamicScenarios] = useState<UiScenario[]>([]);
+  const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, UiAIItem>>({});
+  const [dynamicTestCases, setDynamicTestCases] = useState<TestCaseMap>({});
   const [loadingItemKey, setLoadingItemKey] = useState<string | null>(null);
   const [editingDetailItem, setEditingDetailItem] = useState<{ type: 'ts' | 'tc' | 'tv'; key: string; value: string } | null>(null);
   const [selectedTvId, setSelectedTvId] = useState<string | null>(null);
@@ -268,6 +276,31 @@ export default function App() {
     loadRtmVersions(currentServiceId);
   }, [currentServiceId, loadRtmVersions]);
 
+  // 시나리오 도메인 (scenarios / TC / versions / change-requests / groups) 동기화.
+  // 서비스 진입 시 한 번 로드한 후, 로컬 편집 state (dynamicScenarios 등) 으로 스냅한다.
+  // 이후 사용자가 UI 에서 편집한 내용은 로컬 state 에만 머무름 (write API 통합은 후속 PR).
+  const loadScenarioDomain = useScenarioStore((s) => s.loadAll);
+  useEffect(() => {
+    if (!currentServiceId) return;
+    if (!useAuthStore.getState().isAuthenticated()) return;
+    let cancelled = false;
+    loadScenarioDomain(currentServiceId).then(() => {
+      if (cancelled) return;
+      const s = useScenarioStore.getState();
+      setDynamicScenarios(s.scenarios.map(toUiScenario));
+      const tcMap: TestCaseMap = {};
+      for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
+        tcMap[tsId] = list.map(toUiTestCase);
+      }
+      setDynamicTestCases(tcMap);
+      setDynamicAIItems(toUiAIItemsByScenario(s.changeRequests));
+      setScenarioVersions(s.versions.map(toUiVersion));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentServiceId, loadScenarioDomain]);
+
   // 인증된 상태에서 서비스 목록 1회 로드 (DashHomePage 진입 시 사용)
   useEffect(() => {
     if (useAuthStore.getState().isAuthenticated()) {
@@ -327,8 +360,8 @@ export default function App() {
         setDynamicTestCases(prev => ({
           ...prev,
           [newId]: [
-            { id: 'TC1', name: 'AI 기본 케이스', status: 'pending', testVariables: [{ id: 'TV1', name: '정상 입력', status: 'pending' }, { id: 'TV2', name: '경계값 입력', status: 'pending' }] },
-            { id: 'TC2', name: 'AI 엣지 케이스', status: 'pending', testVariables: [{ id: 'TV1', name: '오류 입력', status: 'pending' }] },
+            { id: 'TC1', name: 'AI 기본 케이스', status: 'pending', values: [{ id: 'TV1', name: '정상 입력', status: 'pending' }, { id: 'TV2', name: '경계값 입력', status: 'pending' }] },
+            { id: 'TC2', name: 'AI 엣지 케이스', status: 'pending', values: [{ id: 'TV1', name: '오류 입력', status: 'pending' }] },
           ],
         }));
         setExpandedTSForTC(prev => [...prev, newId]);
@@ -863,10 +896,19 @@ export default function App() {
                 showGeneratingOverlay={showScenarioGenerating}
                 setShowGeneratingOverlay={(v: boolean) => {
                   setShowScenarioGenerating(v);
-                  if (!v) {
-                    setDynamicScenarios([...mockScenarios]);
-                    setDynamicAIItems({ ...mockAIItems });
-                    setDynamicTestCases({ ...mockTestCases });
+                  if (!v && currentServiceId) {
+                    // 오버레이 종료 → 시나리오 생성 결과를 백엔드에서 최신 상태로 다시 로드
+                    loadScenarioDomain(currentServiceId).then(() => {
+                      const s = useScenarioStore.getState();
+                      setDynamicScenarios(s.scenarios.map(toUiScenario));
+                      const tcMap: TestCaseMap = {};
+                      for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
+                        tcMap[tsId] = list.map(toUiTestCase);
+                      }
+                      setDynamicTestCases(tcMap);
+                      setDynamicAIItems(toUiAIItemsByScenario(s.changeRequests));
+                      setScenarioVersions(s.versions.map(toUiVersion));
+                    });
                   }
                 }}
               />

@@ -141,7 +141,7 @@ setShowGeneratingOverlay,
   // typed aliases to suppress implicit-any from loose prop types
   const _selectedTCIds: string[] = selectedTCIds as string[];
   const _dynamicScenarios: Array<{ id: string; name: string; tags: string[] }> = dynamicScenarios as any[];
-  const _dynamicTestCases: Record<string, Array<{ id: string; name: string; testVariables: Array<{ id: string; name: string }> }>> = dynamicTestCases as any;
+  const _dynamicTestCases: Record<string, Array<{ id: string; name: string; values: Array<{ id: string; name: string }> }>> = dynamicTestCases as any;
   const _aiItemActions: Record<string, string> = aiItemActions as Record<string, string>;
   const _dynamicAIItems: Record<string, { reason: string; trigger: string; timestamp: string }> = dynamicAIItems as any;
 
@@ -161,7 +161,7 @@ setShowGeneratingOverlay,
   const toggleTSSelection = (tsId: string) => {
     const tcs = _dynamicTestCases[tsId] || [];
     const tcKeys = tcs.map((tc: any) => `${tsId}_${tc.id}`);
-    const tvKeys = tcs.flatMap((tc: any) => (tc.testVariables || []).map((tv: any) => `${tsId}_${tc.id}_${tv.id}`));
+    const tvKeys = tcs.flatMap((tc: any) => (tc.values || []).map((tv: any) => `${tsId}_${tc.id}_${tv.id}`));
     const allKeys = [...tcKeys, ...tvKeys];
     const allSelected = allKeys.every((id: string) => _selectedTCIds.includes(id));
     if (allSelected) {
@@ -174,7 +174,7 @@ setShowGeneratingOverlay,
   const toggleTCSelection = (tsId: string, tcId: string) => {
     const tc = (_dynamicTestCases[tsId] || []).find((t: any) => t.id === tcId);
     const tcKey = `${tsId}_${tcId}`;
-    const tvKeys = (tc?.testVariables || []).map((tv: any) => `${tsId}_${tcId}_${tv.id}`);
+    const tvKeys = (tc?.values || []).map((tv: any) => `${tsId}_${tcId}_${tv.id}`);
     const allKeys = [tcKey, ...tvKeys];
     const allSelected = allKeys.every((id: string) => _selectedTCIds.includes(id));
     if (allSelected) {
@@ -370,7 +370,7 @@ setShowGeneratingOverlay,
         ...prev,
         [tsId]: (prev[tsId] || []).map(tc =>
           tc.id === tcId
-            ? { ...tc, testVariables: tc.testVariables.map(tv => tv.id === tvId ? { ...tv, name: value } : tv) }
+            ? { ...tc, values: tc.values.map(tv => tv.id === tvId ? { ...tv, name: value } : tv) }
             : tc
         ),
       }));
@@ -414,7 +414,7 @@ setShowGeneratingOverlay,
     const newId = `TC${existing.length + 1}`;
     setDynamicTestCases(prev => ({
       ...prev,
-      [tsId]: [...existing, { id: newId, name: '새 테스트케이스', testVariables: [] }],
+      [tsId]: [...existing, { id: newId, name: '새 테스트케이스', values: [] }],
     }));
     setExpandedTSForTC(prev => prev.includes(tsId) ? prev : [...prev, tsId]);
   };
@@ -426,8 +426,8 @@ setShowGeneratingOverlay,
       ...prev,
       [tsId]: (prev[tsId] || []).map(tc => {
         if (tc.id !== tcId) return tc;
-        const newId = `TV${tc.testVariables.length + 1}`;
-        return { ...tc, testVariables: [...tc.testVariables, { id: newId, name: '새 테스트변수' }] };
+        const newId = `TV${tc.values.length + 1}`;
+        return { ...tc, values: [...tc.values, { id: newId, name: '새 테스트변수' }] };
       }),
     }));
     setExpandedTCMain(prev => prev.includes(tcKey) ? prev : [...prev, tcKey]);
@@ -453,7 +453,7 @@ setShowGeneratingOverlay,
     setDynamicTestCases(prev => ({
       ...prev,
       [tsId]: (prev[tsId] || []).map(t =>
-        t.id === tcId ? { ...t, testVariables: t.testVariables.filter(v => v.id !== tvId) } : t
+        t.id === tcId ? { ...t, values: t.values.filter(v => v.id !== tvId) } : t
       ),
     }));
   };
@@ -739,7 +739,7 @@ setShowGeneratingOverlay,
                             className="scenario-checkbox w-3 h-3 flex-shrink-0"
                             onClick={e => e.stopPropagation()} />
                           <button onClick={e => { e.stopPropagation(); setExpandedTCMain(prev => prev.includes(tcKey) ? prev.filter(id => id !== tcKey) : [...prev, tcKey]); }} className="flex-shrink-0">
-                            {tc.testVariables.length > 0
+                            {tc.values.length > 0
                               ? (isTCExpanded ? <ChevronDown className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} />)
                               : <span className="w-3" />}
                           </button>
@@ -787,7 +787,7 @@ setShowGeneratingOverlay,
                         </div>
 
                         {/* TV 행 — 엔드포인트 카드 */}
-                        {isTCExpanded && tc.testVariables.map(tv => {
+                        {isTCExpanded && tc.values.map(tv => {
                           const tvKey = `${scenario.id}_${tc.id}_${tv.id}`;
                           const ep = mockTVEndpoints[tvKey];
                           const isTVEditing = editingDetailItem?.type === 'tv' && editingDetailItem.key === tvKey;
