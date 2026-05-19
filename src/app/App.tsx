@@ -27,7 +27,9 @@ import {
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
 import { getProject, type ProjectDashboardResponse } from '../api/projects';
-import { ApiError } from '../api/client';
+import { ApiError, onAuthExpired } from '../api/client';
+import { useAuthStore, DEV_BYPASS_SENTINEL } from '../store/authStore';
+import { ProtectedRoute } from '../components/ProtectedRoute';
 import {
   mockAIItems,
   mockAgentTrace,
@@ -44,15 +46,6 @@ import {
   type TestCaseMap,
 } from './data/mockData';
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
-
-function getToken(): string | null {
-  return localStorage.getItem('qapilot_access_token');
-}
-
-function clearTokens() {
-  localStorage.removeItem('qapilot_access_token');
-  localStorage.removeItem('qapilot_refresh_token');
-}
 
 // 예약 최상위 경로(프로젝트 slug가 아닌 라우트)
 const RESERVED_TOP_SEGMENTS = new Set(['login', 'services']);
@@ -120,6 +113,13 @@ export default function App() {
     const path = buildPagePath(page, projectSlug);
     if (path) navigate(path);
   };
+
+  // 401 만료 → 로그인 페이지로 강제 이동
+  useEffect(() => {
+    return onAuthExpired(() => {
+      navigate('/login', { replace: true });
+    });
+  }, [navigate]);
 
   // services (top-level dashboard list)
   const [services, setServices] = useState<Service[]>(
@@ -254,7 +254,7 @@ export default function App() {
   useEffect(() => {
     if (!projectSlug) return;
 
-    const token = getToken();
+    const token = useAuthStore.getState().accessToken;
     if (!token) {
       setProjectLoadState('idle');
       setShowAuthForProject(true);
@@ -262,7 +262,7 @@ export default function App() {
     }
 
     // dev bypass 모드: 실 API 호출 없이 mockData 로 진행
-    if (token === 'dev-bypass') {
+    if (token === DEV_BYPASS_SENTINEL) {
       setProjectLoadState('loaded');
       setShowAuthForProject(false);
       return;
@@ -294,7 +294,7 @@ export default function App() {
         if (cancelled) return;
         const status = error instanceof ApiError ? error.status : undefined;
         if (status === 401) {
-          clearTokens();
+          useAuthStore.getState().logout();
           setShowAuthForProject(true);
           setProjectLoadState('idle');
         } else if (status === 404) {
@@ -662,6 +662,7 @@ export default function App() {
   }
 
   return (
+    <ProtectedRoute>
     <div className="h-screen flex flex-col overflow-hidden">
       <NavBar
         currentPage={currentPage}
@@ -1250,5 +1251,6 @@ export default function App() {
         </>
       )}
     </div>
+    </ProtectedRoute>
   );
 }

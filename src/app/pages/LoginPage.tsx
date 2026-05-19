@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
-import { login as loginApi, register as registerApi } from '../../api/auth';
+import { register as registerApi } from '../../api/auth';
 import { ApiError } from '../../api/client';
+import { useAuthStore } from '../../store/authStore';
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -33,7 +34,7 @@ export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
 
     if ((import.meta as any).env?.DEV && email === 'admin@qapilot.com' && password === 'admin1234') {
       // dev bypass: 백엔드 연동 없이 mockData 흐름으로 들어가도록 sentinel 토큰 저장
-      localStorage.setItem('qapilot_access_token', 'dev-bypass');
+      useAuthStore.getState().setDevBypass();
       onLogin();
       return;
     }
@@ -41,18 +42,18 @@ export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
     setLoading(true);
 
     try {
-      const auth = isLogin
-        ? await loginApi(email, password)
-        : await registerApi({
-            name,
-            email,
-            password,
-            project_slug: projectSlug,
-            ...(serverAuthToken ? { server_auth_token: serverAuthToken } : {}),
-          });
-
-      localStorage.setItem('qapilot_access_token', String(auth.access_token));
-      if (auth.refresh_token) localStorage.setItem('qapilot_refresh_token', String(auth.refresh_token));
+      if (isLogin) {
+        await useAuthStore.getState().login(email, password);
+      } else {
+        const tokens = await registerApi({
+          name,
+          email,
+          password,
+          project_slug: projectSlug,
+          ...(serverAuthToken ? { server_auth_token: serverAuthToken } : {}),
+        });
+        useAuthStore.getState().setSession(tokens);
+      }
       onLogin();
     } catch (err) {
       if (err instanceof ApiError) {
