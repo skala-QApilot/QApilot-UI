@@ -6,16 +6,12 @@ export const SIDEBAR_BG = '#f2f3f5';
 interface LeftNavigationProps {
   currentPage: string;
   setCurrentPage: (page: string) => void;
-  testSubTab: 'INPROGRESS' | 'HISTORY';
-  setTestSubTab: (tab: 'INPROGRESS' | 'HISTORY') => void;
   runningTests: Array<{ id: string; status: 'running' | 'completed' }>;
 }
 
 export const LeftNavigation = ({
   currentPage,
   setCurrentPage,
-  testSubTab,
-  setTestSubTab,
   runningTests,
 }: LeftNavigationProps) => {
   const isTestPage = currentPage === '테스트';
@@ -73,9 +69,9 @@ export const LeftNavigation = ({
           onClick={() => setCurrentPage('HOME')} />
         <NavItem icon={Layers} label="시나리오" active={currentPage === '시나리오'}
           onClick={() => setCurrentPage('시나리오')} />
-        <NavItem icon={RotateCcw} label={"테스트\n이력"} active={isTestPage && testSubTab === 'HISTORY'}
+        <NavItem icon={RotateCcw} label={"테스트\n이력"} active={isTestPage}
           badge={runningCount}
-          onClick={() => { setCurrentPage('테스트'); setTestSubTab('HISTORY'); }} />
+          onClick={() => setCurrentPage('테스트')} />
         <NavItem icon={CheckSquare} label="RTM" active={currentPage === 'RTM'}
           onClick={() => setCurrentPage('RTM')} />
       </div>
