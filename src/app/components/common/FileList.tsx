@@ -1,5 +1,5 @@
 import { Folder, Plus, Upload } from 'lucide-react';
-import { mockFiles } from '../../data/mockData';
+import { useFileStore } from '../../../store/fileStore';
 
 const Label = ({ children }: { children: React.ReactNode }) => (
   <span className="text-xs font-bold text-[#9ca3af] uppercase tracking-widest">{children}</span>
@@ -9,7 +9,16 @@ interface FileListProps {
   showNewButton?: boolean;
 }
 
-export const FileList = ({ showNewButton = true }: FileListProps) => (
+export const FileList = ({ showNewButton = true }: FileListProps) => {
+  const files = useFileStore((s) => s.files);
+  const uiFiles = files.map(f => ({
+    id: f.file_id,
+    name: f.name,
+    version: f.version,
+    reflected: f.reflected,
+    date: (f.uploaded_at || '').slice(0, 10),
+  }));
+  return (
   <div>
     <div className="flex items-center justify-between mb-4">
       <Label>Files</Label>
@@ -20,7 +29,10 @@ export const FileList = ({ showNewButton = true }: FileListProps) => (
       )}
     </div>
     <div className="space-y-1">
-      {mockFiles.map(file => (
+      {uiFiles.length === 0 && (
+        <div className="py-6 text-center text-xs text-[#9ca3af]">파일이 없습니다.</div>
+      )}
+      {uiFiles.map(file => (
         <div key={file.id} className="flex items-center gap-3 py-2.5 group">
           <Folder className="w-5 h-5 flex-shrink-0 text-[#a0a8b4]" fill="currentColor" strokeWidth={0} />
           <div className="flex-1 min-w-0">
@@ -45,4 +57,5 @@ export const FileList = ({ showNewButton = true }: FileListProps) => (
       ))}
     </div>
   </div>
-);
+  );
+};

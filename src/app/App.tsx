@@ -46,13 +46,12 @@ import {
   type UiAIItem,
 } from '../store/scenarioStore';
 import { useTestStore } from '../store/testStore';
+import { useFileStore } from '../store/fileStore';
+import { useNotificationStore } from '../store/notificationStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import {
   mockAgentTrace,
-  mockFiles,
-  mockNotifications,
   mockScenarioHistory,
-  mockExecutionHistory,
   mockTestLogs,
 } from './data/mockData';
 // 시나리오 도메인 데이터 (scenarios/TC/versions/AI items) 는 scenarioStore 에서 derive.
@@ -277,6 +276,22 @@ export default function App() {
     if (!useAuthStore.getState().isAuthenticated()) return;
     loadTestDomain(currentServiceId).catch(() => {/* 무시 */});
   }, [currentServiceId, loadTestDomain]);
+
+  // 파일 도메인 (domain files) 동기화.
+  const loadFiles = useFileStore((s) => s.loadFiles);
+  useEffect(() => {
+    if (!currentServiceId) return;
+    if (!useAuthStore.getState().isAuthenticated()) return;
+    loadFiles(currentServiceId).catch(() => {/* 무시 */});
+  }, [currentServiceId, loadFiles]);
+
+  // 알림 도메인 동기화.
+  const loadNotifications = useNotificationStore((s) => s.loadNotifications);
+  useEffect(() => {
+    if (!currentServiceId) return;
+    if (!useAuthStore.getState().isAuthenticated()) return;
+    loadNotifications(currentServiceId).catch(() => {/* 무시 */});
+  }, [currentServiceId, loadNotifications]);
   useEffect(() => {
     if (!currentServiceId) return;
     if (!useAuthStore.getState().isAuthenticated()) return;
@@ -316,7 +331,13 @@ export default function App() {
   }, [projectSlug, authRetry, loadProject, setShowAuthForProject]);
 
   // derived
-  const unreadNotifications = mockNotifications.filter(n => !n.read).length;
+  const notifications = useNotificationStore((s) => s.notifications.map((n) => ({
+    id: n.notificationId,
+    message: n.message || n.title,
+    time: n.createdAt,
+    read: n.isRead,
+  })));
+  const unreadNotifications = useNotificationStore((s) => s.unreadCount);
   const visibleChangeItems = mockScenarioHistory.filter(h => changeItemActions[h.id] !== 'approved');
   const pendingHistoryCount = visibleChangeItems.length;
 
@@ -532,7 +553,7 @@ export default function App() {
     setFileChangeDetected(true);
 
     fileChangeTimerRef.current = window.setTimeout(() => {
-      const unreflected = mockFiles.filter(f => !f.reflected);
+      const unreflected = useFileStore.getState().files.filter(f => !f.reflected);
       unreflected.forEach(file => {
         const targetId = 'TS2';
         setDynamicAIItems(prev => ({
@@ -858,7 +879,7 @@ export default function App() {
         notificationOpen={notificationOpen}
         setNotificationOpen={setNotificationOpen}
         unreadNotifications={unreadNotifications}
-        notifications={mockNotifications}
+        notifications={notifications}
         agentImageSrc={qapilotAgent}
       />
 

@@ -3,7 +3,9 @@ import { Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit
 import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
 import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
 import { SearchBar } from '../components/common/SearchBar';
-import { mockRTMData, mockTestGroups, mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
+import { mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
+import { useScenarioStore } from '../../store/scenarioStore';
+import { useRtmStore } from '../../store/rtmStore';
 
 interface ScenarioPageProps {
   [key: string]: any;
@@ -67,6 +69,21 @@ onStartTestRun,
   const [showReviewActions, setShowReviewActions] = React.useState(false);
   // 코드 생성 진행 여부는 상위에서 props.codeGenStatus 로 받음
   const isGeneratingCode = codeGenStatus === 'polling';
+
+  // 시나리오 ↔ RTM 매핑 — rtmStore 에서 derive (C10)
+  const rtmMappings = useRtmStore((s) => s.getRtmMappings());
+
+  // 시나리오 그룹 — scenarioStore 에서 derive (C10)
+  const uiGroups = useScenarioStore((s) => s.groups).map((g) => ({
+    id: g.groupId,
+    name: g.name,
+    scenarios: g.scenarioIds ?? [],
+    tcCount: (g.tcIds ?? []).length,
+    status: 'active' as const,
+    createdDate: (g.createdAt || '').slice(0, 10),
+    executionCount: 0,
+    tags: [] as string[],
+  }));
 
   // ── C9: ScenarioPage 내부 UI 상태 (이전엔 App.tsx 에서 props 로 흘렸음) ─────
   const [scenarioPageTab, setScenarioPageTab] = React.useState<'TOTAL' | 'CHANGE'>('TOTAL');
@@ -263,8 +280,8 @@ onStartTestRun,
     const matchSearch = !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
     const isDeferred = _aiItemActions[s.id] === 'deferred';
     const matchChange = !scenarioChangeFilter || (!!_dynamicAIItems[s.id] && _aiItemActions[s.id] !== 'approved' && _aiItemActions[s.id] !== 'rejected' && !isDeferred);
-    const activeGroup = selectedScenarioGroupId ? mockTestGroups.find(g => g.id === selectedScenarioGroupId) : null;
-    const matchGroup = !activeGroup || (activeGroup.scenarios as string[]).includes(s.id);
+    const activeGroup = selectedScenarioGroupId ? uiGroups.find(g => g.id === selectedScenarioGroupId) : null;
+    const matchGroup = !activeGroup || activeGroup.scenarios.includes(s.id);
     return matchSearch && matchChange && !isDeferred && matchGroup;
   });
   const deferredAIIds = Object.entries(_aiItemActions)
@@ -753,7 +770,7 @@ onStartTestRun,
                     const tcKey = `${scenario.id}_${tc.id}`;
                     const isTCExpanded = expandedTCMain.includes(tcKey);
                     const isTCEditing = editingDetailItem?.type === 'tc' && editingDetailItem.key === tcKey;
-                    const frEntries = mockRTMData.filter(r => r.ts === scenario.id && r.tc === tc.id);
+                    const frEntries = rtmMappings.filter(r => r.ts === scenario.id && r.tc === tc.id);
                     return (
                       <div key={tc.id}>
                         <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-[#fffbeb]/50 border-[#fde68a]/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#3615CF]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
@@ -1032,7 +1049,7 @@ onStartTestRun,
                   showFilterButton
                   className="mb-3"
                 />
-                {mockTestGroups.map(group => {
+                {uiGroups.map(group => {
                   const isSelected = selectedScenarioGroupId === group.id;
                   return (
                     <button key={group.id}

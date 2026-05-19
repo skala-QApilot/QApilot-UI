@@ -7,7 +7,10 @@ import { SubHeader } from '../components/common/SubHeader';
 import { AgentProgressStrip } from '../components/common/AgentProgressStrip';
 import { TerminalFrame, RuntimeTerminal } from '../components/common/RuntimeTerminal';
 import { StatusIcon } from '../components/common/StatusIcon';
-import { mockExecutionHistory, mockRTMData, mockScenarios, mockTestCases, mockTestLogs, mockTVEndpoints, type HttpMethod } from '../data/mockData';
+import { mockTestLogs, mockTVEndpoints, type HttpMethod } from '../data/mockData';
+import { useScenarioStore, toUiScenario, toUiTestCase } from '../../store/scenarioStore';
+import { useTestStore } from '../../store/testStore';
+import { useRtmStore } from '../../store/rtmStore';
 
 const METHOD_STYLE: Record<HttpMethod, string> = {
   GET:    'bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/20',
@@ -110,6 +113,17 @@ export const TestRunningPage = ({
 }: TestRunningPageProps) => {
   const selectedRun = runningTests.find(t => t.id === selectedRunningTestId) ?? null;
 
+  // 시나리오 / TC / 실행 이력 — store 에서 derive (C10)
+  const storeScenarios = useScenarioStore((s) => s.scenarios);
+  const storeTestCasesByTs = useScenarioStore((s) => s.testCasesByTs);
+  const scenarios = storeScenarios.map(toUiScenario);
+  const testCasesMap: Record<string, ReturnType<typeof toUiTestCase>[]> = {};
+  for (const [tsId, list] of Object.entries(storeTestCasesByTs)) {
+    testCasesMap[tsId] = list.map(toUiTestCase);
+  }
+  const executionHistory = useTestStore.getState().getExecutionHistory();
+  const rtmMappings = useRtmStore((s) => s.getRtmMappings());
+
   // duration stopwatch
   const [elapsedSeconds, setElapsedSeconds] = React.useState<number>(() => {
     if (!selectedRun) return 0;
@@ -188,7 +202,7 @@ export const TestRunningPage = ({
     }, 50);
   };
 
-  const allTCs    = mockScenarios.flatMap(s => (mockTestCases[s.id] || []).map(tc => ({ sId: s.id, tc })));
+  const allTCs    = scenarios.flatMap(s => (testCasesMap[s.id] || []).map(tc => ({ sId: s.id, tc })));
   const passedTCs = allTCs.filter(({ tc }) => tc.status === 'passed' || tc.status === 'completed');
   const failedTCs = allTCs.filter(({ tc }) => tc.status === 'failed');
 
@@ -276,9 +290,9 @@ export const TestRunningPage = ({
 
           <div className="flex-1 min-h-0 overflow-y-auto py-1">
             <div>
-              {mockScenarios.map(scenario => {
+              {scenarios.map(scenario => {
                 const isExpanded = expandedScenarios.includes(scenario.id);
-                const allTcs = mockTestCases[scenario.id] || [];
+                const allTcs = testCasesMap[scenario.id] || [];
                 const tcs = scenarioSidebarTab === 'PASS'
                   ? allTcs.filter(tc => tc.status === 'passed' || tc.status === 'completed')
                   : scenarioSidebarTab === 'FILTERED'
@@ -312,7 +326,7 @@ export const TestRunningPage = ({
                     {isExpanded && tcs.map(tc => {
                       const tcKey = `${scenario.id}_${tc.id}`;
                       const isTCExpanded = expandedTestCases.includes(tcKey);
-                      const frEntries = mockRTMData.filter(r => r.ts === scenario.id && r.tc === tc.id);
+                      const frEntries = rtmMappings.filter(r => r.ts === scenario.id && r.tc === tc.id);
                       return (
                         <div key={tc.id}>
                           <div className="group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b border-[#f0f0f0]/40 bg-[#F9FAFB] hover:bg-opacity-80 cursor-pointer"
@@ -474,7 +488,7 @@ export const TestRunningPage = ({
                   setRunningTests(prev => prev.map(t => t.id === selectedRunningTestId ? { ...t, status: 'completed' } : t));
                   setSelectedRunningTestId(null);
                   setSelectedRunningForDetail(null);
-                  setSelectedExecutionId(mockExecutionHistory[0]?.id ?? null);
+                  setSelectedExecutionId(executionHistory[0]?.id ?? null);
                 }}
                 className="flex-1 px-4 py-2 bg-primary-blue text-white rounded-lg font-medium">
                 이동
