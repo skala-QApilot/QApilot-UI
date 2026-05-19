@@ -84,13 +84,17 @@ setShowGeneratingOverlay,
 scenarioGenStatus = 'idle',
 scenarioGenError = null,
 onScenarioGenClose,
+showCodeGenOverlay = false,
+codeGenStatus = 'idle',
+codeGenError = null,
+onCodeGenClose,
 }: ScenarioPageProps) => {
 
   const viewMode = viewModeProp as 'table' | 'graph';
   const setViewMode = setViewModeProp as (m: 'table' | 'graph') => void;
   const [showReviewActions, setShowReviewActions] = React.useState(false);
-  const [isGeneratingCode, setIsGeneratingCode] = React.useState(false);
-  const generateCodeTimerRef = React.useRef<number | null>(null);
+  // 코드 생성 진행 여부는 상위에서 props.codeGenStatus 로 받음
+  const isGeneratingCode = codeGenStatus === 'polling';
 
   // TV JSON editor state
   const [tvEditingKey, setTvEditingKey] = React.useState<string | null>(null);
@@ -282,24 +286,13 @@ onScenarioGenClose,
   const hasPendingAIReview = pendingAIReviewCount > 0;
 
   const handleApproveAIItem = (itemId: string) => {
+    // AI 제안 승인은 로컬 검토 상태만 변경 — 실제 코드 생성은 "검토 확인" 버튼에서 trigger.
     setAiItemActions(prev => ({ ...prev, [itemId]: 'approved' }));
-    setIsGeneratingCode(true);
-    if (generateCodeTimerRef.current) window.clearTimeout(generateCodeTimerRef.current);
-    generateCodeTimerRef.current = window.setTimeout(() => {
-      setIsGeneratingCode(false);
-      generateCodeTimerRef.current = null;
-    }, 2000);
   };
 
   React.useEffect(() => {
     if (hasPendingAIReview) setShowReviewActions(false);
   }, [hasPendingAIReview]);
-
-  React.useEffect(() => {
-    return () => {
-      if (generateCodeTimerRef.current) window.clearTimeout(generateCodeTimerRef.current);
-    };
-  }, []);
 
   // ── TS 흐름 그래프 노드 데이터 ──────────────────────────────
   const tsFlowNodes = _dynamicScenarios.map(s => ({
@@ -469,13 +462,28 @@ onScenarioGenClose,
   return (
     <div className="relative flex flex-col h-full">
 
-      {/* 시나리오 생성 오버레이 — 전체 페이지 커버 */}
+      {/* 시나리오 생성 오버레이 (Layer 1A 3단계) */}
       {showGeneratingOverlay && (
         <ScenarioGeneratingOverlay
           status={scenarioGenStatus}
           errorMessage={scenarioGenError}
           onComplete={() => setShowGeneratingOverlay(false)}
           onClose={onScenarioGenClose ?? (() => setShowGeneratingOverlay(false))}
+        />
+      )}
+
+      {/* 코드 생성 오버레이 (Layer 1B 3단계) */}
+      {showCodeGenOverlay && (
+        <ScenarioGeneratingOverlay
+          status={codeGenStatus}
+          errorMessage={codeGenError}
+          steps={[
+            { message: '시나리오를 액션 시퀀스로 매핑하는 중...', duration: 2400 },
+            { message: 'Playwright 테스트 코드를 작성하는 중...', duration: 2800 },
+            { message: '생성된 코드를 저장하는 중...', duration: 1200 },
+          ]}
+          onComplete={onCodeGenClose}
+          onClose={onCodeGenClose}
         />
       )}
 
@@ -963,7 +971,7 @@ onScenarioGenClose,
                         : 'bg-[#3615CF] text-white hover:shadow-md hover:bg-[#3615CF]/90'
                     }`}>
                     <CheckCircle className="w-3.5 h-3.5" />
-                    {isGeneratingCode ? '코드 생성중...' : hasPendingAIReview ? `검토 확인 (${pendingAIReviewCount})` : '검토 확인'}
+                    {isGeneratingCode ? '코드 생성중...' : hasPendingAIReview ? `검토 확인 (${pendingAIReviewCount})` : '코드 생성'}
                   </button>
                 ) : (
                   <>

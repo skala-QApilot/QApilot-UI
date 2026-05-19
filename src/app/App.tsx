@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
 import { onAuthExpired, ApiError } from '../api/client';
-import { startScenarioGeneration } from '../api/agent';
+import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
 import { useTracePolling } from '../hooks/useTracePolling';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
@@ -381,21 +381,71 @@ export default function App() {
     ]);
   };
 
-  const onReviewConfirm = () => {
-    const stableVersions = scenarioVersions.filter(v => !v.hasChange);
-    const latestLabel = stableVersions[stableVersions.length - 1]?.label ?? 'v1.0';
-    const match = latestLabel.match(/^v(\d+)\.(\d+)$/);
-    const [major, minor] = match ? [parseInt(match[1]), parseInt(match[2])] : [1, 0];
-    const newLabel = `v${major}.${minor + 1}`;
-    const today = new Date();
-    const date = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    setScenarioVersions([
-      ...stableVersions,
-      { id: newLabel, label: newLabel, date, hasChange: false, isFavorite: false },
-    ]);
-    setSelectedScenarioVersion(newLabel);
+  // ── C5: 코드 생성 trigger + 폴링 ─────────────────────────────────────────
+  // "검토 확인" 버튼이 누르면 FastAPI Layer 1B(generate_code) 를 호출한다.
+  // 오버레이가 1B 3단계(액션 매핑 → Playwright 코드 → 저장) 메시지를 표시.
+  const [showCodeGenOverlay, setShowCodeGenOverlay] = useState(false);
+  const [codeGenTraceId, setCodeGenTraceId] = useState<string | null>(null);
+  const [codeGenError, setCodeGenError] = useState<string | null>(null);
+  const codeGenPolling = useTracePolling(currentServiceId, codeGenTraceId);
+
+  useEffect(() => {
+    if (!codeGenTraceId) return;
+    if (codeGenPolling.status === 'completed') {
+      if (currentServiceId) {
+        loadScenarioDomain(currentServiceId).then(() => {
+          const s = useScenarioStore.getState();
+          setDynamicScenarios(s.scenarios.map(toUiScenario));
+          const tcMap: TestCaseMap = {};
+          for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
+            tcMap[tsId] = list.map(toUiTestCase);
+          }
+          setDynamicTestCases(tcMap);
+          setDynamicAIItems(toUiAIItemsByScenario(s.changeRequests));
+          setScenarioVersions(s.versions.map(toUiVersion));
+        });
+      }
+    } else if (
+      codeGenPolling.status === 'failed' ||
+      codeGenPolling.status === 'error'
+    ) {
+      setCodeGenError(codeGenPolling.error?.message ?? '코드 생성에 실패했습니다.');
+    }
+  }, [codeGenPolling.status, codeGenTraceId, currentServiceId, loadScenarioDomain]);
+
+  const closeCodeGenOverlay = () => {
+    setShowCodeGenOverlay(false);
+    setCodeGenTraceId(null);
+    setCodeGenError(null);
+  };
+
+  /**
+   * "검토 확인" 버튼 핸들러 — 검토 끝난 시나리오들로 코드 생성 trigger.
+   * (이전 mock 흐름: scenario 버전 라벨링 + AI items 비우기) 는 트레이스 완료 시
+   * scenarioStore.loadAll 결과로 자연스럽게 처리됨.
+   */
+  const onReviewConfirm = async () => {
+    if (!currentServiceId) {
+      console.warn('onReviewConfirm: serviceId 미확보');
+      return;
+    }
+    setCodeGenError(null);
+    setShowCodeGenOverlay(true);
+    // 로컬 AI 액션은 클리어 (서버 영속화는 후속 PR)
     setAiItemActions({});
-    setDynamicAIItems({});
+    try {
+      const accessToken = useAuthStore.getState().accessToken;
+      if (!accessToken) throw new Error('인증 토큰이 없습니다.');
+      const resp = await startCodeGeneration(currentServiceId, null, accessToken);
+      setCodeGenTraceId(resp.trace_id);
+    } catch (err) {
+      const msg = err instanceof ApiError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : '코드 생성 요청에 실패했습니다.';
+      setCodeGenError(msg);
+    }
   };
 
   const triggerCodeChangeDetection = () => {
@@ -967,6 +1017,10 @@ export default function App() {
                 scenarioGenStatus={scenarioGenPolling.status}
                 scenarioGenError={scenarioGenError}
                 onScenarioGenClose={closeScenarioGeneratingOverlay}
+                showCodeGenOverlay={showCodeGenOverlay}
+                codeGenStatus={codeGenPolling.status}
+                codeGenError={codeGenError}
+                onCodeGenClose={closeCodeGenOverlay}
               />
             )}
             {currentPage === '테스트' && (
