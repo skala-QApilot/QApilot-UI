@@ -9,6 +9,7 @@ import { FileList } from './components/common/FileList';
 import { NavBar } from './components/common/NavBar';
 import { HomePage, type ProjectMeta, type ProjectSummary } from './pages/HomePage';
 import { TestRunningPage } from './pages/TestRunningPage';
+import { TestResultPage } from './pages/TestResultPage';
 import { RTMPage } from './pages/RTMPage';
 import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
@@ -223,9 +224,8 @@ export default function App() {
   const [fileChangeDetected, setFileChangeDetected] = useState(false);
 
   // 테스트 페이지 (진행중 / 이력)
-  const [testSubTab, setTestSubTab] = useState<'INPROGRESS' | 'HISTORY'>('INPROGRESS');
   const [runningTests, setRunningTests] = useState<Array<{
-    id: string; name: string; groupId: string; startTime: string; status: 'running' | 'completed';
+    id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'completed';
   }>>([
     { id: 'run-001', name: '나의 진행 중인 테스트', groupId: 'TG-001', startTime: '2026-05-12 14:32', status: 'running' },
   ]);
@@ -669,8 +669,6 @@ export default function App() {
         <LeftNavigation
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
-          testSubTab={testSubTab}
-          setTestSubTab={setTestSubTab}
           runningTests={runningTests}
         />
 
@@ -857,7 +855,6 @@ export default function App() {
                 selectedScenarioGroupId={selectedScenarioGroupId}
                 setSelectedScenarioGroupId={setSelectedScenarioGroupId}
                 setRunningTests={setRunningTests}
-                setTestSubTab={setTestSubTab}
                 setSelectedRunningTestId={setSelectedRunningTestId}
                 setSelectedTestGroup={setSelectedTestGroup}
                 setSelectedRunningForDetail={setSelectedRunningForDetail}
@@ -875,7 +872,7 @@ export default function App() {
               />
             )}
             {currentPage === '테스트' && (
-              testSubTab === 'INPROGRESS' ? (
+              selectedRunningTestId ? (
                 <TestRunningPage
                   runningTests={runningTests}
                   selectedRunningTestId={selectedRunningTestId}
@@ -890,31 +887,19 @@ export default function App() {
                   advanceAgentStage={advanceAgentStage}
                   getNodeStatus={getNodeStatus}
                   setShowCompletionModal={setShowCompletionModal}
-                />
-              ) : (
-                <TestPage
-                  runningTests={runningTests}
+                  selectedRunningForDetail={selectedRunningForDetail}
+                  showCompletionModal={showCompletionModal}
                   setRunningTests={setRunningTests}
-                  setSelectedRunningTestId={setSelectedRunningTestId}
-                  setSelectedTestGroup={setSelectedTestGroup}
-                  isTestRunning={isTestRunning}
-                  setIsTestRunning={setIsTestRunning}
-                  completedAgentStages={completedAgentStages}
-                  setCompletedAgentStages={setCompletedAgentStages}
-                  currentAgentStage={currentAgentStage}
-                  setCurrentAgentStage={setCurrentAgentStage}
                   scenarioSidebarTab={scenarioSidebarTab}
                   setScenarioSidebarTab={setScenarioSidebarTab}
                   expandedScenarios={expandedScenarios}
                   setExpandedScenarios={setExpandedScenarios}
                   expandedTestCases={expandedTestCases}
                   setExpandedTestCases={setExpandedTestCases}
-                  highlightedLogIdx={highlightedLogIdx}
-                  setHighlightedLogIdx={setHighlightedLogIdx}
-                  historyFilter={historyFilter}
-                  setHistoryFilter={setHistoryFilter}
-                  historySearchQuery={historySearchQuery}
-                  setHistorySearchQuery={setHistorySearchQuery}
+                  setSelectedExecutionId={setSelectedExecutionId}
+                />
+              ) : selectedExecutionId ? (
+                <TestResultPage
                   selectedExecutionId={selectedExecutionId}
                   setSelectedExecutionId={setSelectedExecutionId}
                   selectedFailTC={selectedFailTC}
@@ -924,12 +909,17 @@ export default function App() {
                   retestCheckedIds={retestCheckedIds}
                   setRetestCheckedIds={setRetestCheckedIds}
                   setShowRetestNavModal={setShowRetestNavModal}
-                  selectedRunningForDetail={selectedRunningForDetail}
-                  setSelectedRunningForDetail={setSelectedRunningForDetail}
-                  advanceAgentStage={advanceAgentStage}
-                  getNodeStatus={getNodeStatus}
-                  showCompletionModal={showCompletionModal}
-                  setShowCompletionModal={setShowCompletionModal}
+                />
+              ) : (
+                <TestPage
+                  runningTests={runningTests}
+                  setSelectedRunningTestId={setSelectedRunningTestId}
+                  setSelectedTestGroup={setSelectedTestGroup}
+                  historyFilter={historyFilter}
+                  setHistoryFilter={setHistoryFilter}
+                  historySearchQuery={historySearchQuery}
+                  setHistorySearchQuery={setHistorySearchQuery}
+                  setSelectedExecutionId={setSelectedExecutionId}
                 />
               )
             )}
@@ -1004,7 +994,7 @@ export default function App() {
                   setRetestCheckedIds(new Set());
                   setShowRetestNavModal(false);
                   setCurrentPage('테스트');
-                  setTestSubTab('HISTORY');
+                  setSelectedRunningForDetail(newRun.id);
                   setSelectedRunningForDetail(newRun.id);
                 }}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium text-sm hover:shadow-md transition-shadow"
