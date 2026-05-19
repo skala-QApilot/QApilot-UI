@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getTrace, type TraceResponse } from '../api/trace';
-import { useAuthStore, DEV_BYPASS_SENTINEL } from '../store/authStore';
+import { useAuthStore } from '../store/authStore';
 
 export type TraceStatus = 'idle' | 'polling' | 'completed' | 'failed' | 'error';
 
@@ -22,7 +22,6 @@ const TERMINAL_TRACE_STATUSES = new Set(['completed', 'failed', 'succeeded', 'er
  * trace_id 기반 Agent 실행 상태를 주기 폴링한다.
  * - trace.status 가 completed/failed/succeeded/error 면 자동 중지.
  * - traceId/serviceId 가 비거나 enabled=false 면 폴링 안 함.
- * - dev bypass sentinel 토큰 상태에서는 API 호출 없이 idle 유지 (mock 흐름 보존).
  */
 export function useTracePolling(
   serviceId: string | null | undefined,
@@ -47,7 +46,7 @@ export function useTracePolling(
     }
 
     const token = useAuthStore.getState().accessToken;
-    if (!token || token === DEV_BYPASS_SENTINEL) {
+    if (!token) {
       setStatus('idle');
       return;
     }

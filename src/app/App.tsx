@@ -28,7 +28,7 @@ import {
 import AgentTracePanel from './components/AgentTracePanel';
 import { getProject, type ProjectDashboardResponse } from '../api/projects';
 import { ApiError, onAuthExpired } from '../api/client';
-import { useAuthStore, DEV_BYPASS_SENTINEL } from '../store/authStore';
+import { useAuthStore } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import {
   mockAIItems,
@@ -258,13 +258,6 @@ export default function App() {
     if (!token) {
       setProjectLoadState('idle');
       setShowAuthForProject(true);
-      return;
-    }
-
-    // dev bypass 모드: 실 API 호출 없이 mockData 로 진행
-    if (token === DEV_BYPASS_SENTINEL) {
-      setProjectLoadState('loaded');
-      setShowAuthForProject(false);
       return;
     }
 
