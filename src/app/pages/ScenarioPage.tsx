@@ -89,6 +89,7 @@ codeGenStatus = 'idle',
 codeGenError = null,
 onCodeGenClose,
 onAIItemAction,
+onStartTestRun,
 }: ScenarioPageProps) => {
 
   const viewMode = viewModeProp as 'table' | 'graph';
@@ -990,18 +991,24 @@ onAIItemAction,
                   <>
                     {/* E2E TEST 실행 */}
                     <button
-                      onClick={() => {
-                        const newRun = {
-                          id: `run-${Date.now()}`,
-                          name: 'E2E TEST',
-                          groupId: null,
-                          startTime: (() => { const n = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`; })(),
-                          status: 'running' as const,
-                        };
-                        (setRunningTests as any)((prev: any[]) => [...prev, newRun]);
-                        (setSelectedRunningTestId as any)(newRun.id);
-                        (setSelectedRunningForDetail as any)(newRun.id);
-                        setCurrentPage('테스트');
+                      onClick={async () => {
+                        if (onStartTestRun) {
+                          const runId = await onStartTestRun({ filter: 'all' }, { name: 'E2E TEST' });
+                          if (runId) setCurrentPage('테스트');
+                        } else {
+                          // fallback (테스트/스토리북 등)
+                          const newRun = {
+                            id: `run-${Date.now()}`,
+                            name: 'E2E TEST',
+                            groupId: null,
+                            startTime: new Date().toISOString().slice(0, 16).replace('T', ' '),
+                            status: 'running' as const,
+                          };
+                          (setRunningTests as any)((prev: any[]) => [...prev, newRun]);
+                          (setSelectedRunningTestId as any)(newRun.id);
+                          (setSelectedRunningForDetail as any)(newRun.id);
+                          setCurrentPage('테스트');
+                        }
                       }}
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#3615CF] text-white text-xs font-semibold hover:shadow-md hover:bg-[#3615CF]/90 transition-all">
                       <Play className="w-3.5 h-3.5" />
@@ -1072,21 +1079,32 @@ onAIItemAction,
                         </button>
                         <button
                           disabled={hasPendingAIReview || isGeneratingCode}
-                          onClick={e => {
+                          onClick={async e => {
                             e.stopPropagation();
                             if (hasPendingAIReview || isGeneratingCode) return;
-                            const newRun = {
-                              id: `run-${Date.now()}`,
-                              name: group.name,
-                              groupId: group.id,
-                              startTime: (() => { const n = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`; })(),
-                              status: 'running' as const,
-                            };
-                            (setRunningTests as any)(prev => [...prev, newRun]);
-                            (setSelectedRunningTestId as any)(newRun.id);
-                            (setSelectedTestGroup as any)(group.name);
-                            (setSelectedRunningForDetail as any)(newRun.id);
-                            setCurrentPage('테스트');
+                            if (onStartTestRun) {
+                              const runId = await onStartTestRun(
+                                { scenario_ids: group.scenarios, filter: 'all' },
+                                { name: group.name, groupId: group.id },
+                              );
+                              if (runId) {
+                                (setSelectedTestGroup as any)(group.name);
+                                setCurrentPage('테스트');
+                              }
+                            } else {
+                              const newRun = {
+                                id: `run-${Date.now()}`,
+                                name: group.name,
+                                groupId: group.id,
+                                startTime: new Date().toISOString().slice(0, 16).replace('T', ' '),
+                                status: 'running' as const,
+                              };
+                              (setRunningTests as any)((prev: any[]) => [...prev, newRun]);
+                              (setSelectedRunningTestId as any)(newRun.id);
+                              (setSelectedTestGroup as any)(group.name);
+                              (setSelectedRunningForDetail as any)(newRun.id);
+                              setCurrentPage('테스트');
+                            }
                           }}
                           className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium transition-colors ${
                             hasPendingAIReview || isGeneratingCode
@@ -1193,21 +1211,35 @@ onAIItemAction,
               ))}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => {
+              <button onClick={async () => {
+                const groupName = groupNameInput || `시나리오 그룹`;
+                // 선택된 TC 들의 부모 TS id 집합을 scenario_ids 로 전달
+                const scenarioIds = Array.from(new Set(selectedTCs.map(t => t.tsId)));
                 setShowTestGroupModal(false);
                 setSelectedTCIds([]);
-                const newRun = {
-                  id: `run-${Date.now()}`,
-                  name: groupNameInput || `시나리오 그룹`,
-                  groupId: `group-${Date.now()}`,
-                  startTime: (() => { const n = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`; })(),
-                  status: 'running' as const,
-                };
-                (setRunningTests as any)(prev => [...prev, newRun]);
-                (setSelectedRunningTestId as any)(newRun.id);
-                (setSelectedTestGroup as any)(groupNameInput || `시나리오 그룹`);
-                (setSelectedRunningForDetail as any)(newRun.id);
-                setCurrentPage('테스트');
+                if (onStartTestRun) {
+                  const runId = await onStartTestRun(
+                    { scenario_ids: scenarioIds, filter: 'all' },
+                    { name: groupName, groupId: `group-${Date.now()}` },
+                  );
+                  if (runId) {
+                    (setSelectedTestGroup as any)(groupName);
+                    setCurrentPage('테스트');
+                  }
+                } else {
+                  const newRun = {
+                    id: `run-${Date.now()}`,
+                    name: groupName,
+                    groupId: `group-${Date.now()}`,
+                    startTime: new Date().toISOString().slice(0, 16).replace('T', ' '),
+                    status: 'running' as const,
+                  };
+                  (setRunningTests as any)((prev: any[]) => [...prev, newRun]);
+                  (setSelectedRunningTestId as any)(newRun.id);
+                  (setSelectedTestGroup as any)(groupName);
+                  (setSelectedRunningForDetail as any)(newRun.id);
+                  setCurrentPage('테스트');
+                }
               }}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium">
                 생성 확인

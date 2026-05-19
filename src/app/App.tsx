@@ -29,6 +29,7 @@ import {
 import AgentTracePanel from './components/AgentTracePanel';
 import { onAuthExpired, ApiError } from '../api/client';
 import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
+import { startRun, type RunCreatePayload } from '../api/runs';
 import { useTracePolling } from '../hooks/useTracePolling';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
@@ -426,6 +427,44 @@ export default function App() {
     setShowCodeGenOverlay(false);
     setCodeGenTraceId(null);
     setCodeGenError(null);
+  };
+
+  /**
+   * 테스트 실행 시작 — Spring `POST /runs` 호출 → trace_id 받아서 runningTests 에 추가.
+   * 실패 시 콘솔 에러 (toast 는 추후).
+   */
+  const handleStartTestRun = async (
+    payload: RunCreatePayload = {},
+    options: { name?: string; groupId?: string | null } = {},
+  ): Promise<string | null> => {
+    if (!currentServiceId) {
+      console.warn('handleStartTestRun: serviceId 미확보');
+      return null;
+    }
+    try {
+      const run = await startRun(currentServiceId, payload);
+      const startTime = (() => {
+        const n = new Date();
+        const p = (v: number) => String(v).padStart(2, '0');
+        return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`;
+      })();
+      setRunningTests(prev => [
+        ...prev,
+        {
+          id: run.id,
+          name: options.name ?? run.name ?? 'E2E TEST',
+          groupId: options.groupId ?? null,
+          startTime,
+          status: 'running',
+        },
+      ]);
+      setSelectedRunningTestId(run.id);
+      setSelectedRunningForDetail(run.id);
+      return run.id;
+    } catch (err) {
+      console.error('테스트 실행 시작 실패', err);
+      return null;
+    }
   };
 
   /**
@@ -1056,6 +1095,7 @@ export default function App() {
                 codeGenError={codeGenError}
                 onCodeGenClose={closeCodeGenOverlay}
                 onAIItemAction={handleAIItemAction}
+                onStartTestRun={handleStartTestRun}
               />
             )}
             {currentPage === '테스트' && (
