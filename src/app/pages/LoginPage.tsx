@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import axios from 'axios';
+import { login as loginApi, register as registerApi } from '../../api/auth';
+import { ApiError } from '../../api/client';
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -36,36 +39,27 @@ export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
     setLoading(true);
 
     try {
-      const url = isLogin ? '/api/auth/login' : '/api/auth/register';
-      const body = isLogin
-        ? { email, password }
-        : {
+      const auth = isLogin
+        ? await loginApi(email, password)
+        : await registerApi({
             name,
             email,
             password,
             project_slug: projectSlug,
             ...(serverAuthToken ? { server_auth_token: serverAuthToken } : {}),
-          };
+          });
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data?.message || defaultErrorMessage(res.status, mode));
-        return;
-      }
-
-      const auth = data?.data ?? data;
       localStorage.setItem('qapilot_access_token', String(auth.access_token));
       if (auth.refresh_token) localStorage.setItem('qapilot_refresh_token', String(auth.refresh_token));
       onLogin();
-    } catch {
-      setError('서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message || defaultErrorMessage(err.status ?? 0, mode));
+      } else if (axios.isAxiosError(err)) {
+        setError(defaultErrorMessage(err.response?.status ?? 0, mode));
+      } else {
+        setError('서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.');
+      }
     } finally {
       setLoading(false);
     }
