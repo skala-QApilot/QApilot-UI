@@ -80,13 +80,12 @@ setSelectedTestGroup,
 setSelectedRunningForDetail,
 viewMode: viewModeProp = 'table',
 setViewMode: setViewModeProp,
+showGeneratingOverlay = false,
+setShowGeneratingOverlay,
 }: ScenarioPageProps) => {
 
   const viewMode = viewModeProp as 'table' | 'graph';
   const setViewMode = setViewModeProp as (m: 'table' | 'graph') => void;
-
-  // 시나리오 생성 오버레이
-  const [showGeneratingOverlay, setShowGeneratingOverlay] = React.useState(false);
   const [showReviewActions, setShowReviewActions] = React.useState(false);
   const [isGeneratingCode, setIsGeneratingCode] = React.useState(false);
   const generateCodeTimerRef = React.useRef<number | null>(null);
@@ -451,7 +450,12 @@ setViewMode: setViewModeProp,
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="relative flex flex-col h-full">
+
+      {/* 시나리오 생성 오버레이 — 전체 페이지 커버 */}
+      {showGeneratingOverlay && (
+        <ScenarioGeneratingOverlay onComplete={() => setShowGeneratingOverlay(false)} />
+      )}
 
       <div className="flex flex-1 overflow-hidden">
 
@@ -531,11 +535,6 @@ setViewMode: setViewModeProp,
         <div
           className={`bg-white flex flex-col flex-shrink-0 relative ${viewMode === 'table' ? 'flex-1' : ''}`}
           style={viewMode === 'graph' ? { width: leftSidebarWidth } : undefined}>
-
-          {/* AI 시나리오 생성 오버레이 — 이 패널 위에만 표시 */}
-          {showGeneratingOverlay && (
-            <ScenarioGeneratingOverlay onComplete={() => setShowGeneratingOverlay(false)} />
-          )}
 
           {/* Tree header */}
           <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#f0f0f0] bg-white flex-shrink-0">

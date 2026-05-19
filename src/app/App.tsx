@@ -509,7 +509,7 @@ export default function App() {
     );
   }
 
-  if (isProjectRoute && (projectLoadState === 'loading' || projectLoadState === 'idle')) {
+  if (isProjectRoute && !selectedService && (projectLoadState === 'loading' || projectLoadState === 'idle')) {
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f4f0ff_0%,#ffffff_60%)] text-[#1a1a2e] flex items-center justify-center px-6">
         <div className="max-w-lg w-full rounded-[2rem] border border-[#ece9fb] bg-white/90 shadow-xl px-8 py-10 text-center">
@@ -521,7 +521,7 @@ export default function App() {
     );
   }
 
-  if (isProjectRoute && projectLoadState === 'missing') {
+  if (isProjectRoute && !selectedService && projectLoadState === 'missing') {
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_58%)] text-[#1a1a2e] flex items-center justify-center px-6">
         <div className="max-w-xl w-full rounded-[2rem] border border-[#f5d6c0] bg-white shadow-xl px-8 py-10">
@@ -563,11 +563,17 @@ export default function App() {
     navigate(`/${newService.id}/setup`);
   };
 
+  const [showScenarioGenerating, setShowScenarioGenerating] = useState(false);
+
   const handleGenerateScenarios = () => {
     if (selectedServiceId) {
       setServices(prev => prev.map(s => s.id === selectedServiceId ? { ...s, isNew: false } : s));
       navigate(`/${selectedServiceId}/scenarios`);
     }
+    setDynamicScenarios([]);
+    setDynamicAIItems({});
+    setDynamicTestCases({});
+    setShowScenarioGenerating(true);
   };
 
 
@@ -881,6 +887,15 @@ export default function App() {
                 setSelectedRunningForDetail={setSelectedRunningForDetail}
                 viewMode={scenarioViewMode}
                 setViewMode={setScenarioViewMode}
+                showGeneratingOverlay={showScenarioGenerating}
+                setShowGeneratingOverlay={(v: boolean) => {
+                  setShowScenarioGenerating(v);
+                  if (!v) {
+                    setDynamicScenarios([...mockScenarios]);
+                    setDynamicAIItems({ ...mockAIItems });
+                    setDynamicTestCases({ ...mockTestCases });
+                  }
+                }}
               />
             )}
             {currentPage === '테스트' && (
@@ -951,6 +966,7 @@ export default function App() {
                 projectSummary={projectSummary}
                 onGenerateScenarios={handleGenerateScenarios}
               />
+
             )}
           </div>
         </div>
