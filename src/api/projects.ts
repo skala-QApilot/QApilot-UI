@@ -10,15 +10,9 @@ export interface ProjectDashboardResponse {
   };
 }
 
-export async function getProject(
-  projectSlug: string,
-  accessToken: string,
-): Promise<ProjectDashboardResponse> {
+export async function getProject(projectSlug: string): Promise<ProjectDashboardResponse> {
   const res = await api.get<ProjectDashboardResponse>(
     `/api/projects/${encodeURIComponent(projectSlug)}`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    },
   );
   return res.data;
 }

@@ -26,9 +26,9 @@ import {
   Sparkles, Star, FolderOpen,
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
-import { getProject, type ProjectDashboardResponse } from '../api/projects';
-import { ApiError, onAuthExpired } from '../api/client';
+import { onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { useProjectStore } from '../store/projectStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import {
   mockAIItems,
@@ -121,27 +121,30 @@ export default function App() {
     });
   }, [navigate]);
 
-  // services (top-level dashboard list)
-  const [services, setServices] = useState<Service[]>(
-    isProjectRoute
-      ? []
-      : [
-          { id: 'svc-1', name: 'Frontend App', isNew: false, createdAt: '2026-01-15' },
-          { id: 'svc-2', name: 'Backend API', isNew: false, createdAt: '2026-02-20' },
-        ]
-  );
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(projectSlug || 'svc-1');
+  // ── project domain (projectStore) ─────────────────────────────────────────
+  const services = useProjectStore((s) => s.services);
+  const projectMeta = useProjectStore((s) => s.projectMeta);
+  const projectSummary = useProjectStore((s) => s.projectSummary);
+  const projectCredentials = useProjectStore((s) => s.projectCredentials);
+  const projectLoadState = useProjectStore((s) => s.loadState);
+  const showAuthForProject = useProjectStore((s) => s.showAuthForProject);
+  const loadServices = useProjectStore((s) => s.loadServices);
+  const loadProject = useProjectStore((s) => s.loadProject);
+  const createServiceInStore = useProjectStore((s) => s.createService);
+  const markServiceSetupDone = useProjectStore((s) => s.markServiceSetupDone);
+  const setShowAuthForProject = useProjectStore((s) => s.setShowAuthForProject);
+  const clearProjectAuth = useProjectStore((s) => s.clearProjectAuth);
+
+  /** URL slug 가 selectedServiceId 의 역할을 한다 (NavBar 등 호환용). */
+  const selectedServiceId = projectSlug;
+  const setSelectedServiceId = (_id: string | null) => {
+    /* URL-driven — handler 가 navigate 로 처리 */
+  };
+
+  const [authRetry, setAuthRetry] = useState(0);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [homeTab, setHomeTab] = useState('overview');
   const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
-  const [projectMeta, setProjectMeta] = useState<ProjectMeta | null>(null);
-  const [projectSummary, setProjectSummary] = useState<ProjectSummary | null>(null);
-  const [projectCredentials, setProjectCredentials] = useState<{ dashboard_url: string; server_auth_token: string } | null>(null);
-  const [showAuthForProject, setShowAuthForProject] = useState(false);
-  const [authRetry, setAuthRetry] = useState(0);
-  const [projectLoadState, setProjectLoadState] = useState<'idle' | 'loading' | 'loaded' | 'missing' | 'error'>(
-    isProjectRoute ? 'loading' : 'idle'
-  );
 
   // pipeline header
   const [showAgentTrace, setShowAgentTrace] = useState(false);
@@ -251,56 +254,22 @@ export default function App() {
   const [rtmVersionOpen, setRtmVersionOpen] = useState(false);
   const currentRtmVersion = mockRTMVersions.find(v => v.id === selectedRtmVersion) ?? mockRTMVersions[0];
 
+  // 인증된 상태에서 서비스 목록 1회 로드 (DashHomePage 진입 시 사용)
+  useEffect(() => {
+    if (useAuthStore.getState().isAuthenticated()) {
+      loadServices().catch(() => {/* 목록 실패는 화면별로 처리 */});
+    }
+  }, [loadServices]);
+
+  // 프로젝트 라우트 진입 시 메타/요약 로드
   useEffect(() => {
     if (!projectSlug) return;
-
-    const token = useAuthStore.getState().accessToken;
-    if (!token) {
-      setProjectLoadState('idle');
+    if (!useAuthStore.getState().isAuthenticated()) {
       setShowAuthForProject(true);
       return;
     }
-
-    let cancelled = false;
-    setProjectLoadState('loading');
-    setShowAuthForProject(false);
-
-    getProject(projectSlug, token)
-      .then((data: ProjectDashboardResponse) => {
-        if (cancelled) return;
-        setProjectMeta(data.project);
-        setProjectSummary(data.summary);
-        if (data.credentials) setProjectCredentials(data.credentials);
-        setServices([
-          {
-            id: data.project.project_slug,
-            name: data.project.display_name,
-            isNew: false,
-            createdAt: (data.project.updated_at || data.project.created_at || '').slice(0, 10),
-          },
-        ]);
-        setSelectedServiceId(data.project.project_slug);
-        // currentPage 는 이미 URL 에서 도출되므로 별도 setCurrentPage 불필요
-        setProjectLoadState('loaded');
-      })
-      .catch(error => {
-        if (cancelled) return;
-        const status = error instanceof ApiError ? error.status : undefined;
-        if (status === 401) {
-          useAuthStore.getState().logout();
-          setShowAuthForProject(true);
-          setProjectLoadState('idle');
-        } else if (status === 404) {
-          setProjectLoadState('missing');
-        } else {
-          setProjectLoadState('error');
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectSlug, authRetry]);
+    loadProject(projectSlug);
+  }, [projectSlug, authRetry, loadProject, setShowAuthForProject]);
 
   // derived
   const unreadNotifications = mockNotifications.filter(n => !n.read).length;
@@ -544,23 +513,23 @@ export default function App() {
   }
 
   const handleServiceSelect = (service: Service) => {
-    setSelectedServiceId(service.id);
     navigate(service.isNew ? `/${service.id}/setup` : `/${service.id}`);
   };
 
-  const handleCreateService = (name: string) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const newService: Service = { id: `svc-${Date.now()}`, name, isNew: true, createdAt: today };
-    setServices(prev => [...prev, newService]);
-    setSelectedServiceId(newService.id);
-    navigate(`/${newService.id}/setup`);
+  const handleCreateService = async (name: string) => {
+    try {
+      const service = await createServiceInStore({ name });
+      navigate(`/${service.id}/setup`);
+    } catch (error) {
+      console.error('서비스 생성 실패', error);
+    }
   };
 
   const [showScenarioGenerating, setShowScenarioGenerating] = useState(false);
 
   const handleGenerateScenarios = () => {
     if (selectedServiceId) {
-      setServices(prev => prev.map(s => s.id === selectedServiceId ? { ...s, isNew: false } : s));
+      markServiceSetupDone(selectedServiceId);
       navigate(`/${selectedServiceId}/scenarios`);
     }
     setDynamicScenarios([]);
