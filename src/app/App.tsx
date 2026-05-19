@@ -29,6 +29,7 @@ import AgentTracePanel from './components/AgentTracePanel';
 import { onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
+import { useRtmStore } from '../store/rtmStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import {
   mockAIItems,
@@ -42,7 +43,6 @@ import {
   mockTestCases,
   mockTestGroups,
   mockTestLogs,
-  mockRTMVersions,
   type TestCaseMap,
 } from './data/mockData';
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
@@ -248,11 +248,25 @@ export default function App() {
   const [selectedFailTC, setSelectedFailTC] = useState<string | null>(null);
   const [historyDetailTab, setHistoryDetailTab] = useState<'FAIL' | 'PASS'>('FAIL');
 
-  // RTM
+  // RTM (rtmStore)
+  const rtmVersions = useRtmStore((s) => s.versions);
+  const selectedRtmVersion = useRtmStore((s) => s.selectedVersionId);
+  const setSelectedRtmVersion = useRtmStore((s) => s.selectVersion);
+  const loadRtmVersions = useRtmStore((s) => s.loadVersions);
+  const currentRtmVersion = useRtmStore((s) => s.getSelectedVersion());
   const [expandedRTMItems, setExpandedRTMItems] = useState<string[]>([]);
-  const [selectedRtmVersion, setSelectedRtmVersion] = useState(mockRTMVersions[0].id);
   const [rtmVersionOpen, setRtmVersionOpen] = useState(false);
-  const currentRtmVersion = mockRTMVersions.find(v => v.id === selectedRtmVersion) ?? mockRTMVersions[0];
+
+  /** 현재 URL slug 에 해당하는 백엔드 service_id (RTM/runs 등 service-scope API 호출용) */
+  const currentServiceId = useProjectStore(
+    (s) => s.services.find((svc) => svc.id === projectSlug)?.serviceId ?? null,
+  );
+
+  useEffect(() => {
+    if (!currentServiceId) return;
+    if (!useAuthStore.getState().isAuthenticated()) return;
+    loadRtmVersions(currentServiceId);
+  }, [currentServiceId, loadRtmVersions]);
 
   // 인증된 상태에서 서비스 목록 1회 로드 (DashHomePage 진입 시 사용)
   useEffect(() => {
@@ -675,33 +689,33 @@ export default function App() {
                 currentPage === 'RTM' ? 'RTM' :
                 currentPage === '설정' ? '설정' : ''
               }
-              titleExtra={currentPage === 'RTM' ? (
+              titleExtra={currentPage === 'RTM' && currentRtmVersion ? (
                 <div className="relative ml-1">
                   <button
                     onClick={() => setRtmVersionOpen(v => !v)}
                     className="flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-[#3615CF]/10 hover:bg-[#3615CF]/15 transition-colors"
                   >
-                    <span className="text-[11px] font-semibold text-[#3615CF]">{currentRtmVersion.id}</span>
+                    <span className="text-[11px] font-semibold text-[#3615CF]">{currentRtmVersion.label}</span>
                     <ChevronDown className="w-3 h-3 text-[#3615CF]" />
                   </button>
                   {rtmVersionOpen && (
                     <div className="absolute left-0 top-full mt-1 w-72 bg-white rounded-lg shadow-lg border border-[#f0f0f0] z-50">
                       <div className="p-2">
                         <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wide px-2 py-1.5">RTM 버전 선택</div>
-                        {mockRTMVersions.map(ver => (
+                        {rtmVersions.map(ver => (
                           <button
-                            key={ver.id}
-                            onClick={() => { setSelectedRtmVersion(ver.id); setRtmVersionOpen(false); }}
+                            key={ver.rtmVersionId}
+                            onClick={() => { setSelectedRtmVersion(ver.rtmVersionId); setRtmVersionOpen(false); }}
                             className={`w-full flex items-start gap-2 px-2 py-2 rounded text-left hover:bg-gray-50 transition-colors ${
-                              selectedRtmVersion === ver.id ? 'bg-[#3615CF]/8' : ''
+                              selectedRtmVersion === ver.rtmVersionId ? 'bg-[#3615CF]/8' : ''
                             }`}
                           >
-                            <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${selectedRtmVersion === ver.id ? 'bg-[#3615CF]' : 'bg-gray-300'}`} />
+                            <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${selectedRtmVersion === ver.rtmVersionId ? 'bg-[#3615CF]' : 'bg-gray-300'}`} />
                             <div className="min-w-0">
-                              <div className={`text-xs font-semibold ${selectedRtmVersion === ver.id ? 'text-[#3615CF]' : 'text-[#1a1a2e]'}`}>
+                              <div className={`text-xs font-semibold ${selectedRtmVersion === ver.rtmVersionId ? 'text-[#3615CF]' : 'text-[#1a1a2e]'}`}>
                                 {ver.label}
                               </div>
-                              <div className="text-[10px] text-[#9ca3af] mt-0.5">{ver.date} · {ver.basedOn}</div>
+                              <div className="text-[10px] text-[#9ca3af] mt-0.5">{(ver.createdAt || '').slice(0, 10)}</div>
                             </div>
                           </button>
                         ))}

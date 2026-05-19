@@ -1,24 +1,46 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle, ChevronRight, Clock, XCircle } from 'lucide-react';
 import { RTMDonutChart } from '../components/common/RTMDonutChart';
-import { mockRTMRequirements } from '../data/mockData';
+import { useRtmStore } from '../../store/rtmStore';
 
 export const RTMPage = () => {
-  const [selectedFrId, setSelectedFrId] = useState(mockRTMRequirements[0].frId);
+  const selectedVersion = useRtmStore((s) => s.getSelectedVersion());
+  const requirements = selectedVersion?.requirements ?? [];
+  const loadState = useRtmStore((s) => s.loadState);
 
-  const selectedFr = mockRTMRequirements.find(r => r.frId === selectedFrId) ?? mockRTMRequirements[0];
-  const totalReqs = mockRTMRequirements.length;
-  const metReqs = mockRTMRequirements.filter(r => r.status === '충족').length;
-  const unmetReqs = mockRTMRequirements.filter(r => r.status === '미충족').length;
-  const unrunReqs = mockRTMRequirements.filter(r => r.totalCount === 0).length;
+  const [selectedFrId, setSelectedFrId] = useState<string | null>(null);
 
-  const overallPassTotal = mockRTMRequirements.reduce((s, r) => s + r.passCount, 0);
-  const overallTotal = mockRTMRequirements.reduce((s, r) => s + r.totalCount, 0);
+  useEffect(() => {
+    if (requirements.length > 0 && (!selectedFrId || !requirements.some((r) => r.frId === selectedFrId))) {
+      setSelectedFrId(requirements[0].frId);
+    }
+  }, [requirements, selectedFrId]);
+
+  const selectedFr = requirements.find((r) => r.frId === selectedFrId) ?? requirements[0];
+  const totalReqs = requirements.length;
+  const metReqs = requirements.filter((r) => r.status === '충족').length;
+  const unmetReqs = requirements.filter((r) => r.status === '미충족').length;
+  const unrunReqs = requirements.filter((r) => r.totalCount === 0).length;
+
+  const overallPassTotal = requirements.reduce((s, r) => s + r.passCount, 0);
+  const overallTotal = requirements.reduce((s, r) => s + r.totalCount, 0);
   const overallPct = overallTotal > 0 ? Math.round((overallPassTotal / overallTotal) * 100) : 0;
-  const mockTesters: Record<string, string> = {
-    'TS1_TC1': '김지수', 'TS1_TC2': '이민준', 'TS1_TC3': '박서연',
-    'TS2_TC1': '최현우', 'TS3_TC3': '정유진',
-  };
+
+  if (loadState === 'loading') {
+    return (
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center text-sm text-[#9ca3af]">
+        RTM 정보를 불러오는 중입니다…
+      </div>
+    );
+  }
+
+  if (totalReqs === 0) {
+    return (
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center text-sm text-[#9ca3af]">
+        RTM 버전이 아직 등록되지 않았습니다.
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[calc(100vh-4rem)]">
@@ -40,7 +62,7 @@ export const RTMPage = () => {
 
         {/* FR list */}
         <div className="flex-1 overflow-y-auto">
-          {mockRTMRequirements.map(req => {
+          {requirements.map((req) => {
             const isActive = selectedFrId === req.frId;
             const pct = req.totalCount > 0 ? Math.round((req.passCount / req.totalCount) * 100) : 0;
             const fillColor = isActive
@@ -137,19 +159,27 @@ export const RTMPage = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-[#f0f0f0]">
-                {selectedFr.history.map((row, i) => {
-                  const tester = mockTesters[`${row.ts}_${row.tc}`] ?? '—';
+                {selectedFr.history.map((rawRow, i) => {
+                  const row = rawRow as {
+                    ts?: string;
+                    tc?: string;
+                    latestTest?: string;
+                    date?: string;
+                    pass?: boolean;
+                    tester?: string;
+                  };
+                  const tester = row.tester ?? '—';
                   return (
                     <tr key={i} className="hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-4">
-                        <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.ts}</span>
+                        <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.ts ?? '—'}</span>
                       </td>
                       <td className="px-5 py-4">
-                        <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.tc}</span>
+                        <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.tc ?? '—'}</span>
                       </td>
                       <td className="px-5 py-4">
-                        <div className="text-xs text-[#6b7280]">{row.latestTest}</div>
-                        <div className="text-[10px] text-[#9ca3af] mt-0.5">{row.date}</div>
+                        <div className="text-xs text-[#6b7280]">{row.latestTest ?? '—'}</div>
+                        <div className="text-[10px] text-[#9ca3af] mt-0.5">{row.date ?? ''}</div>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
