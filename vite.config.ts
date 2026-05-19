@@ -31,6 +31,16 @@ export default defineConfig({
     },
   },
 
+  server: {
+    // 개발 환경에서 /api/* 호출을 Spring 게이트웨이로 포워딩
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
+  },
+
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 })

@@ -25,6 +25,8 @@ import {
   Sparkles, Star, FolderOpen,
 } from 'lucide-react';
 import AgentTracePanel from './components/AgentTracePanel';
+import { getProject, type ProjectDashboardResponse } from '../api/projects';
+import { ApiError } from '../api/client';
 import {
   mockAIItems,
   mockAgentTrace,
@@ -41,15 +43,6 @@ import {
   type TestCaseMap,
 } from './data/mockData';
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
-
-interface ProjectDashboardResponse {
-  project: ProjectMeta;
-  summary: ProjectSummary;
-  credentials?: {
-    dashboard_url: string;
-    server_auth_token: string;
-  };
-}
 
 function getToken(): string | null {
   return localStorage.getItem('qapilot_access_token');
@@ -232,23 +225,8 @@ export default function App() {
     setProjectLoadState('loading');
     setShowAuthForProject(false);
 
-    fetch(`/api/projects/${encodeURIComponent(initialProjectSlug)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async response => {
-        if (response.status === 401) {
-          clearTokens();
-          throw new Error('unauthenticated');
-        }
-        if (response.status === 404) {
-          throw new Error('not-found');
-        }
-        if (!response.ok) {
-          throw new Error('load-failed');
-        }
-        return response.json() as Promise<ProjectDashboardResponse>;
-      })
-      .then(data => {
+    getProject(initialProjectSlug, token)
+      .then((data: ProjectDashboardResponse) => {
         if (cancelled) return;
         setProjectMeta(data.project);
         setProjectSummary(data.summary);
@@ -267,12 +245,15 @@ export default function App() {
       })
       .catch(error => {
         if (cancelled) return;
-        const msg = error instanceof Error ? error.message : '';
-        if (msg === 'unauthenticated') {
+        const status = error instanceof ApiError ? error.status : undefined;
+        if (status === 401) {
+          clearTokens();
           setShowAuthForProject(true);
           setProjectLoadState('idle');
+        } else if (status === 404) {
+          setProjectLoadState('missing');
         } else {
-          setProjectLoadState(msg === 'not-found' ? 'missing' : 'error');
+          setProjectLoadState('error');
         }
       });
 
