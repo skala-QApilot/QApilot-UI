@@ -3,8 +3,7 @@ import loadingGif from '../../assets/loading.gif';
 
 const STEPS = [
   { message: 'PRD/정책 문서를 읽는 중...', duration: 2200 },
-  { message: '코드베이스를 스캔하는 중...', duration: 2000 },
-  { message: '자연어 요구사항을 해석하는 중...', duration: 2400 },
+  { message: '요구사항을 분석하는 중...', duration: 2400 },
   { message: '시나리오를 생성하는 중...', duration: 2600 },
   { message: '실행 시퀀스로 변환하는 중...', duration: 1800 },
   { message: 'Playwright 코드를 작성하는 중...', duration: 2200 },
