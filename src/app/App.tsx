@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import ScenarioNetworkGraph from './components/ScenarioNetworkGraph';
 import { StatusIcon } from './components/common/StatusIcon';
 import { SubHeader } from './components/common/SubHeader';
@@ -53,11 +54,15 @@ function clearTokens() {
   localStorage.removeItem('qapilot_refresh_token');
 }
 
+// 예약 최상위 경로(프로젝트 slug가 아닌 라우트)
+const RESERVED_TOP_SEGMENTS = new Set(['login', 'services']);
+
 function getProjectSlugFromPath(pathname: string): string | null {
   const normalized = pathname.replace(/\/+$/, '') || '/';
   if (normalized === '/') return null;
   const segment = normalized.split('/').filter(Boolean)[0] || '';
-  return segment || null;
+  if (!segment || RESERVED_TOP_SEGMENTS.has(segment)) return null;
+  return segment;
 }
 
 function getProjectPageFromPath(pathname: string): string {
@@ -71,12 +76,50 @@ function getProjectPageFromPath(pathname: string): string {
   return 'HOME';
 }
 
+// URL pathname을 보고 현재 페이지 키(currentPage 값)를 도출한다.
+function getCurrentPageFromPath(pathname: string): string {
+  if (pathname === '/' || pathname === '') return 'LANDING';
+  if (pathname.startsWith('/login')) return 'LOGIN';
+  if (pathname.startsWith('/services')) return 'SERVICES';
+  return getProjectPageFromPath(pathname);
+}
+
+// currentPage 키를 navigate 경로로 변환한다.
+function buildPagePath(page: string, slug: string | null): string | null {
+  switch (page) {
+    case 'LANDING': return '/';
+    case 'LOGIN': return '/login';
+    case 'SERVICES': return '/services';
+    case 'HOME':
+      return slug ? `/${slug}` : null;
+    case 'SETUP':
+      return slug ? `/${slug}/setup` : null;
+    case '시나리오':
+      return slug ? `/${slug}/scenarios` : null;
+    case '테스트':
+    case '실행이력':
+      return slug ? `/${slug}/test` : null;
+    case 'RTM':
+      return slug ? `/${slug}/rtm` : null;
+    default:
+      return null;
+  }
+}
+
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const initialProjectSlug = getProjectSlugFromPath(window.location.pathname);
-  const isProjectRoute = Boolean(initialProjectSlug);
-  const initialProjectPage = getProjectPageFromPath(window.location.pathname);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const projectSlug = getProjectSlugFromPath(location.pathname);
+  const isProjectRoute = Boolean(projectSlug);
+  const currentPage = getCurrentPageFromPath(location.pathname);
+
+  const setCurrentPage = (page: string) => {
+    const path = buildPagePath(page, projectSlug);
+    if (path) navigate(path);
+  };
 
   // services (top-level dashboard list)
   const [services, setServices] = useState<Service[]>(
@@ -87,10 +130,7 @@ export default function App() {
           { id: 'svc-2', name: 'Backend API', isNew: false, createdAt: '2026-02-20' },
         ]
   );
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(initialProjectSlug || 'svc-1');
-
-  // navigation
-  const [currentPage, setCurrentPage] = useState<string>(isProjectRoute ? initialProjectPage : 'LANDING');
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(projectSlug || 'svc-1');
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [homeTab, setHomeTab] = useState('overview');
   const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
@@ -212,7 +252,7 @@ export default function App() {
   const currentRtmVersion = mockRTMVersions.find(v => v.id === selectedRtmVersion) ?? mockRTMVersions[0];
 
   useEffect(() => {
-    if (!initialProjectSlug) return;
+    if (!projectSlug) return;
 
     const token = getToken();
     if (!token) {
@@ -221,11 +261,18 @@ export default function App() {
       return;
     }
 
+    // dev bypass 모드: 실 API 호출 없이 mockData 로 진행
+    if (token === 'dev-bypass') {
+      setProjectLoadState('loaded');
+      setShowAuthForProject(false);
+      return;
+    }
+
     let cancelled = false;
     setProjectLoadState('loading');
     setShowAuthForProject(false);
 
-    getProject(initialProjectSlug, token)
+    getProject(projectSlug, token)
       .then((data: ProjectDashboardResponse) => {
         if (cancelled) return;
         setProjectMeta(data.project);
@@ -240,7 +287,7 @@ export default function App() {
           },
         ]);
         setSelectedServiceId(data.project.project_slug);
-        setCurrentPage(initialProjectPage);
+        // currentPage 는 이미 URL 에서 도출되므로 별도 setCurrentPage 불필요
         setProjectLoadState('loaded');
       })
       .catch(error => {
@@ -260,7 +307,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [initialProjectPage, initialProjectSlug, authRetry]);
+  }, [projectSlug, authRetry]);
 
   // derived
   const unreadNotifications = mockNotifications.filter(n => !n.read).length;
@@ -457,7 +504,7 @@ export default function App() {
           setAuthRetry(n => n + 1);
         }}
         onBack={() => {}}
-        projectSlug={initialProjectSlug ?? undefined}
+        projectSlug={projectSlug ?? undefined}
       />
     );
   }
@@ -468,7 +515,7 @@ export default function App() {
         <div className="max-w-lg w-full rounded-[2rem] border border-[#ece9fb] bg-white/90 shadow-xl px-8 py-10 text-center">
           <div className="text-xs font-bold uppercase tracking-[0.24em] text-[#9ca3af]">QApilot</div>
           <h1 className="mt-3 text-3xl font-bold">프로젝트 대시보드를 불러오는 중입니다</h1>
-          <p className="mt-3 text-sm text-[#6b7280]">/{initialProjectSlug} 등록 정보와 코드 인덱스 요약을 확인하고 있어요.</p>
+          <p className="mt-3 text-sm text-[#6b7280]">/{projectSlug} 등록 정보와 코드 인덱스 요약을 확인하고 있어요.</p>
         </div>
       </div>
     );
@@ -481,7 +528,7 @@ export default function App() {
           <div className="text-xs font-bold uppercase tracking-[0.24em] text-[#d97706]">Project Missing</div>
           <h1 className="mt-3 text-3xl font-bold">등록되지 않은 프로젝트입니다</h1>
           <p className="mt-3 text-sm text-[#6b7280]">
-            <span className="font-semibold text-[#1a1a2e]">/{initialProjectSlug}</span> 에 해당하는 프로젝트를 찾지 못했습니다.
+            <span className="font-semibold text-[#1a1a2e]">/{projectSlug}</span> 에 해당하는 프로젝트를 찾지 못했습니다.
             먼저 로컬 레포에서 <code className="rounded bg-[#f9f8ff] px-1.5 py-0.5">qapilot init</code> 을 실행해 등록해 주세요.
           </p>
         </div>
@@ -496,7 +543,7 @@ export default function App() {
           <div className="text-xs font-bold uppercase tracking-[0.24em] text-[#dc2626]">Load Error</div>
           <h1 className="mt-3 text-3xl font-bold">프로젝트 대시보드를 불러오지 못했습니다</h1>
           <p className="mt-3 text-sm text-[#6b7280]">
-            QApilot API 서버가 실행 중인지 확인하고, 다시 <code className="rounded bg-[#fff1f2] px-1.5 py-0.5">/{initialProjectSlug}</code> 로 접속해 주세요.
+            QApilot API 서버가 실행 중인지 확인하고, 다시 <code className="rounded bg-[#fff1f2] px-1.5 py-0.5">/{projectSlug}</code> 로 접속해 주세요.
           </p>
         </div>
       </div>
@@ -505,7 +552,7 @@ export default function App() {
 
   const handleServiceSelect = (service: Service) => {
     setSelectedServiceId(service.id);
-    setCurrentPage(service.isNew ? 'SETUP' : 'HOME');
+    navigate(service.isNew ? `/${service.id}/setup` : `/${service.id}`);
   };
 
   const handleCreateService = (name: string) => {
@@ -513,14 +560,14 @@ export default function App() {
     const newService: Service = { id: `svc-${Date.now()}`, name, isNew: true, createdAt: today };
     setServices(prev => [...prev, newService]);
     setSelectedServiceId(newService.id);
-    setCurrentPage('SETUP');
+    navigate(`/${newService.id}/setup`);
   };
 
   const handleGenerateScenarios = () => {
     if (selectedServiceId) {
       setServices(prev => prev.map(s => s.id === selectedServiceId ? { ...s, isNew: false } : s));
+      navigate(`/${selectedServiceId}/scenarios`);
     }
-    setCurrentPage('시나리오');
   };
 
 
@@ -755,7 +802,7 @@ export default function App() {
                 navigateToHistory={navigateToHistory}
                 activeTab={homeTab}
                 serviceName={selectedService?.name}
-                projectSlug={projectMeta?.project_slug || initialProjectSlug || undefined}
+                projectSlug={projectMeta?.project_slug || projectSlug || undefined}
                 projectMeta={projectMeta}
                 projectSummary={projectSummary}
                 projectCredentials={projectCredentials}

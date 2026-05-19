@@ -32,6 +32,8 @@ export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
     setError('');
 
     if ((import.meta as any).env?.DEV && email === 'admin@qapilot.com' && password === 'admin1234') {
+      // dev bypass: 백엔드 연동 없이 mockData 흐름으로 들어가도록 sentinel 토큰 저장
+      localStorage.setItem('qapilot_access_token', 'dev-bypass');
       onLogin();
       return;
     }
