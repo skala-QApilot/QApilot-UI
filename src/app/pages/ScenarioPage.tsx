@@ -74,7 +74,6 @@ setTestDepth,
 selectedScenarioGroupId,
 setSelectedScenarioGroupId,
 setRunningTests,
-setTestSubTab,
 setSelectedRunningTestId,
 setSelectedTestGroup,
 setSelectedRunningForDetail,
@@ -101,6 +100,7 @@ setShowGeneratingOverlay,
   const [scheduleDate, setScheduleDate] = React.useState('');
   const [scheduleTime, setScheduleTime] = React.useState('09:00');
   const [scheduleRepeat, setScheduleRepeat] = React.useState('once');
+  const [groupNameInput, setGroupNameInput] = React.useState('');
 
   // Resizable left sidebar (graph mode only)
   const [leftSidebarWidth, setLeftSidebarWidth] = React.useState(300);
@@ -154,20 +154,34 @@ setShowGeneratingOverlay,
       return { tsId, tcId, tsName: ts?.name, tcName: tc?.name };
     });
 
+  const selectedTSCount = _dynamicScenarios.filter(s =>
+    (_dynamicTestCases[s.id] || []).some((tc: any) => _selectedTCIds.includes(`${s.id}_${tc.id}`))
+  ).length;
+
   const toggleTSSelection = (tsId: string) => {
-    const tsTCs = (_dynamicTestCases[tsId] || []).map(tc => `${tsId}_${tc.id}`);
-    const allSelected = tsTCs.every((id: string) => _selectedTCIds.includes(id));
+    const tcs = _dynamicTestCases[tsId] || [];
+    const tcKeys = tcs.map((tc: any) => `${tsId}_${tc.id}`);
+    const tvKeys = tcs.flatMap((tc: any) => (tc.testVariables || []).map((tv: any) => `${tsId}_${tc.id}_${tv.id}`));
+    const allKeys = [...tcKeys, ...tvKeys];
+    const allSelected = allKeys.every((id: string) => _selectedTCIds.includes(id));
     if (allSelected) {
-      setSelectedTCIds((prev: string[]) => prev.filter((id: string) => !tsTCs.includes(id)));
+      setSelectedTCIds((prev: string[]) => prev.filter((id: string) => !allKeys.includes(id)));
     } else {
-      setSelectedTCIds((prev: string[]) => [...new Set([...prev, ...tsTCs])]);
+      setSelectedTCIds((prev: string[]) => [...new Set([...prev, ...allKeys])]);
     }
   };
 
-  const toggleTCSelection = (key: string) => {
-    setSelectedTCIds((prev: string[]) =>
-      prev.includes(key) ? prev.filter((id: string) => id !== key) : [...prev, key]
-    );
+  const toggleTCSelection = (tsId: string, tcId: string) => {
+    const tc = (_dynamicTestCases[tsId] || []).find((t: any) => t.id === tcId);
+    const tcKey = `${tsId}_${tcId}`;
+    const tvKeys = (tc?.testVariables || []).map((tv: any) => `${tsId}_${tcId}_${tv.id}`);
+    const allKeys = [tcKey, ...tvKeys];
+    const allSelected = allKeys.every((id: string) => _selectedTCIds.includes(id));
+    if (allSelected) {
+      setSelectedTCIds((prev: string[]) => prev.filter((id: string) => !allKeys.includes(id)));
+    } else {
+      setSelectedTCIds((prev: string[]) => [...new Set([...prev, ...allKeys])]);
+    }
   };
 
   const toggleTVSelection = (key: string) => {
@@ -543,7 +557,7 @@ setShowGeneratingOverlay,
               className="scenario-checkbox w-3.5 h-3.5 flex-shrink-0" />
             {someSelected && (
               <span className="px-1.5 py-0.5 text-[9px] bg-[#3615CF]/10 text-[#3615CF] rounded-full font-medium flex-shrink-0">
-                {_selectedTCIds.length}개
+                {selectedTSCount}개
               </span>
             )}
             <button className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#6b7280] hover:text-[#1a1a2e] border border-[#e5e7eb] rounded hover:bg-white transition-colors flex-shrink-0">
@@ -721,7 +735,7 @@ setShowGeneratingOverlay,
                       <div key={tc.id}>
                         <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-[#fffbeb]/50 border-[#fde68a]/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#3615CF]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
                           <input type="checkbox" checked={_selectedTCIds.includes(tcKey)}
-                            onChange={() => toggleTCSelection(tcKey)}
+                            onChange={() => toggleTCSelection(scenario.id, tc.id)}
                             className="scenario-checkbox w-3 h-3 flex-shrink-0"
                             onClick={e => e.stopPropagation()} />
                           <button onClick={e => { e.stopPropagation(); setExpandedTCMain(prev => prev.includes(tcKey) ? prev.filter(id => id !== tcKey) : [...prev, tcKey]); }} className="flex-shrink-0">
@@ -948,8 +962,17 @@ setShowGeneratingOverlay,
                     {/* E2E TEST 실행 */}
                     <button
                       onClick={() => {
+                        const newRun = {
+                          id: `run-${Date.now()}`,
+                          name: 'E2E TEST',
+                          groupId: null,
+                          startTime: (() => { const n = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`; })(),
+                          status: 'running' as const,
+                        };
+                        (setRunningTests as any)((prev: any[]) => [...prev, newRun]);
+                        (setSelectedRunningTestId as any)(newRun.id);
+                        (setSelectedRunningForDetail as any)(newRun.id);
                         setCurrentPage('테스트');
-                        (setTestSubTab as any)('INPROGRESS');
                       }}
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#3615CF] text-white text-xs font-semibold hover:shadow-md hover:bg-[#3615CF]/90 transition-all">
                       <Play className="w-3.5 h-3.5" />
@@ -957,14 +980,14 @@ setShowGeneratingOverlay,
                     </button>
                     {/* 그룹 생성 버튼 */}
                     <button
-                      onClick={() => someSelected && setShowTestGroupModal(true)}
+                      onClick={() => { if (someSelected) { setGroupNameInput(`시나리오 그룹 #${Date.now() % 1000}`); setShowTestGroupModal(true); } }}
                       className={`w-full py-2 rounded-lg border flex items-center justify-center gap-1.5 text-xs transition-all ${
                         someSelected
                           ? 'border-[#3615CF]/30 text-[#3615CF] hover:bg-[#EAE8F9]'
                           : 'border-[#e5e7eb] text-[#c4c9d4] cursor-default'
                       } ${showReviewActions ? 'border-solid' : 'border-dashed'}`}>
                       <Plus className="w-3 h-3" />
-                      {someSelected ? `${_selectedTCIds.length}개 TC로 그룹 생성` : 'TC를 선택하면 그룹을 생성할 수 있어요'}
+                      {someSelected ? `${selectedTSCount}개 TS로 그룹 생성` : 'TC를 선택하면 그룹을 생성할 수 있어요'}
                     </button>
                   </>
                 )}
@@ -991,7 +1014,7 @@ setShowGeneratingOverlay,
                           : 'border-[#e5e7eb] hover:border-[#3615CF]/40 hover:bg-gray-50'
                       }`}>
                       <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-semibold ${isSelected ? 'text-[#d9506b]' : 'text-[#1a1a2e]'}`}>{group.name}</span>
+                        <span className={`text-xs font-semibold ${isSelected ? 'text-[#3615CF]' : 'text-[#1a1a2e]'}`}>{group.name}</span>
                       </div>
                       <div className="flex flex-wrap gap-1 mb-2">
                         {(group.scenarios as string[]).map(sid => (
@@ -1019,13 +1042,15 @@ setShowGeneratingOverlay,
                           <Calendar className="w-2.5 h-2.5" /> 예약하기
                         </button>
                         <button
+                          disabled={hasPendingAIReview || isGeneratingCode}
                           onClick={e => {
                             e.stopPropagation();
+                            if (hasPendingAIReview || isGeneratingCode) return;
                             const newRun = {
                               id: `run-${Date.now()}`,
                               name: group.name,
                               groupId: group.id,
-                              startTime: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                              startTime: (() => { const n = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`; })(),
                               status: 'running' as const,
                             };
                             (setRunningTests as any)(prev => [...prev, newRun]);
@@ -1033,9 +1058,12 @@ setShowGeneratingOverlay,
                             (setSelectedTestGroup as any)(group.name);
                             (setSelectedRunningForDetail as any)(newRun.id);
                             setCurrentPage('테스트');
-                            (setTestSubTab as any)('HISTORY');
                           }}
-                          className="flex items-center gap-1 px-2.5 py-1 bg-[#EAE8F9] text-[#3615CF] rounded text-[10px] font-medium hover:bg-[#DDDDF5] transition-colors">
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium transition-colors ${
+                            hasPendingAIReview || isGeneratingCode
+                              ? 'bg-[#cfd5dd] text-white cursor-not-allowed'
+                              : 'bg-[#EAE8F9] text-[#3615CF] hover:bg-[#DDDDF5]'
+                          }`}>
                           <Play className="w-2.5 h-2.5" /> 실행
                         </button>
                       </div>
@@ -1120,6 +1148,13 @@ setShowGeneratingOverlay,
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-xl max-w-md w-full">
             <div className="font-semibold mb-4 text-base">시나리오 그룹 생성</div>
+            <label className="block text-xs font-semibold text-[#6b7280] mb-1">그룹 이름</label>
+            <input
+              value={groupNameInput}
+              onChange={e => setGroupNameInput(e.target.value)}
+              className="w-full px-3 py-2 border border-[#e5e7eb] rounded-lg text-sm mb-4 focus:outline-none focus:border-[#3615CF]"
+              placeholder="그룹 이름 입력"
+            />
             <div className="text-sm text-[#6b7280] mb-2">선택된 TC ({selectedTCs.length}개):</div>
             <div className="space-y-1 max-h-48 overflow-y-auto mb-4">
               {selectedTCs.map(({ tsId, tcId, tsName, tcName }) => (
@@ -1134,17 +1169,16 @@ setShowGeneratingOverlay,
                 setSelectedTCIds([]);
                 const newRun = {
                   id: `run-${Date.now()}`,
-                  name: `테스트 (${selectedTCs.length}개 TC)`,
+                  name: groupNameInput || `시나리오 그룹`,
                   groupId: `group-${Date.now()}`,
-                  startTime: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                  startTime: (() => { const n = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`; })(),
                   status: 'running' as const,
                 };
                 (setRunningTests as any)(prev => [...prev, newRun]);
                 (setSelectedRunningTestId as any)(newRun.id);
-                (setSelectedTestGroup as any)(`테스트 (${selectedTCs.length}개 TC)`);
+                (setSelectedTestGroup as any)(groupNameInput || `시나리오 그룹`);
                 (setSelectedRunningForDetail as any)(newRun.id);
                 setCurrentPage('테스트');
-                (setTestSubTab as any)('HISTORY');
               }}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium">
                 생성 확인
