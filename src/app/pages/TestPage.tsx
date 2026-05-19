@@ -1,9 +1,9 @@
-import { type Dispatch, type SetStateAction } from 'react';
+import { type Dispatch, type SetStateAction, useMemo } from 'react';
 import { SubHeader } from '../components/common/SubHeader';
 import { SearchBar } from '../components/common/SearchBar';
 import { PassRateChart } from '../components/common/PassRateChart';
 import { ExecutionHistoryRow } from '../components/common/ExecutionHistoryRow';
-import { mockExecutionHistory, mockPassHistory } from '../data/mockData';
+import { useTestStore } from '../../store/testStore';
 
 type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'completed' };
 
@@ -31,7 +31,18 @@ export const TestPage = ({
   // ── depth-0 data ──────────────────────────────────────────────────────────
   const activeRunningTests = runningTests.filter(t => t.status === 'running');
 
-  const filtered = mockExecutionHistory.filter(exec => {
+  // 실 API 기반 실행 이력 / pass 추이
+  const results = useTestStore((s) => s.results);
+  const executionHistory = useMemo(
+    () => useTestStore.getState().getExecutionHistory(),
+    [results],
+  );
+  const passHistory = useMemo(
+    () => useTestStore.getState().getPassHistory(14),
+    [results],
+  );
+
+  const filtered = executionHistory.filter(exec => {
     if (historyFilter === 'FAIL'  && exec.fail === 0)        return false;
     if (historyFilter === 'HITL'  && exec.hitlPending === 0) return false;
     if (historyFilter === 'PASS'  && exec.pass === 0)        return false;
@@ -62,7 +73,7 @@ export const TestPage = ({
 
         {/* Graph */}
         <div className="border-b border-[#f0f0f0] px-8 pt-3 pb-2 flex-shrink-0 bg-white">
-          <PassRateChart data={mockPassHistory} stickyAxes height={165} />
+          <PassRateChart data={passHistory} stickyAxes height={165} />
         </div>
 
         {/* 2-col body */}

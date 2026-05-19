@@ -44,6 +44,7 @@ import {
   type UiScenarioVersion,
   type UiAIItem,
 } from '../store/scenarioStore';
+import { useTestStore } from '../store/testStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import {
   mockAgentTrace,
@@ -282,6 +283,14 @@ export default function App() {
   // 서비스 진입 시 한 번 로드한 후, 로컬 편집 state (dynamicScenarios 등) 으로 스냅한다.
   // 이후 사용자가 UI 에서 편집한 내용은 로컬 state 에만 머무름 (write API 통합은 후속 PR).
   const loadScenarioDomain = useScenarioStore((s) => s.loadAll);
+
+  // 테스트 도메인 (runs / results / statistics) 동기화.
+  const loadTestDomain = useTestStore((s) => s.loadAll);
+  useEffect(() => {
+    if (!currentServiceId) return;
+    if (!useAuthStore.getState().isAuthenticated()) return;
+    loadTestDomain(currentServiceId).catch(() => {/* 무시 */});
+  }, [currentServiceId, loadTestDomain]);
   useEffect(() => {
     if (!currentServiceId) return;
     if (!useAuthStore.getState().isAuthenticated()) return;
