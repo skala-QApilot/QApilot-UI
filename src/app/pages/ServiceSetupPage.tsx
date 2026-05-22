@@ -8,9 +8,16 @@ interface GithubEntry {
   token: string;
 }
 
+/** App.tsx 가 받는 setup-complete payload. blank entry 는 호출 직전에 필터링됨. */
+export interface ServiceSetupPayload {
+  name: string;
+  repos: Array<{ url: string; token: string }>;
+  stagingUrl: string;
+}
+
 interface ServiceSetupPageProps {
   serviceName?: string;
-  onGenerateScenarios: (name: string) => void;
+  onGenerateScenarios: (payload: ServiceSetupPayload) => void;
 }
 
 export function ServiceSetupPage({ serviceName = '', onGenerateScenarios }: ServiceSetupPageProps) {
@@ -257,7 +264,13 @@ export function ServiceSetupPage({ serviceName = '', onGenerateScenarios }: Serv
           <div className="pt-8">
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
-                onClick={() => onGenerateScenarios(name.trim())}
+                onClick={() => onGenerateScenarios({
+                  name: name.trim(),
+                  repos: githubEntries
+                    .filter(entry => entry.url.trim().length > 0)
+                    .map(entry => ({ url: entry.url.trim(), token: entry.token.trim() })),
+                  stagingUrl: stagingUrl.trim(),
+                })}
                 disabled={!canSubmit}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#3615CF] px-5 py-3.5 text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-40"
               >

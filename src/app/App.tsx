@@ -11,7 +11,7 @@ import { RTMPage } from './pages/RTMPage';
 import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import { DashHomePage, type Service } from './pages/DashHomePage';
-import { ServiceSetupPage } from './pages/ServiceSetupPage';
+import { ServiceSetupPage, type ServiceSetupPayload } from './pages/ServiceSetupPage';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import {
@@ -27,6 +27,7 @@ import { ScenarioChatbar } from './components/ScenarioChatbar';
 import { LinkedFilesModal } from './components/LinkedFilesModal';
 import { RetestNavModal } from './components/RetestNavModal';
 import { getProject, type ProjectDashboardResponse } from '../api/projects';
+import { createService } from '../api/services';
 import { ApiError, onAuthExpired } from '../api/client';
 import { useAuthStore, DEV_BYPASS_SENTINEL } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
@@ -516,14 +517,49 @@ export default function App() {
     navigate(`/${service.id}`);
   };
 
-  const handleSetupComplete = (name: string) => {
-    const slug = name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-') || `svc-${Date.now()}`;
-    const today = new Date().toISOString().slice(0, 10);
-    const newService: Service = { id: slug, name, isNew: false, createdAt: today };
-    localServiceIds.current.add(slug);
-    setServices(prev => [...prev, newService]);
-    setSelectedServiceId(slug);
-    navigate(`/${slug}`);
+  /**
+   * ServiceSetupPage "테스트 대시보드 생성하기" 클릭 시 Spring `POST /api/services`
+   * 호출하여 실제 서비스 등록 + GitHub 정보 영속화 후 services 목록에 push.
+   * 실패 시 콘솔 에러만 남기고 화면 머무름 (toast 는 후속 작업).
+   */
+  const handleSetupComplete = async (payload: ServiceSetupPayload) => {
+    const token = useAuthStore.getState().accessToken;
+    if (!token) {
+      console.warn('handleSetupComplete: no access token, falling back to local-only service.');
+      const slug = payload.name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-') || `svc-${Date.now()}`;
+      const today = new Date().toISOString().slice(0, 10);
+      const fallback: Service = { id: slug, name: payload.name, isNew: false, createdAt: today };
+      localServiceIds.current.add(slug);
+      setServices(prev => [...prev, fallback]);
+      setSelectedServiceId(slug);
+      navigate(`/${slug}`);
+      return;
+    }
+    try {
+      const created = await createService({
+        name: payload.name,
+        repos: payload.repos.length
+          ? payload.repos.map(r => ({
+              repo_url: r.url,
+              token: r.token || null,
+              branch: null,   // ServiceSetupPage 가 아직 branch 입력 UI 없음 — FastAPI 가 "main" default 적용
+              role: null,     // 동일 — URL 에서 자동 유추
+            }))
+          : undefined,
+        staging_url: payload.stagingUrl || undefined,
+      }, token);
+      const newService: Service = {
+        id: created.project_slug,
+        name: created.display_name,
+        isNew: false,
+        createdAt: (created.created_at || '').slice(0, 10),
+      };
+      setServices(prev => [...prev, newService]);
+      setSelectedServiceId(created.project_slug);
+      navigate(`/${created.project_slug}`);
+    } catch (error) {
+      console.error('서비스 생성 실패', error);
+    }
   };
 
   const handleRetestConfirm = () => {
