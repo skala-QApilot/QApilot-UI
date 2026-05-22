@@ -1,19 +1,22 @@
 import { useState, useRef } from 'react';
-import {
-  mockScenarioVersions,
-  mockScenarios,
-  mockAIItems,
-  mockTestCases,
-  type TestCaseMap,
-} from '../data/mockData';
+import type { UiScenario, UiScenarioVersion, UiTestCase } from '../../store/scenarioStore';
 
+/** ScenarioPage 의 in-flight TC 편집 버퍼 — store 의 testCasesByTs 와 같은 shape. */
+type TestCaseMap = Record<string, UiTestCase[]>;
+
+/**
+ * ScenarioPage 의 로컬 UI 상태 + in-flight 편집 상태 묶음.
+ *
+ * dynamicScenarios/dynamicAIItems/dynamicTestCases 는 API 가 채워주기 전까진 빈 컨테이너.
+ * 사용 측은 trace polling 완료 시 setDynamic* 로 store 데이터를 주입.
+ */
 export function useScenarioState() {
   const [selectedScenario, setSelectedScenario] = useState('TS1');
   const [scenarioPageTab, setScenarioPageTab] = useState<'TOTAL' | 'CHANGE'>('TOTAL');
   const [scenarioSearchQuery, setScenarioSearchQuery] = useState('');
   const [scenarioChangeFilter, setScenarioChangeFilter] = useState(false);
   const [selectedScenarioVersion, setSelectedScenarioVersion] = useState('change-2');
-  const [scenarioVersions, setScenarioVersions] = useState([...mockScenarioVersions]);
+  const [scenarioVersions, setScenarioVersions] = useState<UiScenarioVersion[]>([]);
   const [favoriteVersionIds, setFavoriteVersionIds] = useState<Set<string>>(new Set());
   const [hoveredVersionId, setHoveredVersionId] = useState<string | null>(null);
   const [selectedNetworkNodeId, setSelectedNetworkNodeId] = useState<string | null>(null);
@@ -26,9 +29,9 @@ export function useScenarioState() {
   const [aiItemActions, setAiItemActions] = useState<Record<string, 'approved' | 'deferred' | 'rejected'>>({});
   const [showDeferredAIItems, setShowDeferredAIItems] = useState(false);
   const [codeChangeDetected, setCodeChangeDetected] = useState(false);
-  const [dynamicScenarios, setDynamicScenarios] = useState([...mockScenarios]);
-  const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }>>({ ...mockAIItems });
-  const [dynamicTestCases, setDynamicTestCases] = useState<TestCaseMap>({ ...mockTestCases });
+  const [dynamicScenarios, setDynamicScenarios] = useState<UiScenario[]>([]);
+  const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }>>({});
+  const [dynamicTestCases, setDynamicTestCases] = useState<TestCaseMap>({});
   const [loadingItemKey, setLoadingItemKey] = useState<string | null>(null);
   const [editingDetailItem, setEditingDetailItem] = useState<{ type: 'ts' | 'tc' | 'tv'; key: string; value: string } | null>(null);
   const [selectedTvId, setSelectedTvId] = useState<string | null>(null);

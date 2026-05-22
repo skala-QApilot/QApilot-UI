@@ -36,7 +36,6 @@ import { useScenarioState } from './hooks/useScenarioState';
 import {
   mockFiles,
   mockRTMVersions,
-  type TestCaseMap,
 } from './data/mockData';
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
 
@@ -405,13 +404,20 @@ export default function App() {
         setAiMessages(prev => [...prev, { role: 'assistant', text: '시나리오 초안을 생성했습니다. 사이드바에서 확인 후 승인해 주세요.' }]);
         const newId = `TS${dynamicScenarios.length + 1}`;
         const label = text.length > 20 ? text.slice(0, 20) + '...' : text;
-        setDynamicScenarios(prev => [...prev, { id: newId, name: label, status: 'pending', testCases: 2, hasChanges: false }]);
+        setDynamicScenarios(prev => [...prev, {
+          id: newId, name: label, status: 'pending', testCases: 2, hasChanges: false, lastRunAt: null,
+        }]);
         setDynamicAIItems(prev => ({ ...prev, [newId]: { reason: text.slice(0, 50), trigger: 'chatbot', timestamp: new Date().toISOString().slice(0, 16).replace('T', ' ') } }));
         setDynamicTestCases(prev => ({
           ...prev,
           [newId]: [
-            { id: 'TC1', name: 'AI 기본 케이스', status: 'pending', testVariables: [{ id: 'TV1', name: '정상 입력', status: 'pending' }, { id: 'TV2', name: '경계값 입력', status: 'pending' }] },
-            { id: 'TC2', name: 'AI 엣지 케이스', status: 'pending', testVariables: [{ id: 'TV1', name: '오류 입력', status: 'pending' }] },
+            { id: 'TC1', name: 'AI 기본 케이스', status: 'pending', values: [
+              { id: 'TV1', name: '정상 입력', field: 'input', value: '', type: 'string', purpose: 'normal', status: 'pending' },
+              { id: 'TV2', name: '경계값 입력', field: 'input', value: '', type: 'string', purpose: 'boundary', status: 'pending' },
+            ] },
+            { id: 'TC2', name: 'AI 엣지 케이스', status: 'pending', values: [
+              { id: 'TV1', name: '오류 입력', field: 'input', value: '', type: 'string', purpose: 'edge', status: 'pending' },
+            ] },
           ],
         }));
         setExpandedTSForTC(prev => [...prev, newId]);
