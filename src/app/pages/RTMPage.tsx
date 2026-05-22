@@ -1,19 +1,27 @@
 import { useState } from 'react';
 import { CheckCircle, ChevronRight, Clock, XCircle } from 'lucide-react';
 import { RTMDonutChart } from '../components/common/RTMDonutChart';
-import { mockRTMRequirements } from '../data/mockData';
+import { useRtmStore } from '../../store/rtmStore';
+import type { RtmRequirement } from '../../api/rtm';
+
+/** Zustand 무한 루프 회피 — `?? []` 인라인 fallback 은 매 렌더 새 배열 유발. */
+const EMPTY_REQUIREMENTS: RtmRequirement[] = [];
 
 export const RTMPage = () => {
-  const [selectedFrId, setSelectedFrId] = useState(mockRTMRequirements[0].frId);
+  // 선택된 RTM 버전의 requirements 에서 derive — store-backed.
+  const selectedRtmVersion = useRtmStore((s) => s.getSelectedVersion());
+  const rtmRequirements = selectedRtmVersion?.requirements ?? EMPTY_REQUIREMENTS;
 
-  const selectedFr = mockRTMRequirements.find(r => r.frId === selectedFrId) ?? mockRTMRequirements[0];
-  const totalReqs = mockRTMRequirements.length;
-  const metReqs = mockRTMRequirements.filter(r => r.status === '충족').length;
-  const unmetReqs = mockRTMRequirements.filter(r => r.status === '미충족').length;
-  const unrunReqs = mockRTMRequirements.filter(r => r.totalCount === 0).length;
+  const [selectedFrId, setSelectedFrId] = useState<string>(rtmRequirements[0]?.frId ?? '');
 
-  const overallPassTotal = mockRTMRequirements.reduce((s, r) => s + r.passCount, 0);
-  const overallTotal = mockRTMRequirements.reduce((s, r) => s + r.totalCount, 0);
+  const selectedFr = rtmRequirements.find(r => r.frId === selectedFrId) ?? rtmRequirements[0];
+  const totalReqs = rtmRequirements.length;
+  const metReqs = rtmRequirements.filter(r => r.status === '충족').length;
+  const unmetReqs = rtmRequirements.filter(r => r.status === '미충족').length;
+  const unrunReqs = rtmRequirements.filter(r => r.totalCount === 0).length;
+
+  const overallPassTotal = rtmRequirements.reduce((s, r) => s + r.passCount, 0);
+  const overallTotal = rtmRequirements.reduce((s, r) => s + r.totalCount, 0);
   const overallPct = overallTotal > 0 ? Math.round((overallPassTotal / overallTotal) * 100) : 0;
   const mockTesters: Record<string, string> = {
     'TS1_TC1': '김지수', 'TS1_TC2': '이민준', 'TS1_TC3': '박서연',
@@ -40,7 +48,7 @@ export const RTMPage = () => {
 
         {/* FR list */}
         <div className="flex-1 overflow-y-auto">
-          {mockRTMRequirements.map(req => {
+          {rtmRequirements.map(req => {
             const isActive = selectedFrId === req.frId;
             const pct = req.totalCount > 0 ? Math.round((req.passCount / req.totalCount) * 100) : 0;
             const fillColor = isActive
@@ -137,19 +145,21 @@ export const RTMPage = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-[#f0f0f0]">
-                {selectedFr.history.map((row, i) => {
+                {selectedFr.history.map((raw, i) => {
+                  // RtmRequirementHistoryEntry 가 [key: string]: unknown — JSX 렌더링용 string 캐스팅.
+                  const row = raw as { ts?: string; tc?: string; latestTest?: string; date?: string; pass?: boolean };
                   const tester = mockTesters[`${row.ts}_${row.tc}`] ?? '—';
                   return (
                     <tr key={i} className="hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-4">
-                        <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.ts}</span>
+                        <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.ts ?? ''}</span>
                       </td>
                       <td className="px-5 py-4">
-                        <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.tc}</span>
+                        <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.tc ?? ''}</span>
                       </td>
                       <td className="px-5 py-4">
-                        <div className="text-xs text-[#6b7280]">{row.latestTest}</div>
-                        <div className="text-[10px] text-[#9ca3af] mt-0.5">{row.date}</div>
+                        <div className="text-xs text-[#6b7280]">{row.latestTest ?? ''}</div>
+                        <div className="text-[10px] text-[#9ca3af] mt-0.5">{row.date ?? ''}</div>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">

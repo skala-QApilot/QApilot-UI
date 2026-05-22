@@ -29,14 +29,12 @@ import { RetestNavModal } from './components/RetestNavModal';
 import { getProject, type ProjectDashboardResponse } from '../api/projects';
 import { useProjectStore } from '../store/projectStore';
 import { useNotificationStore } from '../store/notificationStore';
+import { useRtmStore } from '../store/rtmStore';
 import { ApiError, onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { useScenarioState } from './hooks/useScenarioState';
-import {
-  mockFiles,
-  mockRTMVersions,
-} from './data/mockData';
+import { mockFiles } from './data/mockData';
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
 
 // 예약 최상위 경로(프로젝트 slug가 아닌 라우트)
@@ -219,9 +217,25 @@ export default function App() {
   const [selectedFailTC, setSelectedFailTC] = useState<string | null>(null);
   const [historyDetailTab, setHistoryDetailTab] = useState<'FAIL' | 'PASS'>('FAIL');
   const [rtmSearchQuery, setRtmSearchQuery] = useState('');
-  const [selectedRtmVersion, setSelectedRtmVersion] = useState(mockRTMVersions[0].id);
   const [rtmVersionOpen, setRtmVersionOpen] = useState(false);
-  const currentRtmVersion = mockRTMVersions.find(v => v.id === selectedRtmVersion) ?? mockRTMVersions[0];
+
+  // RTM 버전 selector — store 가 source of truth (selectedVersionId / versions).
+  // dropdown JSX 가 기대하는 shape {id, label, date} 로 평탄화.
+  const rtmStoreVersions = useRtmStore((s) => s.versions);
+  const selectedRtmVersion = useRtmStore((s) => s.selectedVersionId) ?? '';
+  const setSelectedRtmVersion = useRtmStore((s) => s.selectVersion);
+  const uiRtmVersions = useMemo(
+    () => rtmStoreVersions.map(v => ({
+      id: v.rtmVersionId,
+      label: v.label,
+      date: (v.createdAt || '').slice(0, 10),
+      basedOn: v.traceId ?? '',
+    })),
+    [rtmStoreVersions],
+  );
+  const currentRtmVersion = uiRtmVersions.find(v => v.id === selectedRtmVersion)
+    ?? uiRtmVersions[0]
+    ?? { id: '', label: '—', date: '', basedOn: '' };
 
   // ── main 브랜치 hooks 보충 ────────────────────────────────────────────────
   // HEAD inline state 와 중복되지 않는 state 만 destructure (중복은 hook 안의 값을 무시).
@@ -729,7 +743,7 @@ export default function App() {
                       <div className="absolute left-0 top-full mt-1 w-72 bg-white rounded-lg shadow-lg border border-[#f0f0f0] z-50">
                         <div className="p-2">
                           <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wide px-2 py-1.5">RTM 버전 선택</div>
-                          {mockRTMVersions.map(ver => (
+                          {uiRtmVersions.map(ver => (
                             <button
                               key={ver.id}
                               onClick={() => { setSelectedRtmVersion(ver.id); setRtmVersionOpen(false); }}
