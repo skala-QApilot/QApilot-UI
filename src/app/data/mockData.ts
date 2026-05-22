@@ -33,45 +33,6 @@ export const mockScenarioHistory = [
   { id: 4, timestamp: '2026-04-26 14:20', changeType: '파일 버전 업데이트', description: 'PRD v1.1 업데이트로 인한 시나리오 자동 갱신', affectedScenario: 'TS2, TS3', tag: 'orange' },
 ];
 
-export const mockExecutionHistory = [
-  { id: 'exec-1', groupId: '시나리오 그룹 #1', executionNumber: 1, startDate: '2026-04-26 14:23', duration: '2m 34s', pass: 18, fail: 3, hitlPending: 2, notRun: 0 },
-  { id: 'exec-2', groupId: '시나리오 그룹 #1', executionNumber: 2, startDate: '2026-04-25 22:15', duration: '1m 58s', pass: 20, fail: 1, hitlPending: 0, notRun: 2 },
-  { id: 'exec-3', groupId: '시나리오 그룹 #2', executionNumber: 1, startDate: '2026-04-24 09:42', duration: '3m 12s', pass: 23, fail: 7, hitlPending: 1, notRun: 0 },
-];
-
-export const mockPassHistory = [
-  { date: '4/1',  pass: 55, fail: 28, total: 83 },
-  { date: '4/2',  pass: 58, fail: 25, total: 83 },
-  { date: '4/3',  pass: 60, fail: 23, total: 83 },
-  { date: '4/4',  pass: 57, fail: 26, total: 83 },
-  { date: '4/5',  pass: 62, fail: 21, total: 83 },
-  { date: '4/6',  pass: 65, fail: 19, total: 84 },
-  { date: '4/7',  pass: 63, fail: 20, total: 83 },
-  { date: '4/8',  pass: 67, fail: 17, total: 84 },
-  { date: '4/9',  pass: 69, fail: 16, total: 85 },
-  { date: '4/10', pass: 68, fail: 17, total: 85 },
-  { date: '4/11', pass: 71, fail: 15, total: 86 },
-  { date: '4/12', pass: 70, fail: 16, total: 86 },
-  { date: '4/13', pass: 73, fail: 14, total: 87 },
-  { date: '4/14', pass: 74, fail: 13, total: 87 },
-  { date: '4/15', pass: 72, fail: 15, total: 87 },
-  { date: '4/16', pass: 76, fail: 12, total: 88 },
-  { date: '4/17', pass: 75, fail: 13, total: 88 },
-  { date: '4/18', pass: 78, fail: 11, total: 89 },
-  { date: '4/19', pass: 74, fail: 14, total: 88 },
-  { date: '4/20', pass: 72, fail: 15, total: 87 },
-  { date: '4/21', pass: 75, fail: 14, total: 89 },
-  { date: '4/22', pass: 78, fail: 11, total: 89 },
-  { date: '4/23', pass: 80, fail: 10, total: 90 },
-  { date: '4/24', pass: 77, fail: 13, total: 90 },
-  { date: '4/25', pass: 83, fail: 7,  total: 90 },
-  { date: '4/26', pass: 87, fail: 4,  total: 91 },
-  { date: '4/27', pass: 85, fail: 6,  total: 91 },
-  { date: '4/28', pass: 88, fail: 3,  total: 91 },
-  { date: '4/29', pass: 90, fail: 2,  total: 92 },
-  { date: '4/30', pass: 89, fail: 3,  total: 92 },
-];
-
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface TVEndpoint {

@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { CheckCircle, ChevronLeft, Download, Eye, RotateCcw, XCircle } from 'lucide-react';
 import { SubHeader } from '../components/common/SubHeader';
-import { mockExecutionHistory } from '../data/mockData';
+import { useTestStore } from '../../store/testStore';
 
 type HistoryDetailTab = 'FAIL' | 'PASS';
 
@@ -82,7 +82,9 @@ export const TestResultPage = ({
 
   if (!selectedExecutionId) return null;
 
-  const exec = mockExecutionHistory.find(e => e.id === selectedExecutionId);
+  // selectedExecutionId 는 testStore.getExecutionHistory() 가 만든 trace_id.
+  // store getter 가 매번 새 배열을 만드므로 1회성 lookup 패턴 (조회 즉시 종료) 으로 안전.
+  const exec = useTestStore.getState().getExecutionHistory().find(e => e.id === selectedExecutionId);
   if (!exec) return null;
 
   const activeError = historyDetailTab === 'FAIL' ? (mockDetailErrors.find(e => e.id === selectedFailTC) ?? mockDetailErrors[0]) : null;
