@@ -1,25 +1,6 @@
 import { api } from './client';
 
-/**
- * Spring `ServiceCreateRequest` 와 wire 포맷 일치.
- * branch/role 미입력 시 null — FastAPI 가 default 적용 ("main" / URL-derived).
- */
-export interface RepoConfigPayload {
-  repo_url: string;
-  token?: string | null;
-  branch?: string | null;
-  role?: string | null;
-}
-
-export interface CreateServicePayload {
-  name: string;
-  description?: string;
-  target_root?: string;
-  repos?: RepoConfigPayload[];
-  staging_url?: string;
-}
-
-export interface ServiceResponse {
+export interface ServiceDto {
   service_id: string;
   project_slug: string;
   display_name: string;
@@ -32,15 +13,40 @@ export interface ServiceResponse {
   updated_at: string;
 }
 
-/** 새 서비스 등록 — Spring POST /api/services. */
-export async function createService(
-  payload: CreateServicePayload,
-  accessToken: string,
-): Promise<ServiceResponse> {
-  const res = await api.post<{ service: ServiceResponse }>(
-    '/api/services',
+export interface ServiceCreatePayload {
+  name: string;
+  description?: string;
+  target_root?: string;
+}
+
+export interface ServiceSetupPayload {
+  description?: string;
+}
+
+export async function listServices(): Promise<ServiceDto[]> {
+  const res = await api.get<{ services: ServiceDto[]; count: number }>('/api/services');
+  return res.data.services;
+}
+
+export async function getService(serviceId: string): Promise<ServiceDto> {
+  const res = await api.get<{ service: ServiceDto }>(
+    `/api/services/${encodeURIComponent(serviceId)}`,
+  );
+  return res.data.service;
+}
+
+export async function createService(payload: ServiceCreatePayload): Promise<ServiceDto> {
+  const res = await api.post<{ service: ServiceDto }>('/api/services', payload);
+  return res.data.service;
+}
+
+export async function setupService(
+  serviceId: string,
+  payload: ServiceSetupPayload,
+): Promise<ServiceDto> {
+  const res = await api.post<{ service: ServiceDto }>(
+    `/api/services/${encodeURIComponent(serviceId)}/setup`,
     payload,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   return res.data.service;
 }

@@ -1,6 +1,6 @@
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { env } from '../config/env';
-import { useAuthStore, DEV_BYPASS_SENTINEL } from '../store/authStore';
+import { useAuthStore } from '../store/authStore';
 
 /**
  * Spring `ApiResponse<T>` 봉투 형태.
@@ -38,7 +38,7 @@ api.interceptors.request.use((config) => {
   if (config.headers.Authorization) return config; // 호출자가 이미 지정함
 
   const token = useAuthStore.getState().accessToken;
-  if (token && token !== DEV_BYPASS_SENTINEL) {
+  if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;

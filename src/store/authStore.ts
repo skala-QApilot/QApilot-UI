@@ -14,8 +14,6 @@ interface AuthState {
   refreshToken: string | null;
   user: AuthUser | null;
 
-  /** dev 우회 로그인 (sentinel 토큰만 저장, API 호출 X) */
-  setDevBypass: () => void;
   /** 실 API 로그인 */
   login: (email: string, password: string) => Promise<void>;
   /** 외부 응답에서 받은 토큰을 그대로 주입 (회원가입 등) */
@@ -26,10 +24,15 @@ interface AuthState {
   logout: () => void;
 
   isAuthenticated: () => boolean;
-  isDevBypass: () => boolean;
 }
 
-const DEV_BYPASS_TOKEN = 'dev-bypass';
+// Phase B 의 sentinel 토큰을 가진 사용자가 남아있을 경우 1회성 정리
+const LEGACY_SENTINEL = 'dev-bypass';
+const LEGACY_DIRECT_KEYS = ['qapilot_access_token', 'qapilot_refresh_token'];
+
+if (typeof window !== 'undefined') {
+  LEGACY_DIRECT_KEYS.forEach((k) => window.localStorage.removeItem(k));
+}
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -37,10 +40,6 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       user: null,
-
-      setDevBypass: () => {
-        set({ accessToken: DEV_BYPASS_TOKEN, refreshToken: null, user: null });
-      },
 
       login: async (email, password) => {
         const tokens = await authApi.login(email, password);
@@ -81,7 +80,6 @@ export const useAuthStore = create<AuthState>()(
       },
 
       isAuthenticated: () => Boolean(get().accessToken),
-      isDevBypass: () => get().accessToken === DEV_BYPASS_TOKEN,
     }),
     {
       name: 'qapilot-auth',
@@ -91,8 +89,13 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: state.refreshToken,
         user: state.user,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state && state.accessToken === LEGACY_SENTINEL) {
+          state.accessToken = null;
+          state.refreshToken = null;
+          state.user = null;
+        }
+      },
     },
   ),
 );
-
-export const DEV_BYPASS_SENTINEL = DEV_BYPASS_TOKEN;
