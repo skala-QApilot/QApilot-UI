@@ -5,7 +5,13 @@ import { FileList } from '../components/common/FileList';
 import { ExecutionHistoryRow } from '../components/common/ExecutionHistoryRow';
 import { PassRateChart } from '../components/common/PassRateChart';
 import { RTMDonutChart } from '../components/common/RTMDonutChart';
-import { mockExecutionHistory, mockPassHistory, mockRTMRequirements } from '../data/mockData';
+import { useMemo } from 'react';
+import { useRtmStore } from '../../store/rtmStore';
+import { useTestStore } from '../../store/testStore';
+import type { RtmRequirement } from '../../api/rtm';
+
+/** 모듈 상수 — `?? []` 인라인 fallback 은 매 렌더 새 배열을 만들어 Zustand 무한 루프 유발. */
+const EMPTY_REQUIREMENTS: RtmRequirement[] = [];
 
 export interface ProjectMeta {
   project_slug: string;
@@ -487,13 +493,27 @@ export function HomePage({
 }) {
   void navigateToHistory;
 
-  const totalReqs = mockRTMRequirements.length;
-  const metReqs = mockRTMRequirements.filter(r => r.status === '충족').length;
-  const unmetReqs = mockRTMRequirements.filter(r => r.status === '미충족').length;
-  const unrunReqs = mockRTMRequirements.filter(r => r.totalCount === 0).length;
-  const overallPassTotal = mockRTMRequirements.reduce((s, r) => s + r.passCount, 0);
-  const overallTotal = mockRTMRequirements.reduce((s, r) => s + r.totalCount, 0);
+  // RTM 도넛 — 선택된 버전의 requirements 에서 derive (Phase 1 회귀 복구).
+  const selectedRtmVersion = useRtmStore((s) => s.getSelectedVersion());
+  const rtmRequirements: RtmRequirement[] = selectedRtmVersion?.requirements ?? EMPTY_REQUIREMENTS;
+  const totalReqs = rtmRequirements.length;
+  const metReqs = rtmRequirements.filter(r => r.status === '충족').length;
+  const unmetReqs = rtmRequirements.filter(r => r.status === '미충족').length;
+  const unrunReqs = rtmRequirements.filter(r => r.totalCount === 0).length;
+  const overallPassTotal = rtmRequirements.reduce((s, r) => s + r.passCount, 0);
+  const overallTotal = rtmRequirements.reduce((s, r) => s + r.totalCount, 0);
   const overallPct = overallTotal > 0 ? Math.round((overallPassTotal / overallTotal) * 100) : 0;
+
+  // 실행 이력 / PASS 추이 — testStore.results 변경 시에만 재계산 (getter 가 매 호출마다 새 배열을 만들기 때문에 selector 직접 호출 금지).
+  const testResults = useTestStore((s) => s.results);
+  const executionHistory = useMemo(
+    () => useTestStore.getState().getExecutionHistory(),
+    [testResults],
+  );
+  const passHistory = useMemo(
+    () => useTestStore.getState().getPassHistory(14),
+    [testResults],
+  );
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
       {activeTab === 'overview' && (
@@ -519,7 +539,7 @@ export function HomePage({
             {/* PASS율 — Y축 고정, 데이터만 가로 스크롤 */}
             <div className="flex-1 min-w-0">
               <PassRateChart
-                data={mockPassHistory}
+                data={passHistory}
                 height={260}
                 stickyAxes
               />
@@ -538,7 +558,7 @@ export function HomePage({
             <div className="flex-1 min-w-0 rounded-[2.5rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm px-8 py-7">
               <Label>이력</Label>
               <div className="mt-4 space-y-0.5">
-                {mockExecutionHistory.map(exec => (
+                {executionHistory.map(exec => (
                   <ExecutionHistoryRow
                     key={exec.id}
                     exec={exec}
