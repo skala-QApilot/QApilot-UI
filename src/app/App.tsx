@@ -28,25 +28,13 @@ import { LinkedFilesModal } from './components/LinkedFilesModal';
 import { RetestNavModal } from './components/RetestNavModal';
 import { getProject, type ProjectDashboardResponse } from '../api/projects';
 import { useProjectStore } from '../store/projectStore';
+import { useNotificationStore } from '../store/notificationStore';
 import { ApiError, onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { useScenarioState } from './hooks/useScenarioState';
-import { useTestState } from './hooks/useTestState';
-import { useChatbotState } from './hooks/useChatbotState';
-import { useAgentRunState } from './hooks/useAgentRunState';
 import {
-  mockAIItems,
-  mockAgentTrace,
   mockFiles,
-  mockNotifications,
-  mockScenarioHistory,
-  mockScenarios,
-  mockExecutionHistory,
-  mockScenarioVersions,
-  mockTestCases,
-  mockTestGroups,
-  mockTestLogs,
   mockRTMVersions,
   type TestCaseMap,
 } from './data/mockData';
@@ -269,8 +257,7 @@ export default function App() {
     scenarioHistoryOpen, setScenarioHistoryOpen,
     scenarioViewMode, setScenarioViewMode,
   } = useScenarioState();
-  // useTestState / useChatbotState / useAgentRunState 의 state 는 모두 HEAD inline 으로 이미 선언되어 있어 destructure 불필요.
-  void useTestState; void useChatbotState; void useAgentRunState;
+  // useTestState / useChatbotState / useAgentRunState 는 import 제거됨 — 모든 state 가 HEAD inline 으로 이미 선언되어 hook wrapper 불필요.
 
   // ── Project auth/load effect ─────────────────────────────────────────────
 
@@ -369,7 +356,18 @@ export default function App() {
 
   // ── Derived values ───────────────────────────────────────────────────────
 
-  const unreadNotifications = mockNotifications.filter(n => !n.read).length;
+  // 알림 — notificationStore 에서 derive (Phase 1 회귀 복구).
+  const rawNotifications = useNotificationStore((s) => s.notifications);
+  const unreadNotifications = useNotificationStore((s) => s.unreadCount);
+  const notifications = useMemo(
+    () => rawNotifications.map((n) => ({
+      id: n.notificationId,
+      message: n.message || n.title,
+      time: n.createdAt,
+      read: n.isRead,
+    })),
+    [rawNotifications],
+  );
 
   const allTCIds = dynamicScenarios.flatMap(ts =>
     (dynamicTestCases[ts.id] || []).map(tc => `${ts.id}_${tc.id}`)
@@ -678,7 +676,7 @@ export default function App() {
         notificationOpen={notificationOpen}
         setNotificationOpen={setNotificationOpen}
         unreadNotifications={unreadNotifications}
-        notifications={mockNotifications}
+        notifications={notifications}
         agentImageSrc={qapilotAgent}
       />
 
@@ -867,11 +865,9 @@ export default function App() {
                 showGeneratingOverlay={showScenarioGenerating}
                 setShowGeneratingOverlay={(v: boolean) => {
                   setShowScenarioGenerating(v);
-                  if (!v) {
-                    setDynamicScenarios([...mockScenarios]);
-                    setDynamicAIItems({ ...mockAIItems });
-                    setDynamicTestCases({ ...mockTestCases });
-                  }
+                  // 오버레이 닫힘 — 시나리오 데이터는 scenarioStore 로 재로드해야 하지만,
+                  // 현 시점에서 dynamic* 는 hook 내부 local state 이므로 mock-reset 로직 자체 제거.
+                  // 실제 데이터는 generation 완료 후 trace polling 이 scenarioStore.loadAll() 트리거.
                 }}
               />
             )}
