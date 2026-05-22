@@ -27,9 +27,9 @@ import { ScenarioChatbar } from './components/ScenarioChatbar';
 import { LinkedFilesModal } from './components/LinkedFilesModal';
 import { RetestNavModal } from './components/RetestNavModal';
 import { getProject, type ProjectDashboardResponse } from '../api/projects';
-import { createService } from '../api/services';
+import { useProjectStore } from '../store/projectStore';
 import { ApiError, onAuthExpired } from '../api/client';
-import { useAuthStore, DEV_BYPASS_SENTINEL } from '../store/authStore';
+import { useAuthStore } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { useScenarioState } from './hooks/useScenarioState';
 import { useTestState } from './hooks/useTestState';
@@ -290,18 +290,12 @@ export default function App() {
       return;
     }
 
-    // dev bypass 모드: 실 API 호출 없이 mockData 로 진행
-    if (token === DEV_BYPASS_SENTINEL) {
-      setProjectLoadState('loaded');
-      setShowAuthForProject(false);
-      return;
-    }
-
     let cancelled = false;
     setProjectLoadState('loading');
     setShowAuthForProject(false);
 
-    getProject(projectSlug, token)
+    void token; // axios interceptor 가 token 자동 첨부 — getProject 시그니처엔 직접 전달 X
+    getProject(projectSlug)
       .then((data: ProjectDashboardResponse) => {
         if (cancelled) return;
         setProjectMeta(data.project);
@@ -536,7 +530,8 @@ export default function App() {
       return;
     }
     try {
-      const created = await createService({
+      // projectStore 가 axios interceptor 통해 토큰 첨부 + store 자체 업데이트.
+      const created = await useProjectStore.getState().createService({
         name: payload.name,
         repos: payload.repos.length
           ? payload.repos.map(r => ({
@@ -547,16 +542,17 @@ export default function App() {
             }))
           : undefined,
         staging_url: payload.stagingUrl || undefined,
-      }, token);
-      const newService: Service = {
-        id: created.project_slug,
-        name: created.display_name,
-        isNew: false,
-        createdAt: (created.created_at || '').slice(0, 10),
+      });
+      // App.tsx 로컬 services 배열에도 mirror (DashHomePage 가 props 로 받음)
+      const mirror: Service = {
+        id: created.id,
+        name: created.name,
+        isNew: created.isNew ?? false,
+        createdAt: created.createdAt,
       };
-      setServices(prev => [...prev, newService]);
-      setSelectedServiceId(created.project_slug);
-      navigate(`/${created.project_slug}`);
+      setServices(prev => [...prev, mirror]);
+      setSelectedServiceId(created.id);
+      navigate(`/${created.id}`);
     } catch (error) {
       console.error('서비스 생성 실패', error);
     }

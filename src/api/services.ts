@@ -13,10 +13,23 @@ export interface ServiceDto {
   updated_at: string;
 }
 
+/**
+ * Spring `RepoConfig` 와 wire 포맷 일치. branch/role 미입력 시 null —
+ * FastAPI 가 default 적용 ("main" / URL-derived).
+ */
+export interface RepoConfigPayload {
+  repo_url: string;
+  token?: string | null;
+  branch?: string | null;
+  role?: string | null;
+}
+
 export interface ServiceCreatePayload {
   name: string;
   description?: string;
   target_root?: string;
+  repos?: RepoConfigPayload[];
+  staging_url?: string;
 }
 
 export interface ServiceSetupPayload {
