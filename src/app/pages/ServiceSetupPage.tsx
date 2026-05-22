@@ -1,161 +1,230 @@
-import React, { useState, useRef, useMemo } from 'react';
-import { Upload, Sparkles, FileText, FolderOpen, Boxes, Workflow, Cpu } from 'lucide-react';
-import type { ProjectMeta, ProjectSummary } from './HomePage';
+import React, { useState, useRef } from 'react';
+import { Plus, Sparkles, FileText, Upload, X, Server, ChevronLeft } from 'lucide-react';
+import { useNavigate } from 'react-router';
+
+interface GithubEntry {
+  id: string;
+  url: string;
+  token: string;
+}
 
 interface ServiceSetupPageProps {
-  serviceName: string;
-  onGenerateScenarios: () => void;
-  projectSlug?: string;
-  projectMeta?: ProjectMeta | null;
-  projectSummary?: ProjectSummary | null;
+  serviceName?: string;
+  onGenerateScenarios: (name: string) => void;
 }
 
-function toSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-') || 'my-project';
-}
-
-export function ServiceSetupPage({
-  serviceName,
-  onGenerateScenarios,
-  projectSlug,
-  projectMeta,
-  projectSummary,
-}: ServiceSetupPageProps) {
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+export function ServiceSetupPage({ serviceName = '', onGenerateScenarios }: ServiceSetupPageProps) {
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const slug = useMemo(() => projectSlug || toSlug(serviceName), [projectSlug, serviceName]);
-  const infoCards = [
-    { label: '파일 수', value: projectSummary?.file_count ?? '-', icon: FolderOpen },
-    { label: '엔드포인트', value: projectSummary?.endpoint_count ?? '-', icon: Workflow },
-    { label: '모델 수', value: projectSummary?.model_count ?? '-', icon: Boxes },
-    { label: 'Framework', value: projectMeta?.framework ?? '-', icon: Cpu },
-  ];
+  const [name, setName] = useState(serviceName);
+  const [stagingUrl, setStagingUrl] = useState('');
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [githubEntries, setGithubEntries] = useState<GithubEntry[]>([
+    { id: '1', url: '', token: '' },
+  ]);
+
+  const addGithubEntry = () => {
+    setGithubEntries(prev => [...prev, { id: `${Date.now()}`, url: '', token: '' }]);
+  };
+
+  const removeGithubEntry = (id: string) => {
+    setGithubEntries(prev => prev.filter(e => e.id !== id));
+  };
+
+  const updateGithubEntry = (id: string, field: 'url' | 'token', value: string) => {
+    setGithubEntries(prev => prev.map(e => e.id === id ? { ...e, [field]: value } : e));
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) setUploadedFile(file);
+    const files = Array.from(e.dataTransfer.files);
+    setUploadedFiles(prev => [...prev, ...files]);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) setUploadedFile(file);
+    const files = Array.from(e.target.files ?? []);
+    setUploadedFiles(prev => [...prev, ...files]);
+    e.target.value = '';
   };
 
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const canSubmit = name.trim().length > 0;
+
   return (
-    <div className="h-full overflow-y-auto bg-white flex items-center">
-      <div className="w-full max-w-2xl mx-auto px-6 py-10">
-
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-9 h-9 rounded-xl bg-[#EAE8F9] flex items-center justify-center flex-shrink-0">
-            <span className="text-sm font-bold text-[#3615CF]">{serviceName.slice(0, 1).toUpperCase()}</span>
-          </div>
-          <div>
-            <h2 className="text-base font-bold text-[#1a1a2e]">{serviceName}</h2>
-            <p className="text-xs text-[#9ca3af] mt-0.5">서비스 URL 또는 문서를 추가하여 시나리오를 자동으로 생성하세요</p>
-          </div>
-        </div>
-
-        {/* Project info */}
-        <div className="border-t border-[#f0f0f0] pt-6 mb-6">
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#9ca3af] mb-3">Project Dashboard</div>
-
-          <div className="flex items-center gap-1.5 text-sm mb-1">
-            <span className="font-semibold text-[#1a1a2e]">/{slug}</span>
-            <span className="text-[#e5e7eb]">·</span>
-            <span className="text-[#6b7280]">{projectMeta?.language || 'unknown'}</span>
-            <span className="text-[#e5e7eb]">·</span>
-            <span className="text-[#6b7280]">{projectMeta?.framework || 'unknown'}</span>
-          </div>
-          <div className="text-xs text-[#9ca3af] mb-6">
-            {projectMeta?.local_path || '로컬 경로 정보가 아직 없습니다.'}
-          </div>
-
-          {/* Stats — flat row with dividers */}
-          <div className="flex divide-x divide-[#f0f0f0]">
-            {infoCards.map(card => {
-              const Icon = card.icon;
-              return (
-                <div key={card.label} className="flex-1 px-4 first:pl-0 last:pr-0">
-                  <div className="flex items-center gap-1 mb-1.5">
-                    <Icon className="w-3 h-3 text-[#c4c9d4] flex-shrink-0" />
-                    <span className="text-[9px] font-semibold uppercase tracking-wider text-[#9ca3af] truncate">{card.label}</span>
-                  </div>
-                  <div className="text-xl font-bold text-[#1a1a2e] leading-none">{card.value}</div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Status meta */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-5 text-xs text-[#9ca3af]">
-            <span>최근 스캔: {projectSummary?.last_scanned_at || projectMeta?.updated_at || '-'}</span>
-            <span className="text-[#e5e7eb]">·</span>
-            <span>인덱스 상태: {projectSummary?.has_index ? 'connected' : 'missing'}</span>
-            <span className="text-[#e5e7eb]">·</span>
-            <span>config: {projectMeta?.config_path || '-'}</span>
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div className="border-t border-[#f0f0f0] mb-6" />
-
-        {/* File upload */}
-        <label className="flex items-center gap-1.5 text-xs font-semibold text-[#6b7280] mb-2">
-          <Upload className="w-3.5 h-3.5" />
-          프로젝트 관련 파일 (PRD, 인터페이스 정의서, 정책 등.)
-        </label>
-        <div
-          onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
-          onDragLeave={() => setIsDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`w-full h-28 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed cursor-pointer transition-all mb-5 ${
-            isDragOver
-              ? 'border-[#3615CF] bg-[#3615CF]/5'
-              : uploadedFile
-              ? 'border-[#10b981] bg-[#10b981]/5'
-              : 'border-[#e5e7eb] hover:border-[#3615CF]/30 hover:bg-gray-50'
-          }`}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            accept=".pdf,.doc,.docx,.xlsx,.xls,.txt"
-            onChange={handleFileChange}
-          />
-          {uploadedFile ? (
-            <>
-              <FileText className="w-6 h-6 text-[#10b981] mb-1.5" />
-              <span className="text-sm font-medium text-[#10b981]">{uploadedFile.name}</span>
-              <span className="text-xs text-[#9ca3af] mt-0.5">클릭하여 변경</span>
-            </>
-          ) : (
-            <>
-              <Upload className={`w-6 h-6 mb-1.5 transition-colors ${isDragOver ? 'text-[#3615CF]' : 'text-[#c4c9d4]'}`} />
-              <span className="text-sm text-[#9ca3af]">파일을 드래그하거나 클릭하여 업로드</span>
-              <span className="text-xs text-[#c4c9d4] mt-0.5">PDF, DOC, XLSX 지원</span>
-            </>
-          )}
-        </div>
-
-        {/* Generate button */}
+    <div className="flex-1 overflow-y-auto bg-[#f9f8ff]">
+      <div className="mx-auto w-full max-w-2xl px-6 pt-12 pb-24 ">
         <button
-          onClick={onGenerateScenarios}
-          className="w-full flex items-center justify-center gap-2 py-3.5 bg-[#3615CF] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-[#3615CF]/20 transition-all"
+          onClick={() => navigate('/services')}
+          className="mb-8 flex items-center gap-1.5 text-sm text-[#9ca3af] transition-colors hover:text-[#3615CF]"
         >
-          <Sparkles className="w-4 h-4" />
-          총 시나리오를 자동으로 생성하기
+          <ChevronLeft className="h-4 w-4" />
+          서비스 대시보드로 돌아가기
         </button>
+
+        <div className="mb-10">
+          <h1 className="text-xl font-bold text-[#1a1a2e]">새 테스트 대시보드 설정</h1>
+          <p className="mt-1 text-sm text-[#9ca3af]">연결할 프로젝트 정보를 입력하면 시나리오를 자동으로 생성해 드립니다.</p>
+        </div>
+
+        <div className="space-y-8">
+          <section className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#3615CF] text-[12px] font-semibold text-white">1</div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-[#1a1a2e]">대시보드 이름</h2>
+                <span className="text-xs text-[#f43b47]">*</span>
+              </div>
+            </div>
+            <input
+              autoFocus
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="예: Frontend App, Backend API"
+              className="w-full rounded-xl border border-[#e5e7eb] bg-white px-3.5 py-3 text-sm text-[#1a1a2e] transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 focus:outline-none"
+            />
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#3615CF] text-[12px] font-semibold text-white">2</div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-[#1a1a2e]">GitHub 저장소</h2>
+                </div>
+              </div>
+              <button
+                onClick={addGithubEntry}
+                className="flex shrink-0 items-center gap-1 text-xs font-medium text-[#3615CF] transition-colors hover:text-[#2d11b0]"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                저장소 추가
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {githubEntries.map(entry => (
+                <div key={entry.id} className="flex items-start gap-2">
+                  <div className="flex-1 space-y-2">
+                    <input
+                      type="url"
+                      value={entry.url}
+                      onChange={e => updateGithubEntry(entry.id, 'url', e.target.value)}
+                      placeholder="https://github.com/owner/repo"
+                      className="w-full rounded-xl border border-[#e5e7eb] bg-white px-3 py-3 text-sm transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 focus:outline-none"
+                    />
+                    <input
+                      type="password"
+                      value={entry.token}
+                      onChange={e => updateGithubEntry(entry.id, 'token', e.target.value)}
+                      placeholder="GitHub Personal Access Token (optional)"
+                      className="w-full rounded-xl border border-[#e5e7eb] bg-white px-3 py-3 font-mono text-sm transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 focus:outline-none"
+                    />
+                  </div>
+                  {githubEntries.length > 1 && (
+                    <button
+                      onClick={() => removeGithubEntry(entry.id)}
+                      className="mt-2 shrink-0 rounded-lg p-1.5 text-[#c4c9d4] transition-colors hover:bg-red-50 hover:text-[#f43b47]"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#3615CF] text-[12px] font-semibold text-white">3</div>
+              <div className="flex items-center gap-2">
+                <Server className="h-4 w-4 text-[#1a1a2e]" />
+                <h2 className="text-sm font-semibold text-[#1a1a2e]">Staging 서버 URL</h2>
+              </div>
+            </div>
+            <input
+              type="url"
+              value={stagingUrl}
+              onChange={e => setStagingUrl(e.target.value)}
+              placeholder="https://staging.example.com"
+              className="w-full rounded-xl border border-[#e5e7eb] bg-white px-3.5 py-3 text-sm transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 focus:outline-none"
+            />
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#3615CF] text-[12px] font-semibold text-white">4</div>
+              <div className="flex items-center gap-2">
+                <Upload className="h-4 w-4 text-[#1a1a2e]" />
+                <h2 className="text-sm font-semibold text-[#1a1a2e]">관련 문서</h2>
+                <span className="text-xs text-[#9ca3af]">PRD, 인터페이스 정의서, 정책 등</span>
+              </div>
+            </div>
+
+            <div
+              onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`flex h-28 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all ${
+                isDragOver ? 'border-[#3615CF] bg-white' : 'border-[#e5e7eb] bg-white hover:border-[#3615CF]/30'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                accept=".pdf,.doc,.docx,.xlsx,.xls,.txt,.md"
+                onChange={handleFileChange}
+              />
+              <Upload className={`mb-1.5 h-5 w-5 ${isDragOver ? 'text-[#3615CF]' : 'text-[#c4c9d4]'}`} />
+              <span className="text-xs text-[#9ca3af]">파일을 드래그하거나 클릭하여 업로드</span>
+              <span className="mt-0.5 text-[10px] text-[#c4c9d4]">PDF, DOC, XLSX, MD 지원</span>
+            </div>
+
+            {uploadedFiles.length > 0 && (
+              <div className="space-y-2">
+                {uploadedFiles.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border border-[#e5e7eb] bg-white px-3 py-2">
+                    <FileText className="h-3.5 w-3.5 flex-shrink-0 text-[#3615CF]" />
+                    <span className="flex-1 truncate text-xs text-[#1a1a2e]">{file.name}</span>
+                    <span className="flex-shrink-0 text-[10px] text-[#9ca3af]">{(file.size / 1024).toFixed(0)}KB</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); removeFile(index); }}
+                      className="p-0.5 text-[#c4c9d4] transition-colors hover:text-[#f43b47]"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <div className="flex flex-col gap-3 pt-4 sm:flex-row">
+            <button
+              onClick={() => onGenerateScenarios(name.trim())}
+              disabled={!canSubmit}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#3615CF] px-5 py-3.5 text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Sparkles className="h-4 w-4" />
+              테스트 대시보드 생성하기
+            </button>
+            <button
+              onClick={() => navigate('/services')}
+              className="rounded-xl border border-[#e5e7eb] px-6 py-3.5 text-sm text-[#6b7280] transition-colors hover:bg-white"
+            >
+              취소
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

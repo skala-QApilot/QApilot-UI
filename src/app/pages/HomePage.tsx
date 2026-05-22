@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Copy, Check, Download, Edit2, KeyRound, Link2, MoreHorizontal, Plus, Shield, ShieldCheck, Users, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Copy, Check, Download, Edit2, KeyRound, Link2, MoreHorizontal, Plus, Shield, ShieldCheck, Users, X, Server } from 'lucide-react';
 import { SearchBar } from '../components/common/SearchBar';
 import { FileList } from '../components/common/FileList';
 import { ExecutionHistoryRow } from '../components/common/ExecutionHistoryRow';
@@ -102,117 +102,266 @@ function SettingsTab({
   framework?: string;
   language?: string;
 }) {
+  type GithubEntry = {
+    id: string;
+    url: string;
+    token: string;
+  };
+
+  type SettingsDraft = {
+    name: string;
+    githubEntries: GithubEntry[];
+    stagingUrl: string;
+  };
+
+  const createGithubEntry = (): GithubEntry => ({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    url: '',
+    token: '',
+  });
+
+  const createDefaultDraft = (): SettingsDraft => ({
+    name: serviceName,
+    githubEntries: [createGithubEntry()],
+    stagingUrl: dashboardUrl || '',
+  });
+
   const [editing, setEditing] = useState(false);
-  const [nameVal, setNameVal] = useState(serviceName);
-  const [descVal, setDescVal] = useState('');
-  const [savedName, setSavedName] = useState(serviceName);
-  const [savedDesc, setSavedDesc] = useState('');
+  const key = `project_settings:${projectSlug ?? 'global'}`;
+  const [draft, setDraft] = useState<SettingsDraft>(createDefaultDraft);
+  const [savedDraft, setSavedDraft] = useState<SettingsDraft>(createDefaultDraft);
 
-  const slug = projectSlug || savedName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-') || 'my-project';
+  useEffect(() => {
+    const fallback = createDefaultDraft();
+    const stored = localStorage.getItem(key);
 
-  const handleEdit = () => { setNameVal(savedName); setDescVal(savedDesc); setEditing(true); };
-  const handleCancel = () => setEditing(false);
-  const handleSave = () => { setSavedName(nameVal); setSavedDesc(descVal); setEditing(false); };
+    if (!stored) {
+      setDraft(fallback);
+      setSavedDraft(fallback);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(stored) as Partial<SettingsDraft>;
+      const githubEntries = Array.isArray(parsed.githubEntries) && parsed.githubEntries.length > 0
+        ? parsed.githubEntries.map(entry => ({
+            id: entry.id || createGithubEntry().id,
+            url: entry.url || '',
+            token: entry.token || '',
+          }))
+        : fallback.githubEntries;
+
+      const nextDraft = {
+        name: parsed.name || fallback.name,
+        githubEntries,
+        stagingUrl: parsed.stagingUrl || fallback.stagingUrl,
+      };
+
+      setDraft(nextDraft);
+      setSavedDraft(nextDraft);
+    } catch {
+      setDraft(fallback);
+      setSavedDraft(fallback);
+    }
+  }, [key, serviceName, dashboardUrl]);
+
+  const addGithubEntry = () => {
+    setDraft(prev => ({
+      ...prev,
+      githubEntries: [...prev.githubEntries, createGithubEntry()],
+    }));
+  };
+
+  const removeGithubEntry = (id: string) => {
+    setDraft(prev => ({
+      ...prev,
+      githubEntries: prev.githubEntries.filter(entry => entry.id !== id),
+    }));
+  };
+
+  const updateGithubEntry = (id: string, field: 'url' | 'token', value: string) => {
+    setDraft(prev => ({
+      ...prev,
+      githubEntries: prev.githubEntries.map(entry => (
+        entry.id === id ? { ...entry, [field]: value } : entry
+      )),
+    }));
+  };
+
+  const handleSave = () => {
+    localStorage.setItem(key, JSON.stringify(draft));
+    setSavedDraft(draft);
+    setEditing(false);
+  };
+
+  const handleCancel = () => {
+    setDraft(savedDraft);
+    setEditing(false);
+  };
+
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="flex h-full px-20 py-12">
+    <div className="flex-1 overflow-y-auto bg-white">
+      <div className="mx-auto max-w-4xl px-6 py-8">
+        <div className="mb-8 flex flex-col gap-4 border-b border-[#e8e6f5] pb-6 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-[#1a1a2e]">서비스 설정</h2>
+            <p className="mt-1 text-sm text-[#9ca3af]">
+              대시보드 이름과 GitHub 저장소, Staging 서버 연결 정보를 관리합니다.
+            </p>
+          </div>
 
-        {/* Left */}
-        <div className="flex-1 pr-16">
-          <div className="border-b border-[#f0f0f0] pb-2 mb-7 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-[#1a1a2e]">General</h2>
+          <div className="flex items-center gap-2">
             {editing ? (
-              <div className="flex items-center gap-2">
+              <>
+                <button
+                  onClick={handleCancel}
+                  className="rounded-xl border border-[#e5e7eb] px-4 py-2 text-sm font-medium text-[#6b7280] transition-colors hover:bg-[#f8f8fc]"
+                >
+                  취소
+                </button>
                 <button
                   onClick={handleSave}
-                  className="px-4 py-1.5 bg-[#3615CF] text-white text-xs font-semibold rounded-lg hover:bg-[#3615CF]/90 transition-colors"
+                  disabled={!isDirty}
+                  className="rounded-xl bg-[#3615CF] px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-[#2d11b0] disabled:cursor-not-allowed disabled:bg-[#cfc9f8]"
                 >
                   저장
                 </button>
-                <button
-                  onClick={handleCancel}
-                  className="flex items-center gap-1 px-4 py-1.5 border border-[#e5e7eb] text-xs text-[#6b7280] rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <X className="w-3 h-3" /> 취소
-                </button>
-              </div>
+              </>
             ) : (
               <button
-                onClick={handleEdit}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#6b7280] border border-[#e5e7eb] rounded-lg hover:bg-gray-50 transition-colors"
+                onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#3615CF] px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-[#2d11b0]"
               >
-                <Edit2 className="w-3.5 h-3.5" /> 수정
+                <Edit2 className="h-4 w-4" />
+                설정 수정
               </button>
             )}
           </div>
-
-          {/* 서비스 표시 이름 */}
-          <div className="mb-6">
-            <label className="block text-sm font-semibold text-[#1a1a2e] mb-1.5">서비스 표시 이름</label>
-            {editing ? (
-              <input
-                value={nameVal}
-                onChange={e => setNameVal(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-[#f3f4f6] border border-transparent focus:border-[#3615CF]/40 focus:bg-white focus:outline-none text-sm text-[#374151] transition-colors"
-              />
-            ) : (
-              <p className="text-sm text-[#374151] px-3 py-2 rounded-lg bg-[#f9fafb] border border-[#f0f0f0]">{savedName}</p>
-            )}
-          </div>
-
-          {/* 설명 */}
-          <div className="mb-6">
-            <label className="block text-sm font-semibold text-[#1a1a2e] mb-1.5">설명</label>
-            {editing ? (
-              <textarea
-                rows={4}
-                value={descVal}
-                onChange={e => setDescVal(e.target.value)}
-                placeholder="서비스에 대한 간단한 설명을 입력하세요"
-                className="w-full px-3 py-2 rounded-lg bg-[#f3f4f6] border border-transparent focus:border-[#3615CF]/40 focus:bg-white focus:outline-none text-sm text-[#374151] resize-none transition-colors placeholder-[#9ca3af]"
-              />
-            ) : (
-              <p className="text-sm text-[#9ca3af] px-3 py-2 rounded-lg bg-[#f9fafb] border border-[#f0f0f0] min-h-[80px]">
-                {savedDesc || '설명 없음'}
-              </p>
-            )}
-          </div>
-
         </div>
-        
-       
-        {/* Divider */}
-        <div className="w-px bg-[#f0f0f0] self-stretch" />
 
-        {/* Right */}
-        <div className="flex-1 pl-16">
-          <div className="border-b border-[#f0f0f0] pb-2 mb-7">
-            <h2 className="text-xl font-bold text-[#1a1a2e]">연동 정보</h2>
-          </div>
-          <CopyBlock
-            label="URL"
-            icon={<Link2 className="w-4 h-4 text-[#9ca3af]" />}
-            value={dashboardUrl || `http://localhost:8080/${slug}`}
-          />
-          <CopyBlock
-            label="서버 인증 토큰"
-            icon={<KeyRound className="w-4 h-4 text-[#9ca3af]" />}
-            value={serverAuthToken || `qap_${slug}_tok_a3f8d2c1e9b4`}
-          />
-          <CopyBlock
-            label="로컬 경로"
-            icon={<Link2 className="w-4 h-4 text-[#9ca3af]" />}
-            value={localPath || '(로컬 경로 없음)'}
-          />
-          <div className="mt-6 rounded-2xl border border-[#ece9fb] bg-[#f9f8ff] px-5 py-4">
-            <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#9ca3af] mb-2">Project Runtime</div>
-            <div className="text-sm text-[#374151]">
-              {framework || '-'} / {language || '-'}
+        <div className="space-y-6">
+          <section className="border-b border-[#ece9fb] pb-6">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3615CF] text-[10px] font-bold text-white">1</span>
+              <h3 className="text-sm font-semibold text-[#1a1a2e]">대시보드 이름</h3>
+              <span className="text-xs text-[#f43b47]">*</span>
             </div>
+            <input
+              type="text"
+              value={draft.name}
+              onChange={e => setDraft(prev => ({ ...prev, name: e.target.value }))}
+              disabled={!editing}
+              placeholder="예: Frontend App, Backend API"
+              className="w-full rounded-xl border border-[#e5e7eb] bg-white px-4 py-3 text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
+            />
+          </section>
+
+          <section className="border-b border-[#ece9fb] pb-6">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3615CF] text-[10px] font-bold text-white">2</span>
+                <h3 className="text-sm font-semibold text-[#1a1a2e]">GitHub 저장소</h3>
+              </div>
+
+              <button
+                onClick={addGithubEntry}
+                disabled={!editing}
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#3615CF] transition-colors hover:text-[#2d11b0] disabled:cursor-not-allowed disabled:text-[#c7c2ef]"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                저장소 추가
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {draft.githubEntries.map(entry => (
+                <div key={entry.id} className="flex items-start gap-2">
+                  <div className="flex-1 space-y-2">
+                    <input
+                      type="url"
+                      value={entry.url}
+                      onChange={e => updateGithubEntry(entry.id, 'url', e.target.value)}
+                      disabled={!editing}
+                      placeholder="https://github.com/owner/repo"
+                      className="w-full rounded-xl border border-[#e5e7eb] bg-white px-4 py-3 text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
+                    />
+                    <input
+                      type="password"
+                      value={entry.token}
+                      onChange={e => updateGithubEntry(entry.id, 'token', e.target.value)}
+                      disabled={!editing}
+                      placeholder="GitHub Personal Access Token (optional)"
+                      className="w-full rounded-xl border border-[#e5e7eb] bg-white px-4 py-3 font-mono text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
+                    />
+                  </div>
+
+                  {draft.githubEntries.length > 1 && (
+                    <button
+                      onClick={() => removeGithubEntry(entry.id)}
+                      disabled={!editing}
+                      className="mt-2 rounded-lg p-1.5 text-[#c4c9d4] transition-colors hover:bg-red-50 hover:text-[#f43b47] disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#c4c9d4]"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="border-b border-[#ece9fb] pb-6">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3615CF] text-[10px] font-bold text-white">3</span>
+              <Server className="h-4 w-4 text-[#1a1a2e]" />
+              <h3 className="text-sm font-semibold text-[#1a1a2e]">Staging 서버 URL</h3>
+            </div>
+            <input
+              type="url"
+              value={draft.stagingUrl}
+              onChange={e => setDraft(prev => ({ ...prev, stagingUrl: e.target.value }))}
+              disabled={!editing}
+              placeholder="https://staging.example.com"
+              className="w-full rounded-xl border border-[#e5e7eb] bg-white px-4 py-3 text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
+            />
+          </section>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="border-t border-[#ece9fb] px-1 py-4">
+            <div className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-[#9ca3af]">Project Slug</div>
+            <div className="truncate text-sm font-semibold text-[#1a1a2e]">{projectSlug || '미연결'}</div>
+          </div>
+          <div className="border-t border-[#ece9fb] px-1 py-4">
+            <div className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-[#9ca3af]">Framework</div>
+            <div className="truncate text-sm font-semibold text-[#1a1a2e]">{framework || '미확인'}</div>
+          </div>
+          <div className="border-t border-[#ece9fb] px-1 py-4">
+            <div className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-[#9ca3af]">Language</div>
+            <div className="truncate text-sm font-semibold text-[#1a1a2e]">{language || '미확인'}</div>
           </div>
         </div>
 
+        {(localPath || serverAuthToken) && (
+          <div className="mt-6 border-t border-[#ece9fb] px-1 py-5">
+            <div className="mb-4 text-sm font-semibold text-[#1a1a2e]">연결 정보</div>
+            {localPath && (
+              <CopyBlock
+                label="로컬 프로젝트 경로"
+                icon={<Link2 className="h-4 w-4 text-[#3615CF]" />}
+                value={localPath}
+              />
+            )}
+            {serverAuthToken && (
+              <CopyBlock
+                label="Server Auth Token"
+                icon={<KeyRound className="h-4 w-4 text-[#3615CF]" />}
+                value={serverAuthToken}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
