@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx --yes tsc --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(/Users/yubin/playground/skala_playground2/QApilot/QApilot-UI/node_modules/.bin/tsc --noEmit)"
+    ]
+  }
+}

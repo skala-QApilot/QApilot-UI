@@ -58,8 +58,7 @@ src/app/                                      # 앱 UI 소스 루트
 - `TestGroupPage.tsx`: 시나리오 그룹 목록 관리와 그룹 단위 테스트 실행 화면을 담당합니다.
 - `TestPage.tsx`: 진행 중인 테스트 실행 화면을 보여주고, 실행 이력 탭으로 `ExecutionHistoryPage`를 연결합니다.
 - `ExecutionHistoryPage.tsx`: 테스트 실행 결과 목록, FAIL/PASS 상세, 재테스트 대상 선택을 담당합니다.
-- `RTMPage.tsx`: FR 요구사항별 충족률, 실행 이력, RTM 버전 선택을 담당합니다.
-- `SettingsPage.tsx`: Git 연동, 야간 자동 루프, 실행 대상 시나리오 범위, 결과 수신 방법 설정을 담당합니다.
+- `RTMPage.tsx`: FR 요구사항별 충족률, 실행 이력, RTM 버전 선택을 담당합니다.설정을 담당합니다.
 
 ## 공통 컴포넌트와 데이터
 

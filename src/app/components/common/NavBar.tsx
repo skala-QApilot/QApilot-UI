@@ -1,3 +1,4 @@
+import { useNavigate, useLocation } from 'react-router';
 import { ChevronRight, Clock } from 'lucide-react';
 
 interface Notification {
@@ -8,8 +9,6 @@ interface Notification {
 }
 
 interface NavBarProps {
-  currentPage: string;
-  setCurrentPage: (page: string) => void;
   selectedService: { name: string } | null;
   scheduledAlarms: Array<{ time: string; id: string }>;
   notificationOpen: boolean;
@@ -20,8 +19,6 @@ interface NavBarProps {
 }
 
 export function NavBar({
-  currentPage,
-  setCurrentPage,
   selectedService,
   scheduledAlarms,
   notificationOpen,
@@ -30,13 +27,19 @@ export function NavBar({
   notifications,
   agentImageSrc,
 }: NavBarProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isServicesPage = location.pathname === '/services';
+  const isSetupPage = location.pathname === '/setup';
+  const isAppShell = !isServicesPage && !isSetupPage;
+
   return (
     <div className="h-[72px] bg-white border-b border-[#e5e7eb] flex items-center px-5 gap-4 z-10 flex-shrink-0">
       {/* 로고 + 서비스 breadcrumb */}
-      <div className={`flex items-center gap-2 flex-shrink-0 ${currentPage === 'SERVICES' ? 'ml-[20px]' : ''}`}>
-        {currentPage !== 'SERVICES' && (
+      <div className={`flex items-center gap-2 flex-shrink-0 ${!isAppShell ? 'ml-[20px]' : ''}`}>
+        {isAppShell && (
           <button
-            onClick={() => setCurrentPage('SERVICES')}
+            onClick={() => navigate('/services')}
             className="w-8 h-8 flex items-center justify-center rounded-lg text-[#9ca3af] hover:text-[#374151] hover:bg-gray-100 transition-colors"
             title="대시보드로 이동"
           >
@@ -44,12 +47,12 @@ export function NavBar({
           </button>
         )}
         <button
-          onClick={() => setCurrentPage('SERVICES')}
+          onClick={() => navigate('/services')}
           className="text-[18px] font-extrabold text-[#3615CF] tracking-tight hover:opacity-80 transition-opacity"
         >
           QApilot
         </button>
-        {selectedService && currentPage !== 'SERVICES' && (
+        {selectedService && isAppShell && (
           <>
             <div className="w-px h-4 bg-[#e5e7eb]" />
             <span className="text-sm font-medium text-[#374151]">{selectedService.name}</span>

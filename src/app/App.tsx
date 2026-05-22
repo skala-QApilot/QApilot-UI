@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
-import ScenarioNetworkGraph from './components/ScenarioNetworkGraph';
-import { StatusIcon } from './components/common/StatusIcon';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useLocation, Routes, Route } from 'react-router';
 import { SubHeader } from './components/common/SubHeader';
 import { SearchBar } from './components/common/SearchBar';
 import { LeftNavigation } from './components/common/LeftNavigation';
-import { FileList } from './components/common/FileList';
 import { NavBar } from './components/common/NavBar';
 import { HomePage, type ProjectMeta, type ProjectSummary } from './pages/HomePage';
 import { TestRunningPage } from './pages/TestRunningPage';
@@ -18,19 +15,25 @@ import { ServiceSetupPage } from './pages/ServiceSetupPage';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import {
-  ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, Plus,
-  Eye, AlertCircle, CheckCircle, X,
-  RotateCcw, Pause, Send,
-  History, BarChart2, Users, Settings,
+  ChevronDown,
+  BarChart2, Users, Settings,
   Network, GitBranch, Download,
-  Sparkles, Star, FolderOpen,
+  FolderOpen, Sparkles, RotateCcw,
 } from 'lucide-react';
+import { FileList } from './components/common/FileList';
 import AgentTracePanel from './components/AgentTracePanel';
+import { ScenarioManagerPanel } from './components/ScenarioManagerPanel';
+import { ScenarioChatbar } from './components/ScenarioChatbar';
+import { LinkedFilesModal } from './components/LinkedFilesModal';
+import { RetestNavModal } from './components/RetestNavModal';
 import { getProject, type ProjectDashboardResponse } from '../api/projects';
 import { ApiError, onAuthExpired } from '../api/client';
 import { useAuthStore, DEV_BYPASS_SENTINEL } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
+import { useScenarioState } from './hooks/useScenarioState';
+import { useTestState } from './hooks/useTestState';
+import { useChatbotState } from './hooks/useChatbotState';
+import { useAgentRunState } from './hooks/useAgentRunState';
 import {
   mockAIItems,
   mockAgentTrace,
@@ -49,7 +52,7 @@ import {
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
 
 // 예약 최상위 경로(프로젝트 slug가 아닌 라우트)
-const RESERVED_TOP_SEGMENTS = new Set(['login', 'services']);
+const RESERVED_TOP_SEGMENTS = new Set(['login', 'services', 'setup']);
 
 function getProjectSlugFromPath(pathname: string): string | null {
   const normalized = pathname.replace(/\/+$/, '') || '/';
@@ -75,6 +78,7 @@ function getCurrentPageFromPath(pathname: string): string {
   if (pathname === '/' || pathname === '') return 'LANDING';
   if (pathname.startsWith('/login')) return 'LOGIN';
   if (pathname.startsWith('/services')) return 'SERVICES';
+  if (pathname.startsWith('/setup')) return 'SETUP';
   return getProjectPageFromPath(pathname);
 }
 
@@ -103,17 +107,28 @@ function buildPagePath(page: string, slug: string | null): string | null {
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const location = useLocation();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const projectSlug = getProjectSlugFromPath(location.pathname);
-  const isProjectRoute = Boolean(projectSlug);
-  const currentPage = getCurrentPageFromPath(location.pathname);
+  // ── Derive routing state from URL ─────────────────────────────────────────
 
-  const setCurrentPage = (page: string) => {
-    const path = buildPagePath(page, projectSlug);
+  const currentSlug = useMemo(() => getProjectSlugFromPath(location.pathname), [location.pathname]);
+  // HEAD 시절 변수명 호환 — 대부분의 child component prop 이 projectSlug 로 받음.
+  const projectSlug = currentSlug;
+  const isProjectRoute = Boolean(currentSlug);
+  const currentPage = useMemo(() => getCurrentPageFromPath(location.pathname), [location.pathname]);
+
+  // ── Navigation helpers ────────────────────────────────────────────────────
+
+  const setCurrentPage = useCallback((page: string) => {
+    const path = buildPagePath(page, currentSlug);
     if (path) navigate(path);
-  };
+  }, [navigate, currentSlug]);
+
+  // TestPage 의 in-progress/history 서브탭 라우팅 (main 브랜치에서 도입).
+  const setTestSubTab = useCallback((tab: 'INPROGRESS' | 'HISTORY') => {
+    navigate(tab === 'INPROGRESS' ? `/${currentSlug}/test/running` : `/${currentSlug}/test`);
+  }, [navigate, currentSlug]);
 
   // 401 만료 → 로그인 페이지로 강제 이동
   useEffect(() => {
@@ -122,7 +137,8 @@ export default function App() {
     });
   }, [navigate]);
 
-  // services (top-level dashboard list)
+  // ── Top-level app state ──────────────────────────────────────────────────
+
   const [services, setServices] = useState<Service[]>(
     isProjectRoute
       ? []
@@ -131,10 +147,11 @@ export default function App() {
           { id: 'svc-2', name: 'Backend API', isNew: false, createdAt: '2026-02-20' },
         ]
   );
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(projectSlug || 'svc-1');
+  // 로컬에서 직접 생성된 서비스 — API 인증 체크 불필요 (main 브랜치 도입).
+  const localServiceIds = useRef(new Set(['svc-1', 'svc-2']));
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(currentSlug || 'svc-1');
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [homeTab, setHomeTab] = useState('overview');
-  const [scenarioViewMode, setScenarioViewMode] = useState<'table' | 'graph'>('table');
   const [projectMeta, setProjectMeta] = useState<ProjectMeta | null>(null);
   const [projectSummary, setProjectSummary] = useState<ProjectSummary | null>(null);
   const [projectCredentials, setProjectCredentials] = useState<{ dashboard_url: string; server_auth_token: string } | null>(null);
@@ -143,39 +160,9 @@ export default function App() {
   const [projectLoadState, setProjectLoadState] = useState<'idle' | 'loading' | 'loaded' | 'missing' | 'error'>(
     isProjectRoute ? 'loading' : 'idle'
   );
-
-  // pipeline header
   const [showAgentTrace, setShowAgentTrace] = useState(false);
 
-  // scenario page
-  const [selectedScenario, setSelectedScenario] = useState('TS1');
-  const [scenarioPageTab, setScenarioPageTab] = useState<'TOTAL' | 'CHANGE'>('TOTAL');
-  const [scenarioSearchQuery, setScenarioSearchQuery] = useState('');
-  const [scenarioChangeFilter, setScenarioChangeFilter] = useState(false);
-  const [selectedScenarioVersion, setSelectedScenarioVersion] = useState('change-2');
-  const [scenarioVersions, setScenarioVersions] = useState([...mockScenarioVersions]);
-  const [favoriteVersionIds, setFavoriteVersionIds] = useState<Set<string>>(new Set());
-  const [hoveredVersionId, setHoveredVersionId] = useState<string | null>(null);
-  const [selectedNetworkNodeId, setSelectedNetworkNodeId] = useState<string | null>(null);
-  const [expandedTSForTC, setExpandedTSForTC] = useState<string[]>(['TS1']);
-  const [selectedTCIds, setSelectedTCIds] = useState<string[]>([]);
-  const [expandedTC, setExpandedTC] = useState<string[]>(['TC1']);
-  const [showTestGroupModal, setShowTestGroupModal] = useState(false);
-  const [showLinkedFiles, setShowLinkedFiles] = useState(false);
-  const [changeItemActions, setChangeItemActions] = useState<Record<number, 'approved' | 'deferred'>>({});
-  const [aiItemActions, setAiItemActions] = useState<Record<string, 'approved' | 'deferred' | 'rejected'>>({});
-  const [showDeferredAIItems, setShowDeferredAIItems] = useState(false);
-  const [codeChangeDetected, setCodeChangeDetected] = useState(false);
-  const [dynamicScenarios, setDynamicScenarios] = useState([...mockScenarios]);
-  const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }>>({ ...mockAIItems });
-  const [dynamicTestCases, setDynamicTestCases] = useState<TestCaseMap>({ ...mockTestCases });
-  const [loadingItemKey, setLoadingItemKey] = useState<string | null>(null);
-  const [editingDetailItem, setEditingDetailItem] = useState<{ type: 'ts' | 'tc' | 'tv'; key: string; value: string } | null>(null);
-  const [selectedTvId, setSelectedTvId] = useState<string | null>(null);
-  const [selectedScenarioNode, setSelectedScenarioNode] = useState<{ level: 'TS' | 'TC' | 'TV'; tsId: string; tcId?: string; tvId?: string }>({ level: 'TS', tsId: 'TS1' });
-  const [highlightedScenarioRow, setHighlightedScenarioRow] = useState<string | null>(null);
-  const [scenarioQuickOpen, setScenarioQuickOpen] = useState(false);
-  const [scenarioHistoryOpen, setScenarioHistoryOpen] = useState(false);
+  // ── RTM state ────────────────────────────────────────────────────────────
 
   // scenario manager panel
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
@@ -239,20 +226,61 @@ export default function App() {
   // 테스트 결과
   const [historyFilter, setHistoryFilter] = useState<string>('ALL');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
-  const [rtmSearchQuery, setRtmSearchQuery] = useState('');
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [selectedRunningForDetail, setSelectedRunningForDetail] = useState<string | null>(null);
   const [selectedFailTC, setSelectedFailTC] = useState<string | null>(null);
   const [historyDetailTab, setHistoryDetailTab] = useState<'FAIL' | 'PASS'>('FAIL');
-
-  // RTM
-  const [expandedRTMItems, setExpandedRTMItems] = useState<string[]>([]);
+  const [rtmSearchQuery, setRtmSearchQuery] = useState('');
   const [selectedRtmVersion, setSelectedRtmVersion] = useState(mockRTMVersions[0].id);
   const [rtmVersionOpen, setRtmVersionOpen] = useState(false);
   const currentRtmVersion = mockRTMVersions.find(v => v.id === selectedRtmVersion) ?? mockRTMVersions[0];
 
+  // ── main 브랜치 hooks 보충 ────────────────────────────────────────────────
+  // HEAD inline state 와 중복되지 않는 state 만 destructure (중복은 hook 안의 값을 무시).
+  const {
+    selectedScenario, setSelectedScenario,
+    scenarioPageTab, setScenarioPageTab,
+    scenarioSearchQuery, setScenarioSearchQuery,
+    scenarioChangeFilter, setScenarioChangeFilter,
+    selectedScenarioVersion, setSelectedScenarioVersion,
+    scenarioVersions, setScenarioVersions,
+    favoriteVersionIds, setFavoriteVersionIds,
+    hoveredVersionId, setHoveredVersionId,
+    selectedNetworkNodeId, setSelectedNetworkNodeId,
+    expandedTSForTC, setExpandedTSForTC,
+    selectedTCIds, setSelectedTCIds,
+    expandedTC, setExpandedTC,
+    showTestGroupModal, setShowTestGroupModal,
+    showLinkedFiles, setShowLinkedFiles,
+    changeItemActions, setChangeItemActions,
+    aiItemActions, setAiItemActions,
+    showDeferredAIItems, setShowDeferredAIItems,
+    codeChangeDetected, setCodeChangeDetected,
+    dynamicScenarios, setDynamicScenarios,
+    dynamicAIItems, setDynamicAIItems,
+    dynamicTestCases, setDynamicTestCases,
+    loadingItemKey, setLoadingItemKey,
+    editingDetailItem, setEditingDetailItem,
+    selectedTvId, setSelectedTvId,
+    selectedScenarioNode, setSelectedScenarioNode,
+    highlightedScenarioRow, setHighlightedScenarioRow,
+    scenarioQuickOpen, setScenarioQuickOpen,
+    scenarioHistoryOpen, setScenarioHistoryOpen,
+    scenarioViewMode, setScenarioViewMode,
+  } = useScenarioState();
+  // useTestState / useChatbotState / useAgentRunState 의 state 는 모두 HEAD inline 으로 이미 선언되어 있어 destructure 불필요.
+  void useTestState; void useChatbotState; void useAgentRunState;
+
+  // ── Project auth/load effect ─────────────────────────────────────────────
+
   useEffect(() => {
     if (!projectSlug) return;
+
+    // 로컬에서 생성된 서비스(svc-1, svc-2)는 API 호출 없이 바로 loaded — main 브랜치 도입.
+    if (localServiceIds.current.has(projectSlug)) {
+      setProjectLoadState('loaded');
+      return;
+    }
 
     const token = useAuthStore.getState().accessToken;
     if (!token) {
@@ -278,14 +306,12 @@ export default function App() {
         setProjectMeta(data.project);
         setProjectSummary(data.summary);
         if (data.credentials) setProjectCredentials(data.credentials);
-        setServices([
-          {
-            id: data.project.project_slug,
-            name: data.project.display_name,
-            isNew: false,
-            createdAt: (data.project.updated_at || data.project.created_at || '').slice(0, 10),
-          },
-        ]);
+        setServices([{
+          id: data.project.project_slug,
+          name: data.project.display_name,
+          isNew: false,
+          createdAt: (data.project.updated_at || data.project.created_at || '').slice(0, 10),
+        }]);
         setSelectedServiceId(data.project.project_slug);
         // currentPage 는 이미 URL 에서 도출되므로 별도 setCurrentPage 불필요
         setProjectLoadState('loaded');
@@ -304,15 +330,51 @@ export default function App() {
         }
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [projectSlug, authRetry]);
 
-  // derived
+  // ── Side-effects ─────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!highlightedScenarioRow) return;
+    const target = document.getElementById(`scenario-row-${highlightedScenarioRow}`);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const timer = window.setTimeout(() => setHighlightedScenarioRow(null), 1500);
+    return () => window.clearTimeout(timer);
+  }, [highlightedScenarioRow]);
+
+  useEffect(() => {
+    if (currentPage !== '시나리오') return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget = !!target && (
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+      );
+      if (!isTypingTarget && (event.key === 'Enter' || event.key === ' ') && !chatbarClosedRef.current) {
+        setChatbarActive(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentPage]);
+
+  useEffect(() => {
+    return () => {
+      if (codeChangeTimerRef.current) window.clearTimeout(codeChangeTimerRef.current);
+      if (fileChangeTimerRef.current) window.clearTimeout(fileChangeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (currentPage !== '테스트') {
+      setSelectedRunningForDetail(null);
+      setSelectedExecutionId(null);
+    }
+  }, [currentPage]);
+
+  // ── Derived values ───────────────────────────────────────────────────────
+
   const unreadNotifications = mockNotifications.filter(n => !n.read).length;
-  const visibleChangeItems = mockScenarioHistory.filter(h => changeItemActions[h.id] !== 'approved');
-  const pendingHistoryCount = visibleChangeItems.length;
 
   const allTCIds = dynamicScenarios.flatMap(ts =>
     (dynamicTestCases[ts.id] || []).map(tc => `${ts.id}_${tc.id}`)
@@ -329,10 +391,14 @@ export default function App() {
     return 'inactive';
   };
 
+  const selectedService = services.find(s => s.id === selectedServiceId) ?? null;
+
+  // ── Business logic ────────────────────────────────────────────────────────
+
   const navigateToHistory = (filter: string) => {
     setHistoryFilter(filter);
     setSelectedExecutionId(null);
-    setCurrentPage('실행이력');
+    navigate(`/${currentSlug}/test`);
   };
 
   const sendAiMessage = (text: string) => {
@@ -366,7 +432,7 @@ export default function App() {
     setScenarioQuickOpen(false);
     setAiMessages(prev => [...prev,
       { role: 'user', text: `[수정 요청] ${context}` },
-      { role: 'assistant', text: `해당 변경사항에 대한 시나리오를 수정하겠습니다. 구체적인 요구사항을 알려주세요.` },
+      { role: 'assistant', text: '해당 변경사항에 대한 시나리오를 수정하겠습니다. 구체적인 요구사항을 알려주세요.' },
     ]);
   };
 
@@ -390,15 +456,10 @@ export default function App() {
   const triggerCodeChangeDetection = () => {
     if (codeChangeTimerRef.current) window.clearTimeout(codeChangeTimerRef.current);
     setCodeChangeDetected(true);
-
     codeChangeTimerRef.current = window.setTimeout(() => {
       setDynamicAIItems(prev => ({
         ...prev,
-        TS1: prev.TS1 ?? {
-          reason: 'login.tsx 비밀번호 검증 로직 변경 감지',
-          trigger: 'code',
-          timestamp: '2026-04-27 10:23',
-        },
+        TS1: prev.TS1 ?? { reason: 'login.tsx 비밀번호 검증 로직 변경 감지', trigger: 'code', timestamp: '2026-04-27 10:23' },
       }));
       setExpandedTSForTC(prev => prev.includes('TS1') ? prev : [...prev, 'TS1']);
       setCodeChangeDetected(false);
@@ -408,10 +469,9 @@ export default function App() {
 
   const triggerFileChangeDetection = () => {
     setShowLinkedFiles(false);
-    setCurrentPage('시나리오');
+    navigate(`/${currentSlug}/scenarios`);
     if (fileChangeTimerRef.current) window.clearTimeout(fileChangeTimerRef.current);
     setFileChangeDetected(true);
-
     fileChangeTimerRef.current = window.setTimeout(() => {
       const unreflected = mockFiles.filter(f => !f.reflected);
       unreflected.forEach(file => {
@@ -431,52 +491,6 @@ export default function App() {
     }, 1800);
   };
 
-  useEffect(() => {
-    if (!highlightedScenarioRow) return;
-
-    const target = document.getElementById(`scenario-row-${highlightedScenarioRow}`);
-    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    const timer = window.setTimeout(() => setHighlightedScenarioRow(null), 1500);
-    return () => window.clearTimeout(timer);
-  }, [highlightedScenarioRow]);
-
-  useEffect(() => {
-    if (currentPage !== '시나리오') return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const isTypingTarget = !!target && (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      );
-
-      if (!isTypingTarget && (event.key === 'Enter' || event.key === ' ') && !chatbarClosedRef.current) {
-        setChatbarActive(true);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPage]);
-
-  useEffect(() => {
-    return () => {
-      if (codeChangeTimerRef.current) window.clearTimeout(codeChangeTimerRef.current);
-      if (fileChangeTimerRef.current) window.clearTimeout(fileChangeTimerRef.current);
-    };
-  }, []);
-
-  // 테스트 페이지 밖으로 나가면 detail 상태 초기화 → SubHeader 정상 표시
-  useEffect(() => {
-    if (currentPage !== '테스트') {
-      setSelectedRunningForDetail(null);
-      setSelectedExecutionId(null);
-    }
-  }, [currentPage]);
-
-
   const advanceAgentStage = () => {
     const order = ['UI', 'API', 'DB', 'Cross-check', '원인 분석', 'Report 생성'];
     const nextIncomplete = order.find(s => !completedAgentStages.includes(s));
@@ -492,9 +506,60 @@ export default function App() {
     }
   };
 
-  // ── Service navigation helpers ──────────────────────────────────────────────
+  // ── Service navigation helpers ────────────────────────────────────────────
 
-  const selectedService = services.find(s => s.id === selectedServiceId) ?? null;
+  // 시나리오 생성 overlay 표시 여부 — ScenarioPage 의 showGeneratingOverlay prop 으로 흘려준다.
+  const [showScenarioGenerating, setShowScenarioGenerating] = useState(false);
+
+  const handleServiceSelect = (service: Service) => {
+    setSelectedServiceId(service.id);
+    navigate(`/${service.id}`);
+  };
+
+  const handleSetupComplete = (name: string) => {
+    const slug = name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-') || `svc-${Date.now()}`;
+    const today = new Date().toISOString().slice(0, 10);
+    const newService: Service = { id: slug, name, isNew: false, createdAt: today };
+    localServiceIds.current.add(slug);
+    setServices(prev => [...prev, newService]);
+    setSelectedServiceId(slug);
+    navigate(`/${slug}`);
+  };
+
+  const handleRetestConfirm = () => {
+    const newRun = {
+      id: `run-retest-${Date.now()}`,
+      name: `재테스트 시나리오 그룹 (${retestCheckedIds.size}건)`,
+      groupId: 'RETEST',
+      startTime: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      status: 'running' as const,
+    };
+    setRunningTests(prev => [...prev, newRun]);
+    setSelectedRunningTestId(newRun.id);
+    setSelectedTestGroup(newRun.name);
+    setCompletedAgentStages([]);
+    setCurrentAgentStage('');
+    setIsTestRunning(false);
+    setRetestCheckedIds(new Set());
+    setShowRetestNavModal(false);
+    setSelectedRunningForDetail(newRun.id);
+    navigate(`/${currentSlug}/test`);
+  };
+
+  // ── Auth / project load screens (fullscreen, bypass main layout) ──────────
+
+  if (location.pathname === '/') {
+    return <LandingPage onGetStarted={() => navigate('/login')} />;
+  }
+
+  if (location.pathname === '/login') {
+    return (
+      <LoginPage
+        onLogin={() => navigate('/services')}
+        onBack={() => navigate('/')}
+      />
+    );
+  }
 
   if (isProjectRoute && showAuthForProject) {
     return (
@@ -503,7 +568,7 @@ export default function App() {
           setShowAuthForProject(false);
           setAuthRetry(n => n + 1);
         }}
-        onBack={() => {}}
+        onBack={() => navigate('/services')}
         projectSlug={projectSlug ?? undefined}
       />
     );
@@ -550,107 +615,10 @@ export default function App() {
     );
   }
 
-  const handleServiceSelect = (service: Service) => {
-    setSelectedServiceId(service.id);
-    navigate(service.isNew ? `/${service.id}/setup` : `/${service.id}`);
-  };
-
-  const handleCreateService = (name: string) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const newService: Service = { id: `svc-${Date.now()}`, name, isNew: true, createdAt: today };
-    setServices(prev => [...prev, newService]);
-    setSelectedServiceId(newService.id);
-    navigate(`/${newService.id}/setup`);
-  };
-
-  const [showScenarioGenerating, setShowScenarioGenerating] = useState(false);
-
-  const handleGenerateScenarios = () => {
-    if (selectedServiceId) {
-      setServices(prev => prev.map(s => s.id === selectedServiceId ? { ...s, isNew: false } : s));
-      navigate(`/${selectedServiceId}/scenarios`);
-    }
-    setDynamicScenarios([]);
-    setDynamicAIItems({});
-    setDynamicTestCases({});
-    setShowScenarioGenerating(true);
-  };
 
 
   // ── 시나리오 관리봇 Panel ───────────────────────────────────────────────────
 
-  const ScenarioManagerPanel = () => {
-    if (!aiPanelOpen) {
-      return (
-        <button
-          onClick={() => setAiPanelOpen(true)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 w-10 h-32 bg-[#3615CF] text-white rounded-l-lg shadow-lg flex items-center justify-center z-40 hover:w-12 transition-all"
-          style={{ writingMode: 'vertical-rl' }}
-        >
-          <span className="text-sm font-semibold">시나리오 관리봇</span>
-        </button>
-      );
-    }
-    return (
-      <div className="w-80 h-full bg-white border-l border-[#f0f0f0] flex flex-col shadow-lg flex-shrink-0">
-        <div className="p-4 flex justify-between items-center bg-[#EAE8F9]">
-          <div className="font-semibold text-[#1a1a2e]">시나리오 관리봇</div>
-          <button onClick={() => setAiPanelOpen(false)} className="p-1 hover:bg-white/50 rounded">
-            <ChevronRight className="w-5 h-5 text-[#6b7280]" />
-          </button>
-        </div>
-        <div className="flex-1 p-4 overflow-y-auto space-y-3">
-          {aiMessages.map((msg, idx) => (
-            <div key={idx}>
-              <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] p-3 rounded-lg text-sm ${
-                  msg.role === 'user'
-                    ? 'bg-[#EAE8F9] text-[#3615CF]'
-                    : 'bg-gray-100 text-[#1a1a2e]'
-                }`}>{msg.text}</div>
-              </div>
-              {msg.role === 'assistant' && idx > 0 && (
-                <div className="flex gap-1 mt-2 flex-wrap">
-                  {['시나리오에 추가', '기존 시나리오 수정 반영', '다시 생성'].map(label => (
-                    <button key={label} className="px-2 py-1 text-xs bg-white border border-[#f0f0f0] rounded hover:bg-gray-50">
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="px-4 py-3 border-t border-[#f0f0f0] bg-gray-50">
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            {['시나리오 생성', '엣지 케이스 추가', 'TC 세분화', '시나리오에 반영'].map(chip => (
-              <button key={chip} onClick={() => sendAiMessage(chip)}
-                className="px-2.5 py-1 text-xs bg-white border border-[#f0f0f0] rounded-full hover:bg-gray-50 transition-colors">
-                {chip}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text" value={aiInput} onChange={e => setAiInput(e.target.value)}
-              placeholder="예) 사용자가 이메일로 로그인하는 시나리오를 만들어줘"
-              className="flex-1 p-2 border border-[#f0f0f0] rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#3615CF]/20"
-              onKeyDown={e => { if (e.key === 'Enter' && aiInput.trim()) sendAiMessage(aiInput); }}
-            />
-            <button onClick={() => { if (aiInput.trim()) sendAiMessage(aiInput); }}
-              className="p-2 bg-[#3615CF] text-white rounded hover:shadow-md transition-shadow">
-              <Send className="w-4 h-4" />
-            </button>
-          </div>
-          {aiContextPrefill && (
-            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
-              컨텍스트: {aiContextPrefill}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -667,12 +635,12 @@ export default function App() {
     );
   }
 
+  // ── Main app layout ───────────────────────────────────────────────────────
+
   return (
     <ProtectedRoute>
     <div className="h-screen flex flex-col overflow-hidden">
       <NavBar
-        currentPage={currentPage}
-        setCurrentPage={setCurrentPage}
         selectedService={selectedService}
         scheduledAlarms={scheduledAlarms}
         notificationOpen={notificationOpen}
@@ -686,86 +654,66 @@ export default function App() {
         <DashHomePage
           services={services}
           onServiceSelect={handleServiceSelect}
-          onCreateService={handleCreateService}
+          onAddNew={() => navigate('/setup')}
         />
+      ) : currentPage === 'SETUP' ? (
+        <ServiceSetupPage onGenerateScenarios={handleSetupComplete} />
       ) : (
-      <div className="flex-1 flex overflow-hidden">
-        <LeftNavigation
-          currentPage={currentPage}
-          setCurrentPage={setCurrentPage}
-          runningTests={runningTests}
-        />
+        <div className="flex-1 flex overflow-hidden">
+          <LeftNavigation
+            slug={projectSlug!}
+            runningTests={runningTests}
+          />
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {showAgentTrace && (
-            <AgentTracePanel
-              items={mockAgentTrace}
-              onClose={() => setShowAgentTrace(false)}
-            />
-          )}
-          {currentPage !== '테스트' && currentPage !== 'SETUP' && (
-            <SubHeader
-              title={
-                currentPage === 'HOME' ? '대시보드' :
-                currentPage === '시나리오' ? '시나리오' :
-                currentPage === 'RTM' ? 'RTM' :
-                currentPage === '설정' ? '설정' : ''
-              }
-              titleExtra={currentPage === 'RTM' ? (
-                <div className="relative ml-1">
-                  <button
-                    onClick={() => setRtmVersionOpen(v => !v)}
-                    className="flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-[#3615CF]/10 hover:bg-[#3615CF]/15 transition-colors"
-                  >
-                    <span className="text-[11px] font-semibold text-[#3615CF]">{currentRtmVersion.id}</span>
-                    <ChevronDown className="w-3 h-3 text-[#3615CF]" />
-                  </button>
-                  {rtmVersionOpen && (
-                    <div className="absolute left-0 top-full mt-1 w-72 bg-white rounded-lg shadow-lg border border-[#f0f0f0] z-50">
-                      <div className="p-2">
-                        <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wide px-2 py-1.5">RTM 버전 선택</div>
-                        {mockRTMVersions.map(ver => (
-                          <button
-                            key={ver.id}
-                            onClick={() => { setSelectedRtmVersion(ver.id); setRtmVersionOpen(false); }}
-                            className={`w-full flex items-start gap-2 px-2 py-2 rounded text-left hover:bg-gray-50 transition-colors ${
-                              selectedRtmVersion === ver.id ? 'bg-[#3615CF]/8' : ''
-                            }`}
-                          >
-                            <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${selectedRtmVersion === ver.id ? 'bg-[#3615CF]' : 'bg-gray-300'}`} />
-                            <div className="min-w-0">
-                              <div className={`text-xs font-semibold ${selectedRtmVersion === ver.id ? 'text-[#3615CF]' : 'text-[#1a1a2e]'}`}>
-                                {ver.label}
-                              </div>
-                              <div className="text-[10px] text-[#9ca3af] mt-0.5">{ver.date} · {ver.basedOn}</div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : undefined}
-              tabs={currentPage === 'HOME' ? [
-                { key: 'overview', label: 'Overview', icon: BarChart2 },
-                { key: 'people',   label: 'People',   icon: Users, count: 6 },
-                { key: 'settings', label: 'Settings', icon: Settings },
-              ] : undefined}
-              activeTab={homeTab}
-              onTabChange={setHomeTab}
-              rightContent={
-                currentPage === 'RTM' ? (
-                  <>
-                    <SearchBar
-                      value={rtmSearchQuery}
-                      onChange={setRtmSearchQuery}
-                      placeholder="요구사항 검색..."
-                      className="w-52"
-                    />
-                    <button className="px-3 py-1.5 bg-transparent border border-[#e5e7eb] rounded-lg text-xs text-[#6b7280] hover:text-[#1a1a2e] hover:bg-white flex items-center gap-1.5 transition-colors">
-                      <Download className="w-3.5 h-3.5" /> CSV
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {showAgentTrace && (
+              <AgentTracePanel
+                items={[]}
+                onClose={() => setShowAgentTrace(false)}
+              />
+            )}
+
+            {currentPage !== '테스트' && (
+              <SubHeader
+                title={
+                  currentPage === 'HOME' ? '대시보드' :
+                  currentPage === '시나리오' ? '시나리오' :
+                  currentPage === 'RTM' ? 'RTM' : ''
+                }
+                titleExtra={currentPage === 'RTM' ? (
+                  <div className="relative ml-1">
+                    <button
+                      onClick={() => setRtmVersionOpen(v => !v)}
+                      className="flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-[#3615CF]/10 hover:bg-[#3615CF]/15 transition-colors"
+                    >
+                      <span className="text-[11px] font-semibold text-[#3615CF]">{currentRtmVersion.id}</span>
+                      <ChevronDown className="w-3 h-3 text-[#3615CF]" />
                     </button>
-                  </>
+                    {rtmVersionOpen && (
+                      <div className="absolute left-0 top-full mt-1 w-72 bg-white rounded-lg shadow-lg border border-[#f0f0f0] z-50">
+                        <div className="p-2">
+                          <div className="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wide px-2 py-1.5">RTM 버전 선택</div>
+                          {mockRTMVersions.map(ver => (
+                            <button
+                              key={ver.id}
+                              onClick={() => { setSelectedRtmVersion(ver.id); setRtmVersionOpen(false); }}
+                              className={`w-full flex items-start gap-2 px-2 py-2 rounded text-left hover:bg-gray-50 transition-colors ${
+                                selectedRtmVersion === ver.id ? 'bg-[#3615CF]/8' : ''
+                              }`}
+                            >
+                              <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${selectedRtmVersion === ver.id ? 'bg-[#3615CF]' : 'bg-gray-300'}`} />
+                              <div className="min-w-0">
+                                <div className={`text-xs font-semibold ${selectedRtmVersion === ver.id ? 'text-[#3615CF]' : 'text-[#1a1a2e]'}`}>
+                                  {ver.label}
+                                </div>
+                                <div className="text-[10px] text-[#9ca3af] mt-0.5">{ver.date} · {ver.basedOn}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : currentPage === '시나리오' ? (
                 <div className="flex items-center gap-2">
                   <button
@@ -948,16 +896,6 @@ export default function App() {
               )
             )}
             {currentPage === 'RTM' && <RTMPage />}
-            {currentPage === 'SETUP' && selectedService && (
-              <ServiceSetupPage
-                serviceName={selectedService.name}
-                projectSlug={projectMeta?.project_slug}
-                projectMeta={projectMeta}
-                projectSummary={projectSummary}
-                onGenerateScenarios={handleGenerateScenarios}
-              />
-
-            )}
           </div>
         </div>
       </div>
@@ -1036,225 +974,55 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Scenario Chatbot (bottom bar) ── */}
+
+      {/* ── Scenario Manager Panel ── */}
+      {currentPage === '시나리오' && (
+        <ScenarioManagerPanel
+          aiPanelOpen={aiPanelOpen}
+          setAiPanelOpen={setAiPanelOpen}
+          aiMessages={aiMessages}
+          aiInput={aiInput}
+          setAiInput={setAiInput}
+          aiContextPrefill={aiContextPrefill}
+          sendAiMessage={sendAiMessage}
+        />
+      )}
+
+      {/* ── Modals ── */}
+      <LinkedFilesModal
+        open={showLinkedFiles}
+        onClose={() => setShowLinkedFiles(false)}
+        onRequestChange={triggerFileChangeDetection}
+      />
+
+      <RetestNavModal
+        open={showRetestNavModal}
+        retestCheckedIds={retestCheckedIds}
+        onConfirm={handleRetestConfirm}
+        onDismiss={() => setShowRetestNavModal(false)}
+      />
+
+      {/* ── Scenario Chatbar ── */}
       {currentPage === '시나리오' && !showLinkedFiles && (
-        <>
-          {/* Hover-trigger zone at the bottom of the content area */}
-          <div
-            className="fixed bottom-0 z-30 pointer-events-auto"
-            style={{ left: '3.5rem', right: 0, height: '4.5rem' }}
-            onMouseEnter={() => { if (!chatbarClosedRef.current) setChatbarActive(true); }}
-          />
-
-          {/* Color-blur backdrop — appears when chatbar is active */}
-          <div
-            className="fixed bottom-0 z-30 pointer-events-none transition-opacity duration-300"
-            style={{
-              left: '3.5rem', right: 0, height: '5rem',
-              opacity: chatbarActive ? 1 : 0,
-              background: 'linear-gradient(to top, rgba(249,250,251,0.88) 0%, rgba(249,250,251,0.46) 42%, rgba(249,250,251,0.14) 72%, rgba(249,250,251,0) 100%)',
-              backdropFilter: chatbarActive ? 'blur(6px)' : 'none',
-              WebkitBackdropFilter: chatbarActive ? 'blur(6px)' : 'none',
-              maskImage: 'linear-gradient(to top, black 0%, rgba(0,0,0,0.78) 45%, rgba(0,0,0,0.24) 78%, transparent 100%)',
-              WebkitMaskImage: 'linear-gradient(to top, black 0%, rgba(0,0,0,0.78) 45%, rgba(0,0,0,0.24) 78%, transparent 100%)',
-            }}
-          />
-
-          {/* Chat history panel */}
-          {chatbarActive && chatHistoryPanelOpen && (
-            <div
-              className="fixed z-50 bg-white rounded-2xl shadow-2xl border border-[#f0f0f0] overflow-hidden flex flex-col"
-              style={{ bottom: '5.2rem', left: 'calc(3.5rem + 4.5rem)', width: '280px', maxHeight: '300px' }}
-            >
-              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0">
-                <span className="text-sm font-semibold text-[#1a1a2e]">대화 히스토리</span>
-                <button onClick={() => setChatHistoryPanelOpen(false)} className="p-1 hover:bg-gray-100 rounded">
-                  <X className="w-3.5 h-3.5 text-[#9ca3af]" />
-                </button>
-              </div>
-              <div className="overflow-y-auto flex-1">
-                {[
-                  { date: '2026-04-27 10:23', summary: 'TS2 TC1 수정 — 검색 자동완성 조건 추가' },
-                  { date: '2026-04-26 16:42', summary: 'TS1 TC2 엣지 케이스 추가' },
-                  { date: '2026-04-25 09:15', summary: 'TS3 전체 시나리오 재생성 요청' },
-                ].map((h, i) => (
-                  <button key={i}
-                    onClick={() => { setChatHistoryPanelOpen(false); setChatPanelExpanded(true); }}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-[#f0f0f0] transition-colors">
-                    <div className="text-xs font-medium text-[#1a1a2e] mb-0.5 truncate">{h.summary}</div>
-                    <div className="text-[10px] text-[#9ca3af]">{h.date}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Chat conversation panel — slides up when input is focused */}
-          {chatbarActive && chatPanelExpanded && (
-            <div
-              className="fixed z-50 flex justify-center"
-              style={{ bottom: '5.2rem', left: '3.5rem', right: 0 }}
-            >
-            <div
-              className="bg-white rounded-2xl shadow-2xl border border-[#f0f0f0] overflow-hidden flex flex-col w-full"
-              style={{
-                maxWidth: '672px',
-                maxHeight: '300px',
-                animation: 'slideUpFade 0.22s ease-out',
-                marginLeft: '4.5rem',
-                marginRight: '2.5rem',
-              }}
-            >
-              <style>{`@keyframes slideUpFade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }`}</style>
-              <div className="px-4 py-3 border-b border-[#f0f0f0] flex items-center justify-between flex-shrink-0 bg-[#EAE8F9]/40">
-                <span className="text-sm font-semibold text-[#1a1a2e]">시나리오 관리봇</span>
-                <button onClick={() => setChatPanelExpanded(false)} className="p-1 hover:bg-gray-100 rounded">
-                  <ChevronDown className="w-4 h-4 text-[#9ca3af]" />
-                </button>
-              </div>
-              <div className="flex-1 p-4 overflow-y-auto space-y-3">
-                {aiMessages.map((msg, idx) => (
-                  <div key={idx}>
-                    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed ${
-                        msg.role === 'user'
-                          ? 'bg-[#EAE8F9] text-[#3615CF]'
-                          : 'bg-gray-100 text-[#1a1a2e]'
-                      }`}>{msg.text}</div>
-                    </div>
-                    {msg.role === 'assistant' && idx > 0 && (
-                      <div className="flex gap-1.5 mt-2 flex-wrap">
-                        {['시나리오에 추가', '기존 시나리오 수정 반영', '다시 생성'].map(label => (
-                          <button key={label}
-                            onClick={() => {
-                              setInlineDiffId('TS1_TC2');
-                              setHighlightedBotRow('tc-TS1_TC2');
-                              setTimeout(() => setHighlightedBotRow(null), 2000);
-                            }}
-                            className="px-2.5 py-1 text-xs bg-white border border-[#f0f0f0] rounded-full hover:bg-gray-50 hover:border-[#3615CF]/30 transition-colors">
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-            </div>
-          )}
-
-          {/* ── Chatbar pill ── */}
-          <div
-            className="fixed z-50 flex justify-center transition-all duration-300"
-            style={{
-              left: '3.5rem', right: 0, bottom: '1rem',
-              opacity: chatbarActive ? 1 : 0,
-              transform: chatbarActive ? 'translateY(0)' : 'translateY(1rem)',
-              pointerEvents: chatbarActive ? 'auto' : 'none',
-            }}
-          >
-            <div className="flex items-center gap-2 w-full max-w-2xl px-4">
-
-              {/* (+) outside-left: quick chips */}
-              <div className="relative flex-shrink-0">
-                {chatbarActive && quickChipsOpen && (
-                  <div className="absolute z-50 flex flex-col gap-1.5 right-full bottom-0 mr-3">
-                    {['엣지 케이스 추가', 'TC 세분화', '시나리오 생성', '오류 분석'].map(chip => (
-                      <button key={chip}
-                        onClick={() => { setAiInput(chip); setQuickChipsOpen(false); setChatPanelExpanded(true); }}
-                        className="w-max min-w-[132px] px-4 py-2.5 bg-white rounded-full shadow-lg border border-[#f0f0f0] text-[13px] font-semibold text-[#1a1a2e] whitespace-nowrap hover:shadow-xl hover:border-[#3615CF]/30 text-left transition-all">
-                        {chip}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <button
-                  onClick={() => { setQuickChipsOpen(p => !p); setChatHistoryPanelOpen(false); }}
-                  className={`w-10 h-10 rounded-full shadow-lg border flex items-center justify-center transition-all hover:shadow-xl ${
-                    quickChipsOpen
-                      ? 'bg-[#3615CF] text-white border-transparent'
-                      : 'bg-white border-[#f0f0f0] text-[#6b7280] hover:border-[#3615CF]/30'
-                  }`}>
-                  <Plus className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Pill bar */}
-              <div className="flex-1 flex items-center bg-white rounded-full shadow-xl border border-[#f0f0f0] px-4 py-2.5 gap-3 hover:shadow-2xl transition-shadow">
-
-                {/* History toggle — inside-left */}
-                <button
-                  onClick={() => { setChatHistoryPanelOpen(p => !p); setQuickChipsOpen(false); }}
-                  className={`flex-shrink-0 transition-colors p-0.5 rounded-full ${chatHistoryPanelOpen ? 'text-[#3615CF]' : 'text-[#9ca3af] hover:text-[#6b7280]'}`}
-                  title="대화 히스토리">
-                  <History className="w-4 h-4" />
-                </button>
-
-                {/* Divider */}
-                {(chatContextTag || true) && <div className="w-px h-4 bg-[#f0f0f0] flex-shrink-0" />}
-
-                {/* Context tag (pink) — shown when clicking speech bubble on a row */}
-                {chatContextTag && (
-                  <div className="flex items-center gap-1 px-2.5 py-0.5 bg-[#EAE8F9] text-[#3615CF] rounded-full text-xs flex-shrink-0 max-w-[200px] border border-[#3615CF]/20">
-                    <span className="truncate font-medium">{chatContextTag}</span>
-                    <button onClick={() => setChatContextTag(null)} className="flex-shrink-0 ml-0.5 opacity-60 hover:opacity-100">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-
-                {/* Text input */}
-                <input
-                  value={aiInput}
-                  onChange={e => setAiInput(e.target.value)}
-                  onFocus={() => { setChatPanelExpanded(true); setChatHistoryPanelOpen(false); }}
-                  placeholder={chatContextTag ? '수정 내용을 입력하세요...' : 'TC/TV에 대해 질문하거나 수정 요청하기...'}
-                  className="flex-1 bg-transparent focus:outline-none text-sm placeholder-[#c4c9d4] min-w-0"
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && aiInput.trim()) {
-                      sendAiMessage(aiInput);
-                      setChatPanelExpanded(true);
-                      if (chatContextTag?.includes('TC2')) {
-                        setTimeout(() => {
-                          setInlineDiffId('TS1_TC2');
-                          setHighlightedBotRow('tc-TS1_TC2');
-                          setTimeout(() => setHighlightedBotRow(null), 2000);
-                        }, 700);
-                      }
-                    }
-                  }}
-                />
-
-                {/* Send button */}
-                <button
-                  onClick={() => { if (aiInput.trim()) { sendAiMessage(aiInput); setChatPanelExpanded(true); } }}
-                  className={`p-1.5 rounded-full flex-shrink-0 transition-all ${
-                    aiInput.trim()
-                      ? 'bg-[#3615CF] text-white shadow-sm hover:shadow-md'
-                      : 'bg-gray-100 text-[#c4c9d4]'
-                  }`}>
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Close chatbar */}
-              <button
-                onClick={() => {
-                  chatbarClosedRef.current = true;
-                  setChatbarActive(false);
-                  setChatPanelExpanded(false);
-                  setQuickChipsOpen(false);
-                  setChatHistoryPanelOpen(false);
-                  setChatContextTag(null);
-                  setTimeout(() => { chatbarClosedRef.current = false; }, 700);
-                }}
-                className="w-9 h-9 rounded-full bg-white shadow-md border border-[#f0f0f0] flex items-center justify-center flex-shrink-0 text-[#9ca3af] hover:text-[#6b7280] transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </>
+        <ScenarioChatbar
+          chatbarClosedRef={chatbarClosedRef}
+          chatbarActive={chatbarActive}
+          setChatbarActive={setChatbarActive}
+          chatPanelExpanded={chatPanelExpanded}
+          setChatPanelExpanded={setChatPanelExpanded}
+          chatHistoryPanelOpen={chatHistoryPanelOpen}
+          setChatHistoryPanelOpen={setChatHistoryPanelOpen}
+          quickChipsOpen={quickChipsOpen}
+          setQuickChipsOpen={setQuickChipsOpen}
+          chatContextTag={chatContextTag}
+          setChatContextTag={setChatContextTag}
+          aiMessages={aiMessages}
+          aiInput={aiInput}
+          setAiInput={setAiInput}
+          setInlineDiffId={setInlineDiffId}
+          setHighlightedBotRow={setHighlightedBotRow}
+          sendAiMessage={sendAiMessage}
+        />
       )}
     </div>
     </ProtectedRoute>
