@@ -1,21 +1,7 @@
-export const mockTestGroups = [
-  { id: 'TG-001', name: '나의 진행 중인 테스트', scenarios: ['TS1', 'TS2'], tcCount: 10, status: 'active' as const, createdDate: '2026-04-20', executionCount: 3, tags: ['회귀', '로그인'] },
-  { id: 'TG-002', name: '시나리오 TS1-TS3 범위', scenarios: ['TS1', 'TS2', 'TS3'], tcCount: 15, status: 'active' as const, createdDate: '2026-04-22', executionCount: 5, tags: ['스모크'] },
-  { id: 'TG-003', name: '전체 시나리오 검증', scenarios: ['TS1', 'TS2', 'TS3', 'TS4'], tcCount: 23, status: 'archived' as const, createdDate: '2026-04-18', executionCount: 8, tags: ['전체'] },
-];
-
 export const mockFiles = [
   { id: 1, name: 'PRD', version: 'v1.0', reflected: true, date: '2026-04-20' },
   { id: 2, name: '인터페이스 정의서', version: 'v1.1', reflected: true, date: '2026-04-22' },
   { id: 3, name: 'WBS', version: 'v1.0', reflected: false, date: '2026-04-15' },
-];
-
-export const mockRTMData = [
-  { frId: 'FR-001', requirement: '사용자는 이메일로 로그인할 수 있다', ts: 'TS1', tc: 'TC1', result: 'PASS' },
-  { frId: 'FR-002', requirement: '비밀번호는 8자 이상이어야 한다', ts: 'TS1', tc: 'TC2', result: 'PASS' },
-  { frId: 'FR-003', requirement: '검색어 입력 시 자동완성 제공', ts: 'TS2', tc: 'TC1', result: 'FAIL' },
-  { frId: 'FR-004', requirement: '장바구니에 최대 99개 상품 추가 가능', ts: 'TS3', tc: 'TC3', result: 'PASS' },
-  { frId: 'FR-005', requirement: '결제 시 쿠폰 적용 가능', ts: '-', tc: '-', result: 'UNCOVERED' },
 ];
 
 export const mockTestLogs = [
