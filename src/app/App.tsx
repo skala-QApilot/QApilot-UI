@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import ScenarioNetworkGraph from './components/ScenarioNetworkGraph';
 import { StatusIcon } from './components/common/StatusIcon';
@@ -331,12 +331,17 @@ export default function App() {
   }, [projectSlug, authRetry, loadProject, setShowAuthForProject]);
 
   // derived
-  const notifications = useNotificationStore((s) => s.notifications.map((n) => ({
-    id: n.notificationId,
-    message: n.message || n.title,
-    time: n.createdAt,
-    read: n.isRead,
-  })));
+  const rawNotifications = useNotificationStore((s) => s.notifications);
+  const notifications = useMemo(
+    () =>
+      rawNotifications.map((n) => ({
+        id: n.notificationId,
+        message: n.message || n.title,
+        time: n.createdAt,
+        read: n.isRead,
+      })),
+    [rawNotifications],
+  );
   const unreadNotifications = useNotificationStore((s) => s.unreadCount);
   const visibleChangeItems = mockScenarioHistory.filter(h => changeItemActions[h.id] !== 'approved');
   const pendingHistoryCount = visibleChangeItems.length;
@@ -428,6 +433,40 @@ export default function App() {
       setCodeGenError(codeGenPolling.error?.message ?? '코드 생성에 실패했습니다.');
     }
   }, [codeGenPolling.status, codeGenTraceId, currentServiceId, loadScenarioDomain]);
+
+  // ── 시나리오 생성 trigger + 폴링 ─────────────────────────────────────────
+  // 주의: 아래 hook 들은 반드시 early-return 보다 위에 있어야 한다.
+  //       (이전엔 early-return 아래에 있어 Rules of Hooks 위반으로 크래시 발생)
+  const [showScenarioGenerating, setShowScenarioGenerating] = useState(false);
+  const [scenarioGenTraceId, setScenarioGenTraceId] = useState<string | null>(null);
+  const [scenarioGenError, setScenarioGenError] = useState<string | null>(null);
+
+  const scenarioGenPolling = useTracePolling(currentServiceId, scenarioGenTraceId);
+
+  useEffect(() => {
+    if (!scenarioGenTraceId) return;
+    if (scenarioGenPolling.status === 'completed') {
+      if (currentServiceId) {
+        loadScenarioDomain(currentServiceId).then(() => {
+          const s = useScenarioStore.getState();
+          setDynamicScenarios(s.scenarios.map(toUiScenario));
+          const tcMap: TestCaseMap = {};
+          for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
+            tcMap[tsId] = list.map(toUiTestCase);
+          }
+          setDynamicTestCases(tcMap);
+          setDynamicAIItems(toUiAIItemsByScenario(s.changeRequests));
+          setScenarioVersions(s.versions.map(toUiVersion));
+        });
+      }
+    } else if (
+      scenarioGenPolling.status === 'failed' ||
+      scenarioGenPolling.status === 'error'
+    ) {
+      const msg = scenarioGenPolling.error?.message ?? '시나리오 생성에 실패했습니다.';
+      setScenarioGenError(msg);
+    }
+  }, [scenarioGenPolling.status, scenarioGenTraceId, currentServiceId, loadScenarioDomain]);
 
   const closeCodeGenOverlay = () => {
     setShowCodeGenOverlay(false);
@@ -702,40 +741,6 @@ export default function App() {
       console.error('서비스 생성 실패', error);
     }
   };
-
-  const [showScenarioGenerating, setShowScenarioGenerating] = useState(false);
-  const [scenarioGenTraceId, setScenarioGenTraceId] = useState<string | null>(null);
-  const [scenarioGenError, setScenarioGenError] = useState<string | null>(null);
-
-  // 시나리오 생성 trace 폴링 — trace 가 완료/실패 되면 상태 변경.
-  const scenarioGenPolling = useTracePolling(currentServiceId, scenarioGenTraceId);
-
-  // 폴링 완료/실패 → 데이터 재로드 + 오버레이 닫기 처리.
-  useEffect(() => {
-    if (!scenarioGenTraceId) return;
-    if (scenarioGenPolling.status === 'completed') {
-      if (currentServiceId) {
-        loadScenarioDomain(currentServiceId).then(() => {
-          const s = useScenarioStore.getState();
-          setDynamicScenarios(s.scenarios.map(toUiScenario));
-          const tcMap: TestCaseMap = {};
-          for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
-            tcMap[tsId] = list.map(toUiTestCase);
-          }
-          setDynamicTestCases(tcMap);
-          setDynamicAIItems(toUiAIItemsByScenario(s.changeRequests));
-          setScenarioVersions(s.versions.map(toUiVersion));
-        });
-      }
-      // overlay 가 'completed' 상태에서 자체 onComplete 콜백 호출 → 닫기
-    } else if (
-      scenarioGenPolling.status === 'failed' ||
-      scenarioGenPolling.status === 'error'
-    ) {
-      const msg = scenarioGenPolling.error?.message ?? '시나리오 생성에 실패했습니다.';
-      setScenarioGenError(msg);
-    }
-  }, [scenarioGenPolling.status, scenarioGenTraceId, currentServiceId, loadScenarioDomain]);
 
   const handleGenerateScenarios = async () => {
     if (!currentServiceId) {

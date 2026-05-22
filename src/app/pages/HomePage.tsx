@@ -7,6 +7,9 @@ import { PassRateChart } from '../components/common/PassRateChart';
 import { RTMDonutChart } from '../components/common/RTMDonutChart';
 import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
+import type { RtmRequirement } from '../../api/rtm';
+
+const EMPTY_REQUIREMENTS: RtmRequirement[] = [];
 
 export interface ProjectMeta {
   project_slug: string;
@@ -340,7 +343,8 @@ export function HomePage({
   void navigateToHistory;
 
   // RTM 도넛 — 선택된 버전의 requirements 에서 derive
-  const rtmRequirements = useRtmStore((s) => s.getSelectedVersion()?.requirements ?? []);
+  const selectedRtmVersion = useRtmStore((s) => s.getSelectedVersion());
+  const rtmRequirements = selectedRtmVersion?.requirements ?? EMPTY_REQUIREMENTS;
   const totalReqs = rtmRequirements.length;
   const metReqs = rtmRequirements.filter(r => r.status === '충족').length;
   const unmetReqs = rtmRequirements.filter(r => r.status === '미충족').length;

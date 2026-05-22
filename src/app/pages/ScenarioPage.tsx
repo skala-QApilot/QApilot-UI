@@ -71,7 +71,14 @@ onStartTestRun,
   const isGeneratingCode = codeGenStatus === 'polling';
 
   // 시나리오 ↔ RTM 매핑 — rtmStore 에서 derive (C10)
-  const rtmMappings = useRtmStore((s) => s.getRtmMappings());
+  // getRtmMappings() 가 매 호출마다 새 배열을 만들기 때문에 selector 안에서 직접 호출하면
+  // 무한 재렌더가 발생한다. raw state 만 구독하고 useMemo 로 derive.
+  const rtmVersionsForMap = useRtmStore((s) => s.versions);
+  const selectedRtmVersionId = useRtmStore((s) => s.selectedVersionId);
+  const rtmMappings = React.useMemo(
+    () => useRtmStore.getState().getRtmMappings(),
+    [rtmVersionsForMap, selectedRtmVersionId],
+  );
 
   // 시나리오 그룹 — scenarioStore 에서 derive (C10)
   const uiGroups = useScenarioStore((s) => s.groups).map((g) => ({
