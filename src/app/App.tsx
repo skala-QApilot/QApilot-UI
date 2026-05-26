@@ -30,11 +30,11 @@ import { getProject, type ProjectDashboardResponse } from '../api/projects';
 import { useProjectStore } from '../store/projectStore';
 import { useNotificationStore } from '../store/notificationStore';
 import { useRtmStore } from '../store/rtmStore';
+import { useFileStore } from '../store/fileStore';
 import { ApiError, onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { useScenarioState } from './hooks/useScenarioState';
-import { mockFiles } from './data/mockData';
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
 
 // 예약 최상위 경로(프로젝트 slug가 아닌 라우트)
@@ -486,7 +486,7 @@ export default function App() {
     if (fileChangeTimerRef.current) window.clearTimeout(fileChangeTimerRef.current);
     setFileChangeDetected(true);
     fileChangeTimerRef.current = window.setTimeout(() => {
-      const unreflected = mockFiles.filter(f => !f.reflected);
+      const unreflected = useFileStore.getState().getUiFiles().filter(f => !f.reflected);
       unreflected.forEach(file => {
         const targetId = 'TS2';
         setDynamicAIItems(prev => ({

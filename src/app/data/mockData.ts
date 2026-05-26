@@ -1,9 +1,3 @@
-export const mockFiles = [
-  { id: 1, name: 'PRD', version: 'v1.0', reflected: true, date: '2026-04-20' },
-  { id: 2, name: '인터페이스 정의서', version: 'v1.1', reflected: true, date: '2026-04-22' },
-  { id: 3, name: 'WBS', version: 'v1.0', reflected: false, date: '2026-04-15' },
-];
-
 export const mockTestLogs = [
   { time: '14:32:01', action: 'navigate to https://example.com/login', apiMethod: 'GET', endpoint: '/api/init', status: 200, responseTime: '124ms', isError: false, hitl: false },
   { time: '14:32:02', action: 'fill input[name="email"] with "test@example.com"', apiMethod: '', endpoint: '', status: null, responseTime: '', isError: false, hitl: false },
