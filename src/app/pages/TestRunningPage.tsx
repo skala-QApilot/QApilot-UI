@@ -347,7 +347,7 @@ export const TestRunningPage = ({
                               scrollToLog(Math.max(0, logIdx));
                             }}>
                             <button className="flex-shrink-0" onClick={e => e.stopPropagation()}>
-                              {tc.testVariables.length > 0
+                              {tc.values.length > 0
                                 ? (isTCExpanded ? <ChevronDown className="w-3 h-3 text-[#9ca3af]" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af]" />)
                                 : <span className="w-3" />}
                             </button>
@@ -371,7 +371,7 @@ export const TestRunningPage = ({
                           </div>
 
                           {/* TV 행 */}
-                          {isTCExpanded && tc.testVariables.map(tv => {
+                          {isTCExpanded && tc.values.map(tv => {
                             const tvKey = `${scenario.id}_${tc.id}_${tv.id}`;
                             const ep = mockTVEndpoints[tvKey];
                             const validations = mockValidationConditions[tvKey] || [];

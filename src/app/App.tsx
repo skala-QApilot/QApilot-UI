@@ -555,35 +555,49 @@ export default function App() {
     [storeServices, selectedServiceId],
   );
   const scenarioGenPolling = useTracePolling(scenarioGenPollingServiceId, scenarioGenTraceId);
+
+  /**
+   * scenarioStore.loadAll(serviceId) 호출 + 결과를 dynamic* state 로 sync.
+   * 사용처: 폴링 완료 시, 또는 페이지 진입/새로고침 시.
+   */
+  const syncScenarioFromStore = useCallback(async (serviceId: string) => {
+    try {
+      await useScenarioStore.getState().loadAll(serviceId);
+      const s = useScenarioStore.getState();
+      setDynamicScenarios(s.scenarios.map(toUiScenario));
+      const tcMap: Record<string, ReturnType<typeof toUiTestCase>[]> = {};
+      for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
+        tcMap[tsId] = list.map(toUiTestCase);
+      }
+      setDynamicTestCases(tcMap);
+      // UiAIItem (5 fields) → dynamicAIItem shape (3 fields, trigger narrowed)
+      const uiAi = toUiAIItemsByScenario(s.changeRequests);
+      const aiMap: Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }> = {};
+      for (const [tsId, item] of Object.entries(uiAi)) {
+        const trigger: 'file' | 'chatbot' | 'code' =
+          item.trigger === 'file' || item.trigger === 'chatbot' || item.trigger === 'code'
+            ? item.trigger : 'chatbot';
+        aiMap[tsId] = { reason: item.reason, trigger, timestamp: item.timestamp };
+      }
+      setDynamicAIItems(aiMap);
+      setScenarioVersions(s.versions.map(toUiVersion));
+    } catch (err) {
+      console.error('시나리오 reload 실패', err);
+    }
+  }, [setDynamicScenarios, setDynamicTestCases, setDynamicAIItems, setScenarioVersions]);
+
+  // 페이지 진입/새로고침 시 자동 로드 — service 가 확정되면 1회.
+  useEffect(() => {
+    if (!scenarioGenPollingServiceId) return;
+    syncScenarioFromStore(scenarioGenPollingServiceId);
+  }, [scenarioGenPollingServiceId, syncScenarioFromStore]);
+
+  // 폴링이 completed/failed 면 overlay 닫기 + 생성된 시나리오 reload.
   useEffect(() => {
     if (!scenarioGenTraceId) return;
     if (scenarioGenPolling.status === 'completed') {
-      // 1) scenarioStore 새로고침 — 방금 생성된 시나리오 fetch
-      // 2) store 결과를 App.tsx 의 dynamic* state 로 sync (ScenarioPage 가 props 로 받음)
-      const serviceId = scenarioGenPollingServiceId;
-      if (serviceId) {
-        useScenarioStore.getState().loadAll(serviceId).then(() => {
-          const s = useScenarioStore.getState();
-          setDynamicScenarios(s.scenarios.map(toUiScenario));
-          const tcMap: Record<string, ReturnType<typeof toUiTestCase>[]> = {};
-          for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
-            tcMap[tsId] = list.map(toUiTestCase);
-          }
-          setDynamicTestCases(tcMap);
-          // UiAIItem (5 fields) → dynamicAIItem shape (3 fields, trigger narrowed)
-          const uiAi = toUiAIItemsByScenario(s.changeRequests);
-          const aiMap: Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }> = {};
-          for (const [tsId, item] of Object.entries(uiAi)) {
-            const trigger: 'file' | 'chatbot' | 'code' =
-              item.trigger === 'file' || item.trigger === 'chatbot' || item.trigger === 'code'
-                ? item.trigger : 'chatbot';
-            aiMap[tsId] = { reason: item.reason, trigger, timestamp: item.timestamp };
-          }
-          setDynamicAIItems(aiMap);
-          setScenarioVersions(s.versions.map(toUiVersion));
-        }).catch((err) => {
-          console.error('시나리오 reload 실패', err);
-        });
+      if (scenarioGenPollingServiceId) {
+        syncScenarioFromStore(scenarioGenPollingServiceId);
       }
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
@@ -592,8 +606,7 @@ export default function App() {
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
     }
-  }, [scenarioGenPolling.status, scenarioGenPolling.error, scenarioGenTraceId, scenarioGenPollingServiceId,
-      setDynamicScenarios, setDynamicTestCases, setDynamicAIItems, setScenarioVersions]);
+  }, [scenarioGenPolling.status, scenarioGenPolling.error, scenarioGenTraceId, scenarioGenPollingServiceId, syncScenarioFromStore]);
 
   const handleServiceSelect = (service: Service) => {
     setSelectedServiceId(service.id);
