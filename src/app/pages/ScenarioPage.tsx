@@ -84,6 +84,7 @@ showGeneratingOverlay = false,
 setShowGeneratingOverlay,
 showCodeGeneratingOverlay = false,
 setShowCodeGeneratingOverlay,
+onStartRun,
 }: ScenarioPageProps) => {
 
   const viewMode = viewModeProp as 'table' | 'graph';
@@ -991,17 +992,8 @@ setShowCodeGeneratingOverlay,
                     {/* E2E TEST 실행 */}
                     <button
                       onClick={() => {
-                        const newRun = {
-                          id: `run-${Date.now()}`,
-                          name: 'E2E TEST',
-                          groupId: null,
-                          startTime: (() => { const n = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`; })(),
-                          status: 'running' as const,
-                        };
-                        (setRunningTests as any)((prev: any[]) => [...prev, newRun]);
-                        (setSelectedRunningTestId as any)(newRun.id);
-                        (setSelectedRunningForDetail as any)(newRun.id);
-                        setCurrentPage('테스트');
+                        const scenarioIds = _dynamicScenarios.map(s => s.id);
+                        onStartRun?.(scenarioIds.length ? scenarioIds : undefined, 'E2E TEST', null);
                       }}
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#3615CF] text-white text-xs font-semibold hover:shadow-md hover:bg-[#3615CF]/90 transition-all">
                       <Play className="w-3.5 h-3.5" />
@@ -1075,18 +1067,7 @@ setShowCodeGeneratingOverlay,
                           onClick={e => {
                             e.stopPropagation();
                             if (hasPendingAIReview || isGeneratingCode) return;
-                            const newRun = {
-                              id: `run-${Date.now()}`,
-                              name: group.name,
-                              groupId: group.id,
-                              startTime: (() => { const n = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`; })(),
-                              status: 'running' as const,
-                            };
-                            (setRunningTests as any)(prev => [...prev, newRun]);
-                            (setSelectedRunningTestId as any)(newRun.id);
-                            (setSelectedTestGroup as any)(group.name);
-                            (setSelectedRunningForDetail as any)(newRun.id);
-                            setCurrentPage('테스트');
+                            onStartRun?.(group.scenarios as string[], group.name, group.id);
                           }}
                           className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium transition-colors ${
                             hasPendingAIReview || isGeneratingCode
@@ -1196,18 +1177,9 @@ setShowCodeGeneratingOverlay,
               <button onClick={() => {
                 setShowTestGroupModal(false);
                 setSelectedTCIds([]);
-                const newRun = {
-                  id: `run-${Date.now()}`,
-                  name: groupNameInput || `시나리오 그룹`,
-                  groupId: `group-${Date.now()}`,
-                  startTime: (() => { const n = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`; })(),
-                  status: 'running' as const,
-                };
-                (setRunningTests as any)(prev => [...prev, newRun]);
-                (setSelectedRunningTestId as any)(newRun.id);
-                (setSelectedTestGroup as any)(groupNameInput || `시나리오 그룹`);
-                (setSelectedRunningForDetail as any)(newRun.id);
-                setCurrentPage('테스트');
+                const tsIds = Array.from(new Set(selectedTCs.map(t => t.tsId).filter((id): id is string => Boolean(id))));
+                const groupName = groupNameInput || `시나리오 그룹`;
+                onStartRun?.(tsIds.length ? tsIds : undefined, groupName, `group-${Date.now()}`);
               }}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium">
                 생성 확인

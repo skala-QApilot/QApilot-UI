@@ -32,6 +32,7 @@ import { useNotificationStore } from '../store/notificationStore';
 import { useRtmStore } from '../store/rtmStore';
 import { useFileStore } from '../store/fileStore';
 import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
+import { startRun } from '../api/runs';
 import { CodeGenConfirmModal } from './components/CodeGenConfirmModal';
 import { useTracePolling } from '../hooks/useTracePolling';
 import { useScenarioStore, toUiScenario, toUiTestCase, toUiVersion, toUiAIItemsByScenario } from '../store/scenarioStore';
@@ -651,6 +652,62 @@ export default function App() {
     }
   };
 
+  // ── Layer 2: 테스트 실행 (ScenarioPage 의 "실행" 버튼 → Spring POST /runs) ───
+  const [runTraceId, setRunTraceId] = useState<string | null>(null);
+  const runPolling = useTracePolling(scenarioGenPollingServiceId, runTraceId);
+  useEffect(() => {
+    if (!runTraceId) return;
+    if (runPolling.status === 'completed') {
+      setRunningTests(prev => prev.map(t =>
+        t.id === runTraceId ? { ...t, status: 'completed' as const } : t,
+      ));
+      setRunTraceId(null);
+    } else if (runPolling.status === 'failed' || runPolling.status === 'error') {
+      console.error('테스트 실행 실패', runPolling.error);
+      setRunningTests(prev => prev.map(t =>
+        t.id === runTraceId ? { ...t, status: 'completed' as const } : t,
+      ));
+      setRunTraceId(null);
+    }
+  }, [runPolling.status, runPolling.error, runTraceId]);
+
+  /**
+   * ScenarioPage 의 실행 트리거 — `POST /api/services/{id}/runs` 후 trace 폴링 시작.
+   * scenarioIds 미입력 시 filter='all'. groupId 는 runningTests 표시용.
+   */
+  const handleStartRun = useCallback(async (
+    scenarioIds: string[] | undefined,
+    runName: string,
+    groupId: string | null = null,
+  ) => {
+    const token = useAuthStore.getState().accessToken;
+    if (!token || !scenarioGenPollingServiceId) {
+      console.warn('handleStartRun: serviceId 또는 토큰 미확보');
+      return;
+    }
+    try {
+      const run = await startRun(scenarioGenPollingServiceId, {
+        scenario_ids: scenarioIds,
+        filter: scenarioIds && scenarioIds.length ? 'affected' : 'all',
+      });
+      const startTime = (() => {
+        const n = new Date();
+        const p = (v: number) => String(v).padStart(2, '0');
+        return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`;
+      })();
+      setRunningTests(prev => [...prev, {
+        id: run.id, name: runName, groupId, startTime, status: 'running' as const,
+      }]);
+      setSelectedRunningTestId(run.id);
+      setSelectedRunningForDetail(run.id);
+      setSelectedTestGroup(runName);
+      setRunTraceId(run.id);
+      navigate(`/${currentSlug}/test`);
+    } catch (err) {
+      console.error('테스트 실행 트리거 실패', err);
+    }
+  }, [scenarioGenPollingServiceId, currentSlug, navigate]);
+
   const handleServiceSelect = (service: Service) => {
     setSelectedServiceId(service.id);
     navigate(`/${service.id}`);
@@ -1030,6 +1087,7 @@ export default function App() {
                 }}
                 showCodeGeneratingOverlay={showCodeGenerating}
                 setShowCodeGeneratingOverlay={setShowCodeGenerating}
+                onStartRun={handleStartRun}
               />
             )}
             {currentPage === '테스트' && (
