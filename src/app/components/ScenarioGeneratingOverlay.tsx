@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import loadingGif from '../../assets/loading.gif';
 
-const STEPS = [
+export interface OverlayStep {
+  message: string;
+  duration: number;
+}
+
+const SCENARIO_STEPS: OverlayStep[] = [
   { message: 'PRD/정책 문서를 읽는 중...', duration: 2200 },
   { message: '요구사항을 분석하는 중...', duration: 2400 },
   { message: '시나리오를 생성하는 중...', duration: 2600 },
@@ -10,9 +15,14 @@ const STEPS = [
   { message: '시나리오 생성이 완료됐어요!', duration: 1200 },
 ];
 
-interface Props { onComplete?: () => void; }
+interface Props {
+  onComplete?: () => void;
+  /** 커스텀 진행 단계. 미입력 시 시나리오 생성 기본 단계 사용. */
+  steps?: OverlayStep[];
+}
 
-export default function ScenarioGeneratingOverlay({ onComplete }: Props) {
+export default function ScenarioGeneratingOverlay({ onComplete, steps }: Props) {
+  const STEPS = steps ?? SCENARIO_STEPS;
   const [stepIdx, setStepIdx] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
 

@@ -82,6 +82,8 @@ viewMode: viewModeProp = 'table',
 setViewMode: setViewModeProp,
 showGeneratingOverlay = false,
 setShowGeneratingOverlay,
+showCodeGeneratingOverlay = false,
+setShowCodeGeneratingOverlay,
 }: ScenarioPageProps) => {
 
   const viewMode = viewModeProp as 'table' | 'graph';
@@ -481,7 +483,21 @@ setShowGeneratingOverlay,
 
       {/* 시나리오 생성 오버레이 — 전체 페이지 커버 */}
       {showGeneratingOverlay && (
-        <ScenarioGeneratingOverlay onComplete={() => setShowGeneratingOverlay(false)} />
+        <ScenarioGeneratingOverlay onComplete={() => setShowGeneratingOverlay?.(false)} />
+      )}
+
+      {/* 코드 생성 오버레이 — Layer 1B (action-mapping + Playwright 코드 작성). */}
+      {showCodeGeneratingOverlay && (
+        <ScenarioGeneratingOverlay
+          onComplete={() => setShowCodeGeneratingOverlay?.(false)}
+          steps={[
+            { message: '시나리오를 분석하는 중...', duration: 2000 },
+            { message: '액션 매핑을 작성하는 중...', duration: 2400 },
+            { message: 'Playwright 테스트 코드를 생성하는 중...', duration: 2800 },
+            { message: '검증 로직을 추가하는 중...', duration: 2000 },
+            { message: '코드 생성이 완료됐어요!', duration: 1200 },
+          ]}
+        />
       )}
 
       <div className="flex flex-1 overflow-hidden">

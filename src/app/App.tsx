@@ -31,7 +31,8 @@ import { useProjectStore } from '../store/projectStore';
 import { useNotificationStore } from '../store/notificationStore';
 import { useRtmStore } from '../store/rtmStore';
 import { useFileStore } from '../store/fileStore';
-import { startScenarioGeneration } from '../api/agent';
+import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
+import { CodeGenConfirmModal } from './components/CodeGenConfirmModal';
 import { useTracePolling } from '../hooks/useTracePolling';
 import { useScenarioStore, toUiScenario, toUiTestCase, toUiVersion, toUiAIItemsByScenario } from '../store/scenarioStore';
 import { ApiError, onAuthExpired } from '../api/client';
@@ -487,6 +488,8 @@ export default function App() {
     setSelectedScenarioVersion(newLabel);
     setAiItemActions({});
     setDynamicAIItems({});
+    // 검토 완료 → 코드 생성 시작 여부 확인 모달.
+    setCodeGenConfirmOpen(true);
   };
 
   const triggerCodeChangeDetection = () => {
@@ -607,6 +610,46 @@ export default function App() {
       setScenarioGenTraceId(null);
     }
   }, [scenarioGenPolling.status, scenarioGenPolling.error, scenarioGenTraceId, scenarioGenPollingServiceId, syncScenarioFromStore]);
+
+  // ── Layer 1B: 코드 생성 (검토 확인 → 모달 → 트리거) ─────────────────────────
+  const [codeGenConfirmOpen, setCodeGenConfirmOpen] = useState(false);
+  const [showCodeGenerating, setShowCodeGenerating] = useState(false);
+  const [codeGenTraceId, setCodeGenTraceId] = useState<string | null>(null);
+  const codeGenPolling = useTracePolling(scenarioGenPollingServiceId, codeGenTraceId);
+  useEffect(() => {
+    if (!codeGenTraceId) return;
+    if (codeGenPolling.status === 'completed') {
+      // action-mappings / generated-code 도 같이 다시 로드 — store 가 scenarios endpoint 만 fetch 하므로
+      // 사용자에게 보이는 시나리오는 동일. 후속 Layer 2 (테스트 실행) 가 디스크에서 직접 읽는다.
+      if (scenarioGenPollingServiceId) {
+        syncScenarioFromStore(scenarioGenPollingServiceId);
+      }
+      setShowCodeGenerating(false);
+      setCodeGenTraceId(null);
+    } else if (codeGenPolling.status === 'failed' || codeGenPolling.status === 'error') {
+      console.error('코드 생성 실패', codeGenPolling.error);
+      setShowCodeGenerating(false);
+      setCodeGenTraceId(null);
+    }
+  }, [codeGenPolling.status, codeGenPolling.error, codeGenTraceId, scenarioGenPollingServiceId, syncScenarioFromStore]);
+
+  /** 모달의 "생성 시작" 클릭 시 호출 — Spring `POST /api/services/{id}/code-generation` 트리거. */
+  const handleStartCodeGen = async () => {
+    setCodeGenConfirmOpen(false);
+    const token = useAuthStore.getState().accessToken;
+    if (!token || !scenarioGenPollingServiceId) {
+      console.warn('handleStartCodeGen: serviceId 또는 토큰 미확보');
+      return;
+    }
+    try {
+      setShowCodeGenerating(true);
+      const resp = await startCodeGeneration(scenarioGenPollingServiceId, null, token);
+      setCodeGenTraceId(resp.trace_id);
+    } catch (err) {
+      console.error('코드 생성 트리거 실패', err);
+      setShowCodeGenerating(false);
+    }
+  };
 
   const handleServiceSelect = (service: Service) => {
     setSelectedServiceId(service.id);
@@ -985,6 +1028,8 @@ export default function App() {
                   // 현 시점에서 dynamic* 는 hook 내부 local state 이므로 mock-reset 로직 자체 제거.
                   // 실제 데이터는 generation 완료 후 trace polling 이 scenarioStore.loadAll() 트리거.
                 }}
+                showCodeGeneratingOverlay={showCodeGenerating}
+                setShowCodeGeneratingOverlay={setShowCodeGenerating}
               />
             )}
             {currentPage === '테스트' && (
@@ -1144,6 +1189,12 @@ export default function App() {
         retestCheckedIds={retestCheckedIds}
         onConfirm={handleRetestConfirm}
         onDismiss={() => setShowRetestNavModal(false)}
+      />
+
+      <CodeGenConfirmModal
+        open={codeGenConfirmOpen}
+        onConfirm={handleStartCodeGen}
+        onDismiss={() => setCodeGenConfirmOpen(false)}
       />
 
       {/* ── Scenario Chatbar ── */}
