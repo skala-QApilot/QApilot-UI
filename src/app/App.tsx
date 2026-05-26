@@ -33,6 +33,7 @@ import { useRtmStore } from '../store/rtmStore';
 import { useFileStore } from '../store/fileStore';
 import { startScenarioGeneration } from '../api/agent';
 import { useTracePolling } from '../hooks/useTracePolling';
+import { useScenarioStore, toUiScenario, toUiTestCase, toUiVersion, toUiAIItemsByScenario } from '../store/scenarioStore';
 import { ApiError, onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
@@ -557,6 +558,33 @@ export default function App() {
   useEffect(() => {
     if (!scenarioGenTraceId) return;
     if (scenarioGenPolling.status === 'completed') {
+      // 1) scenarioStore 새로고침 — 방금 생성된 시나리오 fetch
+      // 2) store 결과를 App.tsx 의 dynamic* state 로 sync (ScenarioPage 가 props 로 받음)
+      const serviceId = scenarioGenPollingServiceId;
+      if (serviceId) {
+        useScenarioStore.getState().loadAll(serviceId).then(() => {
+          const s = useScenarioStore.getState();
+          setDynamicScenarios(s.scenarios.map(toUiScenario));
+          const tcMap: Record<string, ReturnType<typeof toUiTestCase>[]> = {};
+          for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
+            tcMap[tsId] = list.map(toUiTestCase);
+          }
+          setDynamicTestCases(tcMap);
+          // UiAIItem (5 fields) → dynamicAIItem shape (3 fields, trigger narrowed)
+          const uiAi = toUiAIItemsByScenario(s.changeRequests);
+          const aiMap: Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }> = {};
+          for (const [tsId, item] of Object.entries(uiAi)) {
+            const trigger: 'file' | 'chatbot' | 'code' =
+              item.trigger === 'file' || item.trigger === 'chatbot' || item.trigger === 'code'
+                ? item.trigger : 'chatbot';
+            aiMap[tsId] = { reason: item.reason, trigger, timestamp: item.timestamp };
+          }
+          setDynamicAIItems(aiMap);
+          setScenarioVersions(s.versions.map(toUiVersion));
+        }).catch((err) => {
+          console.error('시나리오 reload 실패', err);
+        });
+      }
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
     } else if (scenarioGenPolling.status === 'failed' || scenarioGenPolling.status === 'error') {
@@ -564,7 +592,8 @@ export default function App() {
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
     }
-  }, [scenarioGenPolling.status, scenarioGenPolling.error, scenarioGenTraceId]);
+  }, [scenarioGenPolling.status, scenarioGenPolling.error, scenarioGenTraceId, scenarioGenPollingServiceId,
+      setDynamicScenarios, setDynamicTestCases, setDynamicAIItems, setScenarioVersions]);
 
   const handleServiceSelect = (service: Service) => {
     setSelectedServiceId(service.id);
