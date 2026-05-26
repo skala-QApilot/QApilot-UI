@@ -31,14 +31,6 @@ export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    if ((import.meta as any).env?.DEV && email === 'admin@qapilot.com' && password === 'admin1234') {
-      // dev bypass: 백엔드 연동 없이 mockData 흐름으로 들어가도록 sentinel 토큰 저장
-      useAuthStore.getState().setDevBypass();
-      onLogin();
-      return;
-    }
-
     setLoading(true);
 
     try {

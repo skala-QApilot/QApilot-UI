@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getTrace, type TraceResponse } from '../api/trace';
-import { useAuthStore, DEV_BYPASS_SENTINEL } from '../store/authStore';
+import { useAuthStore } from '../store/authStore';
 
 export type TraceStatus = 'idle' | 'polling' | 'completed' | 'failed' | 'error';
 
@@ -47,7 +47,7 @@ export function useTracePolling(
     }
 
     const token = useAuthStore.getState().accessToken;
-    if (!token || token === DEV_BYPASS_SENTINEL) {
+    if (!token) {
       setStatus('idle');
       return;
     }
