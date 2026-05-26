@@ -31,6 +31,8 @@ import { useProjectStore } from '../store/projectStore';
 import { useNotificationStore } from '../store/notificationStore';
 import { useRtmStore } from '../store/rtmStore';
 import { useFileStore } from '../store/fileStore';
+import { startScenarioGeneration } from '../api/agent';
+import { useTracePolling } from '../hooks/useTracePolling';
 import { ApiError, onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
@@ -544,6 +546,26 @@ export default function App() {
   // 시나리오 생성 overlay 표시 여부 — ScenarioPage 의 showGeneratingOverlay prop 으로 흘려준다.
   const [showScenarioGenerating, setShowScenarioGenerating] = useState(false);
 
+  // 시나리오 생성 trace 폴링 — handleSetupComplete 가 시나리오 생성을 트리거한 직후 trace_id 저장.
+  // 폴링이 completed/failed 면 overlay 자동 닫기 + scenarioStore 새로고침.
+  const [scenarioGenTraceId, setScenarioGenTraceId] = useState<string | null>(null);
+  const scenarioGenPollingServiceId = useMemo(
+    () => storeServices.find((s) => s.id === selectedServiceId)?.serviceId ?? null,
+    [storeServices, selectedServiceId],
+  );
+  const scenarioGenPolling = useTracePolling(scenarioGenPollingServiceId, scenarioGenTraceId);
+  useEffect(() => {
+    if (!scenarioGenTraceId) return;
+    if (scenarioGenPolling.status === 'completed') {
+      setShowScenarioGenerating(false);
+      setScenarioGenTraceId(null);
+    } else if (scenarioGenPolling.status === 'failed' || scenarioGenPolling.status === 'error') {
+      console.error('시나리오 생성 실패', scenarioGenPolling.error);
+      setShowScenarioGenerating(false);
+      setScenarioGenTraceId(null);
+    }
+  }, [scenarioGenPolling.status, scenarioGenPolling.error, scenarioGenTraceId]);
+
   const handleServiceSelect = (service: Service) => {
     setSelectedServiceId(service.id);
     navigate(`/${service.id}`);
@@ -590,7 +612,19 @@ export default function App() {
       };
       setServices(prev => [...prev, mirror]);
       setSelectedServiceId(created.id);
-      navigate(`/${created.id}`);
+
+      // 생성 직후 ScenarioPage 로 이동 (overlay 가 진행 상황 표시).
+      navigate(`/${created.id}/scenarios`);
+
+      // 시나리오 생성 자동 트리거 — agent API 는 service_id (UUID) 기반.
+      try {
+        setShowScenarioGenerating(true);
+        const resp = await startScenarioGeneration(created.serviceId, { trigger: 'init' }, token);
+        setScenarioGenTraceId(resp.trace_id);
+      } catch (err) {
+        console.error('시나리오 생성 트리거 실패', err);
+        setShowScenarioGenerating(false);
+      }
     } catch (error) {
       console.error('서비스 생성 실패', error);
     }
