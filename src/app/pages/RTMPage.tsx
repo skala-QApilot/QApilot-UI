@@ -28,6 +28,18 @@ export const RTMPage = () => {
     'TS2_TC1': '최현우', 'TS3_TC3': '정유진',
   };
 
+  // 빈 상태 — RTM 버전 없음 또는 requirements 비어있음 (로드 전 / 신규 서비스).
+  if (!selectedFr) {
+    return (
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center bg-[#EDEEF0]">
+        <div className="text-center text-[#9ca3af]">
+          <div className="text-sm font-medium mb-1">RTM 데이터가 없습니다</div>
+          <div className="text-xs">시나리오 생성 후 RTM 버전이 만들어지면 표시됩니다.</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-4rem)]">
 
