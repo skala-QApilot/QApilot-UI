@@ -680,9 +680,10 @@ export default function App() {
     runName: string,
     groupId: string | null = null,
   ) => {
+    console.info('[handleStartRun] called', { runName, groupId, scenarioIds, serviceUuid: scenarioGenPollingServiceId });
     const token = useAuthStore.getState().accessToken;
     if (!token || !scenarioGenPollingServiceId) {
-      console.warn('handleStartRun: serviceId 또는 토큰 미확보');
+      console.warn('[handleStartRun] aborted: no token or serviceId', { hasToken: !!token, serviceUuid: scenarioGenPollingServiceId });
       return;
     }
     try {
