@@ -123,19 +123,39 @@ export default function App() {
     });
   }, [navigate]);
 
+  // ── Services 목록 — projectStore 가 source of truth ─────────────────────────
+  // 로그인된 상태(accessToken 존재) 면 마운트 시 1회 listServices() 호출.
+  // 새 서비스 생성 후엔 store 가 자체 push 하므로 별도 reload 불필요.
+  const storeServices = useProjectStore((s) => s.services);
+  useEffect(() => {
+    if (!useAuthStore.getState().accessToken) return;
+    useProjectStore.getState().loadServices().catch((err) => {
+      console.error('listServices 실패', err);
+    });
+  }, []);
+
   // ── Top-level app state ──────────────────────────────────────────────────
 
-  const [services, setServices] = useState<Service[]>(
-    isProjectRoute
-      ? []
-      : [
-          { id: 'svc-1', name: 'Frontend App', isNew: false, createdAt: '2026-01-15' },
-          { id: 'svc-2', name: 'Backend API', isNew: false, createdAt: '2026-02-20' },
-        ]
-  );
-  // 로컬에서 직접 생성된 서비스 — API 인증 체크 불필요 (main 브랜치 도입).
-  const localServiceIds = useRef(new Set(['svc-1', 'svc-2']));
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(currentSlug || 'svc-1');
+  const [services, setServices] = useState<Service[]>([]);
+  // 로컬에서 직접 생성된 서비스 (인증 체크 skip 대상) — 현재는 사용 안 함 (Spring 응답이 source of truth).
+  const localServiceIds = useRef<Set<string>>(new Set());
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(currentSlug);
+
+  // store.services 변화 → local services 미러. handleSetupComplete 가 push 한 신규 항목과 머지.
+  useEffect(() => {
+    setServices((prev) => {
+      const fromStore = storeServices.map((s) => ({
+        id: s.id,
+        name: s.name,
+        isNew: s.isNew ?? false,
+        createdAt: s.createdAt,
+      }));
+      // store에 없는 (로컬-only) 항목은 보존
+      const storeIds = new Set(fromStore.map((s) => s.id));
+      const localOnly = prev.filter((p) => !storeIds.has(p.id));
+      return [...fromStore, ...localOnly];
+    });
+  }, [storeServices]);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [homeTab, setHomeTab] = useState('overview');
   const [projectMeta, setProjectMeta] = useState<ProjectMeta | null>(null);
