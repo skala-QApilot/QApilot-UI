@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getTrace, type TraceResponse } from '../api/trace';
 import { useAuthStore } from '../store/authStore';
 
-export type TraceStatus = 'idle' | 'polling' | 'completed' | 'failed' | 'error';
+export type TraceStatus = 'idle' | 'polling' | 'completed' | 'aborted' | 'error';
 
 interface UseTracePollingOptions {
   intervalMs?: number;
@@ -16,7 +16,7 @@ interface UseTracePollingResult {
   isPolling: boolean;
 }
 
-const TERMINAL_TRACE_STATUSES = new Set(['completed', 'failed', 'succeeded', 'error']);
+const TERMINAL_TRACE_STATUSES = new Set(['completed', 'aborted', 'succeeded', 'error']);
 
 /**
  * trace_id 기반 Agent 실행 상태를 주기 폴링한다.
@@ -62,7 +62,7 @@ export function useTracePolling(
 
         const traceStatus = String(next.status ?? '').toLowerCase();
         if (TERMINAL_TRACE_STATUSES.has(traceStatus)) {
-          setStatus(traceStatus === 'failed' || traceStatus === 'error' ? 'failed' : 'completed');
+          setStatus(traceStatus === 'aborted' || traceStatus === 'error' ? 'aborted' : 'completed');
           return;
         }
         timerRef.current = setTimeout(poll, intervalMs);

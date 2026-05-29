@@ -5,7 +5,7 @@ export interface TraceResponse {
   command: string;
   trigger?: string | null;
   service_id?: string;
-  status: 'running' | 'completed' | 'failed' | string;
+  status: 'running' | 'completed' | 'aborted' | string;
   started_at?: string;
   completed_at?: string;
   state?: Record<string, unknown>;

@@ -3,7 +3,7 @@ import { api } from './client';
 export interface TestResult {
   trace_id: string;
   command: string;
-  status: 'running' | 'completed' | 'failed' | string;
+  status: 'running' | 'completed' | 'aborted' | string;
   started_at: string;
   completed_at: string;
   error?: string | null;

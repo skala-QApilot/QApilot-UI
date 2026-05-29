@@ -11,6 +11,49 @@ import { mockTestLogs, mockTVEndpoints, type HttpMethod } from '../data/mockData
 import { useScenarioStore, toUiScenario, toUiTestCase } from '../../store/scenarioStore';
 import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
+import { fetchLatestScreenshotUrl, getRunProgress, type RunProgress } from '../../api/runs';
+
+interface RuntimeLog {
+  time: string;
+  action: string;
+  apiMethod?: string;
+  endpoint?: string;
+  status: number | null;
+  responseTime?: string;
+  isError?: boolean;
+}
+
+/** RunProgress → RuntimeTerminal 의 RuntimeLog[] 변환. api.calls + ui.steps 를 시간순 평탄화. */
+function toRuntimeLogs(progress: RunProgress | null): RuntimeLog[] {
+  if (!progress) return [];
+  const out: RuntimeLog[] = [];
+  for (const item of progress.items) {
+    const apiCalls = ((item.api as any)?.calls as any[] | undefined) || [];
+    for (const c of apiCalls) {
+      const ts: string = String(c.timestamp || '');
+      out.push({
+        time: ts.includes('T') ? ts.slice(11, 19) : ts.slice(0, 8),
+        action: `${item.ts_id}/${item.tc_id}`,
+        apiMethod: c.method,
+        endpoint: c.url,
+        status: typeof c.status_code === 'number' ? c.status_code : null,
+        responseTime: c.latency_ms != null ? `${c.latency_ms}ms` : undefined,
+        isError: typeof c.status_code === 'number' && c.status_code >= 400,
+      });
+    }
+    const steps = ((item.ui as any)?.steps as any[] | undefined) || [];
+    for (const s of steps) {
+      out.push({
+        time: '',
+        action: `${item.ts_id}/${item.tc_id} step ${s.step_no} (${s.action})`,
+        status: null,
+        responseTime: s.duration_ms != null ? `${s.duration_ms}ms` : undefined,
+        isError: s.status === 'fail',
+      });
+    }
+  }
+  return out;
+}
 
 const METHOD_STYLE: Record<HttpMethod, string> = {
   GET:    'bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/20',
@@ -84,6 +127,10 @@ interface TestRunningPageProps {
   expandedTestCases: string[];
   setExpandedTestCases: React.Dispatch<React.SetStateAction<string[]>>;
   setSelectedExecutionId: React.Dispatch<React.SetStateAction<string | null>>;
+  /** App.tsx 의 handleStartRun — selectedRun 을 같은 scenario_ids 로 재실행. */
+  onStartRun?: (scenarioIds: string[] | undefined, runName: string, groupId: string | null) => void;
+  /** Spring 호출에 필요한 service UUID. selectedRun.id 는 trace_id 라 함께 필요. */
+  serviceUuid?: string | null;
 }
 
 export const TestRunningPage = ({
@@ -110,8 +157,85 @@ export const TestRunningPage = ({
   expandedTestCases,
   setExpandedTestCases,
   setSelectedExecutionId,
+  onStartRun,
+  serviceUuid,
 }: TestRunningPageProps) => {
   const selectedRun = runningTests.find(t => t.id === selectedRunningTestId) ?? null;
+
+  // ── Layer 2 라이브 폴링 — 1초 간격으로 스크린샷 + run progress fetch ─────────
+  const [screenshotUrl, setScreenshotUrl] = React.useState<string | null>(null);
+  const [runProgress, setRunProgress] = React.useState<RunProgress | null>(null);
+  const screenshotUrlRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    // 폴링 조건: serviceUuid + selectedRun(running 상태) 모두 있을 때만
+    if (!serviceUuid || !selectedRun || selectedRun.status !== 'running') {
+      // 직전 blob URL 정리
+      if (screenshotUrlRef.current) {
+        URL.revokeObjectURL(screenshotUrlRef.current);
+        screenshotUrlRef.current = null;
+      }
+      setScreenshotUrl(null);
+      setRunProgress(null);
+      return;
+    }
+
+    let cancelled = false;
+    const runId = selectedRun.id;
+
+    const tick = async () => {
+      try {
+        const [nextUrl, progress] = await Promise.all([
+          fetchLatestScreenshotUrl(serviceUuid, runId),
+          getRunProgress(serviceUuid, runId),
+        ]);
+        if (cancelled) {
+          if (nextUrl) URL.revokeObjectURL(nextUrl);
+          return;
+        }
+        // 새 스크린샷 받았으면 이전 blob URL revoke 후 swap
+        if (nextUrl) {
+          if (screenshotUrlRef.current) URL.revokeObjectURL(screenshotUrlRef.current);
+          screenshotUrlRef.current = nextUrl;
+          setScreenshotUrl(nextUrl);
+        }
+        setRunProgress(progress);
+      } catch (err) {
+        // 네트워크 에러는 silent — 다음 tick 에서 재시도
+        if (cancelled) return;
+        // 디버그 시 enable: console.debug('runProgress polling error', err);
+      }
+    };
+
+    tick(); // 즉시 한 번
+    const timer = setInterval(tick, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      if (screenshotUrlRef.current) {
+        URL.revokeObjectURL(screenshotUrlRef.current);
+        screenshotUrlRef.current = null;
+      }
+    };
+  }, [serviceUuid, selectedRun?.id, selectedRun?.status]);
+
+  const liveLogs = React.useMemo(() => toRuntimeLogs(runProgress), [runProgress]);
+
+  /**
+   * 현재 selectedRun 을 같은 scenarios 로 재실행한다.
+   * - groupId 있으면 scenarioStore 에서 group 찾아 scenarioIds 추출
+   * - groupId null 이면 E2E (filter='all')
+   */
+  const rerunSelected = React.useCallback(() => {
+    if (!selectedRun || !onStartRun) return;
+    const groupId = selectedRun.groupId;
+    let scenarioIds: string[] | undefined;
+    if (groupId) {
+      const g = useScenarioStore.getState().groups.find(gr => gr.groupId === groupId);
+      scenarioIds = g?.scenarioIds && g.scenarioIds.length ? g.scenarioIds : undefined;
+    }
+    onStartRun(scenarioIds, selectedRun.name, groupId);
+  }, [selectedRun, onStartRun]);
 
   // duration stopwatch
   const [elapsedSeconds, setElapsedSeconds] = React.useState<number>(() => {
@@ -434,13 +558,16 @@ export const TestRunningPage = ({
               <button
                 onClick={() => {
                   if (isTestRunning) { setShowCompletionModal(true); setIsTestRunning(false); }
-                  else               { setIsTestRunning(true); }
+                  else { rerunSelected(); setIsTestRunning(true); }
                 }}
                 className="flex-1 min-w-0 px-3 py-2 bg-primary-blue text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md transition-shadow">
                 {isTestRunning ? <><Pause className="w-4 h-4" /> 정지</> : <><Play className="w-4 h-4" /> 실행</>}
               </button>
               <button
-                onClick={() => { setCompletedAgentStages([]); setCurrentAgentStage(''); setIsTestRunning(false); }}
+                onClick={() => {
+                  setCompletedAgentStages([]); setCurrentAgentStage(''); setIsTestRunning(false);
+                  rerunSelected();
+                }}
                 className="flex-1 min-w-0 px-3 py-2 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5">
                 <RotateCcw className="w-4 h-4" /> 전체 재실행
               </button>
@@ -465,19 +592,32 @@ export const TestRunningPage = ({
           <div className="flex h-full min-h-0 flex-col gap-3">
             <AgentProgressStrip getNodeStatus={getNodeStatus} />
             <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4">
-              <TerminalFrame title="qapilot-preview - zsh" bodyClassName="aspect-video flex items-center justify-center p-4">
-                <div className="text-center text-[#9aa0a6]">
-                  {isTestRunning ? (
-                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
-                  ) : (
-                    <Eye className="w-8 h-8 mx-auto mb-3 opacity-70" />
-                  )}
-                  <div className="font-mono text-xs">
-                    {isTestRunning ? '실시간 브라우저 화면' : '테스트 실행 중 실시간 화면이 표시됩니다'}
+              <TerminalFrame title="qapilot-preview - zsh" bodyClassName="aspect-video flex items-center justify-center p-0 overflow-hidden">
+                {screenshotUrl ? (
+                  <img
+                    src={screenshotUrl}
+                    alt="live browser screenshot"
+                    className="max-w-full max-h-full object-contain bg-white"
+                  />
+                ) : (
+                  <div className="text-center text-[#9aa0a6] p-4">
+                    {selectedRun?.status === 'running' ? (
+                      <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+                    ) : (
+                      <Eye className="w-8 h-8 mx-auto mb-3 opacity-70" />
+                    )}
+                    <div className="font-mono text-xs">
+                      {selectedRun?.status === 'running' ? '스크린샷을 기다리는 중...' : '테스트 실행 중 실시간 화면이 표시됩니다'}
+                    </div>
                   </div>
-                </div>
+                )}
               </TerminalFrame>
-              <RuntimeTerminal logs={mockTestLogs} highlightedLogIdx={highlightedLogIdx} idPrefix="ip-log" scrollContainerRef={runtimeLogRef} />
+              <RuntimeTerminal
+                logs={liveLogs.length > 0 ? liveLogs : mockTestLogs}
+                highlightedLogIdx={highlightedLogIdx}
+                idPrefix="ip-log"
+                scrollContainerRef={runtimeLogRef}
+              />
             </div>
           </div>
         </div>

@@ -32,7 +32,8 @@ import { useNotificationStore } from '../store/notificationStore';
 import { useRtmStore } from '../store/rtmStore';
 import { useFileStore } from '../store/fileStore';
 import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
-import { startRun } from '../api/runs';
+import { startRun, listAllRuns } from '../api/runs';
+import { useTestStore } from '../store/testStore';
 import { CodeGenConfirmModal } from './components/CodeGenConfirmModal';
 import { useTracePolling } from '../hooks/useTracePolling';
 import { useScenarioStore, toUiScenario, toUiTestCase, toUiVersion, toUiAIItemsByScenario } from '../store/scenarioStore';
@@ -221,10 +222,8 @@ export default function App() {
   // 테스트 페이지 (진행중 / 이력)
   const [runningTests, setRunningTests] = useState<Array<{
     id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'completed';
-  }>>([
-    { id: 'run-001', name: '나의 진행 중인 테스트', groupId: 'TG-001', startTime: '2026-05-12 14:32', status: 'running' },
-  ]);
-  const [selectedRunningTestId, setSelectedRunningTestId] = useState<string | null>('run-001');
+  }>>([]);
+  const [selectedRunningTestId, setSelectedRunningTestId] = useState<string | null>(null);
   const [retestCheckedIds, setRetestCheckedIds] = useState<Set<string>>(new Set());
   const [showRetestNavModal, setShowRetestNavModal] = useState(false);
 
@@ -596,6 +595,38 @@ export default function App() {
     syncScenarioFromStore(scenarioGenPollingServiceId);
   }, [scenarioGenPollingServiceId, syncScenarioFromStore]);
 
+  // service UUID 가 확정되면 backend 에서 test runs 이력 복원 + testStore 로드.
+  // 새로고침 후에도 실행중/완료된 테스트 목록을 그대로 표시한다.
+  useEffect(() => {
+    if (!scenarioGenPollingServiceId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const runs = await listAllRuns(scenarioGenPollingServiceId);
+        if (cancelled) return;
+        const mapped = runs.map((r) => ({
+          id: r.id,
+          name: r.name,
+          groupId: null as string | null,
+          startTime: (r.startTime || '').slice(0, 16).replace('T', ' '),
+          status: (r.status === 'running' ? 'running' : 'completed') as 'running' | 'completed',
+        }));
+        setRunningTests(mapped);
+        // 가장 최근 running trace 가 있으면 그 trace 폴링 시작 (status 자동 갱신).
+        const stillRunning = mapped.find((r) => r.status === 'running');
+        if (stillRunning) setRunTraceId((prev) => prev ?? stillRunning.id);
+      } catch (err) {
+        console.error('test runs 이력 로드 실패', err);
+      }
+      try {
+        await useTestStore.getState().loadAll(scenarioGenPollingServiceId);
+      } catch (err) {
+        console.error('test 도메인 loadAll 실패', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [scenarioGenPollingServiceId]);
+
   // 폴링이 completed/failed 면 overlay 닫기 + 생성된 시나리오 reload.
   useEffect(() => {
     if (!scenarioGenTraceId) return;
@@ -605,7 +636,7 @@ export default function App() {
       }
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
-    } else if (scenarioGenPolling.status === 'failed' || scenarioGenPolling.status === 'error') {
+    } else if (scenarioGenPolling.status === 'aborted' || scenarioGenPolling.status === 'error') {
       console.error('시나리오 생성 실패', scenarioGenPolling.error);
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
@@ -627,7 +658,7 @@ export default function App() {
       }
       setShowCodeGenerating(false);
       setCodeGenTraceId(null);
-    } else if (codeGenPolling.status === 'failed' || codeGenPolling.status === 'error') {
+    } else if (codeGenPolling.status === 'aborted' || codeGenPolling.status === 'error') {
       console.error('코드 생성 실패', codeGenPolling.error);
       setShowCodeGenerating(false);
       setCodeGenTraceId(null);
@@ -662,7 +693,7 @@ export default function App() {
         t.id === runTraceId ? { ...t, status: 'completed' as const } : t,
       ));
       setRunTraceId(null);
-    } else if (runPolling.status === 'failed' || runPolling.status === 'error') {
+    } else if (runPolling.status === 'aborted' || runPolling.status === 'error') {
       console.error('테스트 실행 실패', runPolling.error);
       setRunningTests(prev => prev.map(t =>
         t.id === runTraceId ? { ...t, status: 'completed' as const } : t,
@@ -1117,6 +1148,8 @@ export default function App() {
                   expandedTestCases={expandedTestCases}
                   setExpandedTestCases={setExpandedTestCases}
                   setSelectedExecutionId={setSelectedExecutionId}
+                  onStartRun={handleStartRun}
+                  serviceUuid={scenarioGenPollingServiceId}
                 />
               ) : selectedExecutionId ? (
                 <TestResultPage
