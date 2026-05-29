@@ -32,7 +32,7 @@ import { useNotificationStore } from '../store/notificationStore';
 import { useRtmStore } from '../store/rtmStore';
 import { useFileStore } from '../store/fileStore';
 import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
-import { startRun, listAllRuns } from '../api/runs';
+import { startRun, listAllRuns, resumeRun } from '../api/runs';
 import { useTestStore } from '../store/testStore';
 import { CodeGenConfirmModal } from './components/CodeGenConfirmModal';
 import { useTracePolling } from '../hooks/useTracePolling';
@@ -679,8 +679,12 @@ export default function App() {
       ));
       setRunTraceId(null);
     } else if (runPolling.status === 'aborted' || runPolling.status === 'error') {
-      console.error('테스트 실행 중단/에러', runPolling.error);
-      // 'aborted' 는 별개 status — "이어서 실행" 으로 재개 가능. 'completed' 로 강제하지 않는다.
+      // 'aborted' = 사용자 정지 또는 비정상 종료. "이어서 실행" 으로 재개 가능 — 'completed' 로 강제 X.
+      if (runPolling.status === 'error') {
+        console.error('테스트 실행 에러', runPolling.error);
+      } else {
+        console.info('테스트 실행 중단됨', runTraceId);
+      }
       setRunningTests(prev => prev.map(t =>
         t.id === runTraceId ? { ...t, status: 'aborted' as const } : t,
       ));
@@ -692,23 +696,45 @@ export default function App() {
    * ScenarioPage 의 실행 트리거 — `POST /api/services/{id}/runs` 후 trace 폴링 시작.
    * scenarioIds 미입력 시 filter='all'. groupId 는 runningTests 표시용.
    */
+  /**
+   * 중단된 trace 를 같은 trace_id 로 재개. 새 trace 만들지 않고 backend 가
+   * status="aborted" → "running" 으로 전환 + 미실행 TC 만 이어서 실행.
+   */
+  const handleResumeRun = useCallback(async (traceId: string) => {
+    const token = useAuthStore.getState().accessToken;
+    if (!token || !scenarioGenPollingServiceId) {
+      console.warn('handleResumeRun: serviceId 또는 토큰 미확보');
+      return;
+    }
+    try {
+      await resumeRun(scenarioGenPollingServiceId, traceId);
+      // 같은 trace_id 이므로 runningTests 에 새 entry 추가하지 않고 status 만 'running' 으로.
+      setRunningTests(prev => prev.map(t =>
+        t.id === traceId ? { ...t, status: 'running' as const } : t,
+      ));
+      setSelectedRunningTestId(traceId);
+      setSelectedRunningForDetail(traceId);
+      setRunTraceId(traceId);  // 폴링 재가동 — useTracePolling 가 status 다시 살핌
+      navigate(`/${currentSlug}/test`);
+    } catch (err) {
+      console.error('이어서 실행 트리거 실패', err);
+    }
+  }, [scenarioGenPollingServiceId, currentSlug, navigate]);
+
   const handleStartRun = useCallback(async (
     scenarioIds: string[] | undefined,
     runName: string,
     groupId: string | null = null,
-    resumeFromTrace: string | null = null,
   ) => {
-    console.info('[handleStartRun] called', { runName, groupId, scenarioIds, resumeFromTrace, serviceUuid: scenarioGenPollingServiceId });
     const token = useAuthStore.getState().accessToken;
     if (!token || !scenarioGenPollingServiceId) {
-      console.warn('[handleStartRun] aborted: no token or serviceId', { hasToken: !!token, serviceUuid: scenarioGenPollingServiceId });
+      console.warn('handleStartRun: serviceId 또는 토큰 미확보');
       return;
     }
     try {
       const run = await startRun(scenarioGenPollingServiceId, {
         scenario_ids: scenarioIds,
         filter: scenarioIds && scenarioIds.length ? 'affected' : 'all',
-        ...(resumeFromTrace ? { resume_from_trace: resumeFromTrace } : {}),
       });
       const startTime = (() => {
         const n = new Date();
@@ -1129,6 +1155,7 @@ export default function App() {
                   setExpandedTestCases={setExpandedTestCases}
                   setSelectedExecutionId={setSelectedExecutionId}
                   onStartRun={handleStartRun}
+                  onResumeRun={handleResumeRun}
                   serviceUuid={scenarioGenPollingServiceId}
                 />
               ) : selectedExecutionId ? (
@@ -1153,7 +1180,7 @@ export default function App() {
                   historySearchQuery={historySearchQuery}
                   setHistorySearchQuery={setHistorySearchQuery}
                   setSelectedExecutionId={setSelectedExecutionId}
-                  onResumeRun={(runId, runName) => handleStartRun(undefined, runName, null, runId)}
+                  onResumeRun={(runId) => handleResumeRun(runId)}
                 />
               )
             )}

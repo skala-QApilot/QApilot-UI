@@ -121,8 +121,10 @@ interface TestRunningPageProps {
   expandedTestCases: string[];
   setExpandedTestCases: React.Dispatch<React.SetStateAction<string[]>>;
   setSelectedExecutionId: React.Dispatch<React.SetStateAction<string | null>>;
-  /** App.tsx 의 handleStartRun — selectedRun 을 같은 scenario_ids 로 재실행. resumeFromTrace 지정 시 이어서 실행. */
-  onStartRun?: (scenarioIds: string[] | undefined, runName: string, groupId: string | null, resumeFromTrace?: string | null) => void;
+  /** App.tsx 의 handleStartRun — selectedRun 을 같은 scenario_ids 로 fresh start. */
+  onStartRun?: (scenarioIds: string[] | undefined, runName: string, groupId: string | null) => void;
+  /** App.tsx 의 handleResumeRun — 같은 trace_id 로 재개. aborted 상태에서만 동작. */
+  onResumeRun?: (traceId: string) => void;
   /** Spring 호출에 필요한 service UUID. selectedRun.id 는 trace_id 라 함께 필요. */
   serviceUuid?: string | null;
 }
@@ -146,6 +148,7 @@ export const TestRunningPage = ({
   setExpandedTestCases,
   setSelectedExecutionId,
   onStartRun,
+  onResumeRun,
   serviceUuid,
 }: TestRunningPageProps) => {
   const selectedRun = runningTests.find(t => t.id === selectedRunningTestId) ?? null;
@@ -234,21 +237,25 @@ export const TestRunningPage = ({
   }, [runProgress, selectedRun?.status]);
 
   /**
-   * 현재 selectedRun 을 같은 scenarios 로 다시 실행한다.
-   * @param resume true 면 selectedRun.id 를 resume_from_trace 로 전달 (이어서 실행).
-   *               false 면 처음부터 모든 TC 실행 (전체 재실행).
+   * 현재 selectedRun 을 다시 실행.
+   * @param resume true + aborted 면 같은 trace_id 로 재개 (onResumeRun).
+   *               false 또는 비-aborted 면 같은 scenarios 로 fresh start (onStartRun).
    */
   const triggerRun = React.useCallback((resume: boolean) => {
-    if (!selectedRun || !onStartRun) return;
+    if (!selectedRun) return;
+    if (resume && selectedRun.status === 'aborted' && onResumeRun) {
+      onResumeRun(selectedRun.id);
+      return;
+    }
+    if (!onStartRun) return;
     const groupId = selectedRun.groupId;
     let scenarioIds: string[] | undefined;
     if (groupId) {
       const g = useScenarioStore.getState().groups.find(gr => gr.groupId === groupId);
       scenarioIds = g?.scenarioIds && g.scenarioIds.length ? g.scenarioIds : undefined;
     }
-    const resumeFromTrace = resume && selectedRun.status === 'aborted' ? selectedRun.id : null;
-    onStartRun(scenarioIds, selectedRun.name, groupId, resumeFromTrace);
-  }, [selectedRun, onStartRun]);
+    onStartRun(scenarioIds, selectedRun.name, groupId);
+  }, [selectedRun, onStartRun, onResumeRun]);
 
   // duration stopwatch
   const [elapsedSeconds, setElapsedSeconds] = React.useState<number>(() => {
