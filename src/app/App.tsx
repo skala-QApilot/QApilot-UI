@@ -219,9 +219,12 @@ export default function App() {
   const fileChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [fileChangeDetected, setFileChangeDetected] = useState(false);
 
-  // 테스트 페이지 (진행중 / 이력)
+  // 테스트 페이지 (진행중 / 이력) — status 의 의미:
+  //   running   = 파이프라인 진행 중
+  //   aborted   = 중간에 끊김 (Ctrl+C / 예외). 이어서 실행 가능.
+  //   completed = 파이프라인 정상 종료. TC 별 pass/fail 는 별개 축.
   const [runningTests, setRunningTests] = useState<Array<{
-    id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'completed';
+    id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'aborted' | 'completed';
   }>>([]);
   const [selectedRunningTestId, setSelectedRunningTestId] = useState<string | null>(null);
   const [retestCheckedIds, setRetestCheckedIds] = useState<Set<string>>(new Set());
@@ -604,13 +607,20 @@ export default function App() {
       try {
         const runs = await listAllRuns(scenarioGenPollingServiceId);
         if (cancelled) return;
-        const mapped = runs.map((r) => ({
-          id: r.id,
-          name: r.name,
-          groupId: null as string | null,
-          startTime: (r.startTime || '').slice(0, 16).replace('T', ' '),
-          status: (r.status === 'running' ? 'running' : 'completed') as 'running' | 'completed',
-        }));
+        const mapped = runs.map((r) => {
+          const raw = String(r.status || '').toLowerCase();
+          const status: 'running' | 'aborted' | 'completed' =
+            raw === 'running' ? 'running'
+            : raw === 'aborted' ? 'aborted'
+            : 'completed';
+          return {
+            id: r.id,
+            name: r.name,
+            groupId: null as string | null,
+            startTime: (r.startTime || '').slice(0, 16).replace('T', ' '),
+            status,
+          };
+        });
         setRunningTests(mapped);
         // 가장 최근 running trace 가 있으면 그 trace 폴링 시작 (status 자동 갱신).
         const stillRunning = mapped.find((r) => r.status === 'running');
@@ -694,9 +704,10 @@ export default function App() {
       ));
       setRunTraceId(null);
     } else if (runPolling.status === 'aborted' || runPolling.status === 'error') {
-      console.error('테스트 실행 실패', runPolling.error);
+      console.error('테스트 실행 중단/에러', runPolling.error);
+      // 'aborted' 는 별개 status — "이어서 실행" 으로 재개 가능. 'completed' 로 강제하지 않는다.
       setRunningTests(prev => prev.map(t =>
-        t.id === runTraceId ? { ...t, status: 'completed' as const } : t,
+        t.id === runTraceId ? { ...t, status: 'aborted' as const } : t,
       ));
       setRunTraceId(null);
     }
@@ -710,8 +721,9 @@ export default function App() {
     scenarioIds: string[] | undefined,
     runName: string,
     groupId: string | null = null,
+    resumeFromTrace: string | null = null,
   ) => {
-    console.info('[handleStartRun] called', { runName, groupId, scenarioIds, serviceUuid: scenarioGenPollingServiceId });
+    console.info('[handleStartRun] called', { runName, groupId, scenarioIds, resumeFromTrace, serviceUuid: scenarioGenPollingServiceId });
     const token = useAuthStore.getState().accessToken;
     if (!token || !scenarioGenPollingServiceId) {
       console.warn('[handleStartRun] aborted: no token or serviceId', { hasToken: !!token, serviceUuid: scenarioGenPollingServiceId });
@@ -721,6 +733,7 @@ export default function App() {
       const run = await startRun(scenarioGenPollingServiceId, {
         scenario_ids: scenarioIds,
         filter: scenarioIds && scenarioIds.length ? 'affected' : 'all',
+        ...(resumeFromTrace ? { resume_from_trace: resumeFromTrace } : {}),
       });
       const startTime = (() => {
         const n = new Date();
@@ -1173,6 +1186,7 @@ export default function App() {
                   historySearchQuery={historySearchQuery}
                   setHistorySearchQuery={setHistorySearchQuery}
                   setSelectedExecutionId={setSelectedExecutionId}
+                  onResumeRun={(runId, runName) => handleStartRun(undefined, runName, null, runId)}
                 />
               )
             )}

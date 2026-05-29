@@ -100,7 +100,7 @@ const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
   );
 };
 
-type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'completed' };
+type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'aborted' | 'completed' };
 type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED';
 
 interface TestRunningPageProps {
@@ -127,8 +127,8 @@ interface TestRunningPageProps {
   expandedTestCases: string[];
   setExpandedTestCases: React.Dispatch<React.SetStateAction<string[]>>;
   setSelectedExecutionId: React.Dispatch<React.SetStateAction<string | null>>;
-  /** App.tsx 의 handleStartRun — selectedRun 을 같은 scenario_ids 로 재실행. */
-  onStartRun?: (scenarioIds: string[] | undefined, runName: string, groupId: string | null) => void;
+  /** App.tsx 의 handleStartRun — selectedRun 을 같은 scenario_ids 로 재실행. resumeFromTrace 지정 시 이어서 실행. */
+  onStartRun?: (scenarioIds: string[] | undefined, runName: string, groupId: string | null, resumeFromTrace?: string | null) => void;
   /** Spring 호출에 필요한 service UUID. selectedRun.id 는 trace_id 라 함께 필요. */
   serviceUuid?: string | null;
 }
@@ -168,9 +168,10 @@ export const TestRunningPage = ({
   const screenshotUrlRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    // 폴링 조건: serviceUuid + selectedRun(running 상태) 모두 있을 때만
-    if (!serviceUuid || !selectedRun || selectedRun.status !== 'running') {
-      // 직전 blob URL 정리
+    // 폴링 조건: serviceUuid + selectedRun 모두 있을 때.
+    // - running: 1초 간격 폴링
+    // - aborted/completed: 마지막 디스크 상태 1회만 fetch (interval 없음)
+    if (!serviceUuid || !selectedRun) {
       if (screenshotUrlRef.current) {
         URL.revokeObjectURL(screenshotUrlRef.current);
         screenshotUrlRef.current = null;
@@ -182,6 +183,7 @@ export const TestRunningPage = ({
 
     let cancelled = false;
     const runId = selectedRun.id;
+    const isLive = selectedRun.status === 'running';
 
     const tick = async () => {
       try {
@@ -193,7 +195,6 @@ export const TestRunningPage = ({
           if (nextUrl) URL.revokeObjectURL(nextUrl);
           return;
         }
-        // 새 스크린샷 받았으면 이전 blob URL revoke 후 swap
         if (nextUrl) {
           if (screenshotUrlRef.current) URL.revokeObjectURL(screenshotUrlRef.current);
           screenshotUrlRef.current = nextUrl;
@@ -201,17 +202,15 @@ export const TestRunningPage = ({
         }
         setRunProgress(progress);
       } catch (err) {
-        // 네트워크 에러는 silent — 다음 tick 에서 재시도
         if (cancelled) return;
-        // 디버그 시 enable: console.debug('runProgress polling error', err);
       }
     };
 
-    tick(); // 즉시 한 번
-    const timer = setInterval(tick, 1000);
+    tick();
+    const timer = isLive ? setInterval(tick, 1000) : null;
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
       if (screenshotUrlRef.current) {
         URL.revokeObjectURL(screenshotUrlRef.current);
         screenshotUrlRef.current = null;
@@ -225,6 +224,7 @@ export const TestRunningPage = ({
    * 현재 selectedRun 을 같은 scenarios 로 재실행한다.
    * - groupId 있으면 scenarioStore 에서 group 찾아 scenarioIds 추출
    * - groupId null 이면 E2E (filter='all')
+   * - selectedRun.status === 'aborted' 이면 resume_from_trace 로 끊긴 TC 부터 이어서 실행
    */
   const rerunSelected = React.useCallback(() => {
     if (!selectedRun || !onStartRun) return;
@@ -234,7 +234,8 @@ export const TestRunningPage = ({
       const g = useScenarioStore.getState().groups.find(gr => gr.groupId === groupId);
       scenarioIds = g?.scenarioIds && g.scenarioIds.length ? g.scenarioIds : undefined;
     }
-    onStartRun(scenarioIds, selectedRun.name, groupId);
+    const resumeFromTrace = selectedRun.status === 'aborted' ? selectedRun.id : null;
+    onStartRun(scenarioIds, selectedRun.name, groupId, resumeFromTrace);
   }, [selectedRun, onStartRun]);
 
   // duration stopwatch

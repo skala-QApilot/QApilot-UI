@@ -14,6 +14,8 @@ export interface RunCreatePayload {
   scenario_ids?: string[];
   filter?: 'all' | 'failed' | 'affected' | string;
   tags?: string[];
+  /** 지정된 trace 의 완료 TC 는 새 실행에서 자동 skip — 이어서 실행. */
+  resume_from_trace?: string;
 }
 
 export interface AgentProgress {
