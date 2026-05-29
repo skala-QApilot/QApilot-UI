@@ -115,11 +115,13 @@ export const useTestStore = create<TestState>()((set, get) => ({
 
   reset: () => set({ ...initialState }),
 
+  // "실행 완료" 패널 — 정상 종료된 trace 만. running/aborted 는 별도 패널(runningTests)에서 표시.
   getExecutionHistory: () => {
     const rows: UiExecutionRow[] = [];
     let counter = 0;
     for (const r of get().results) {
       if (r.command !== 'test') continue;
+      if (r.status !== 'completed') continue;
       counter += 1;
       rows.push({
         id: r.trace_id,
@@ -137,10 +139,12 @@ export const useTestStore = create<TestState>()((set, get) => ({
     return rows;
   },
 
+  // PassRate 차트 — completed 만 집계. aborted 의 0/0 가 평균을 왜곡하지 않도록 제외.
   getPassHistory: (days = 14) => {
     const agg: Record<string, { pass: number; fail: number }> = {};
     for (const r of get().results) {
       if (r.command !== 'test') continue;
+      if (r.status !== 'completed') continue;
       const k = dayKey(r.completed_at || r.started_at);
       if (!k) continue;
       if (!agg[k]) agg[k] = { pass: 0, fail: 0 };

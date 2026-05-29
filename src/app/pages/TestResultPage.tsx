@@ -85,7 +85,41 @@ export const TestResultPage = ({
   // selectedExecutionId 는 testStore.getExecutionHistory() 가 만든 trace_id.
   // store getter 가 매번 새 배열을 만드므로 1회성 lookup 패턴 (조회 즉시 종료) 으로 안전.
   const exec = useTestStore.getState().getExecutionHistory().find(e => e.id === selectedExecutionId);
-  if (!exec) return null;
+  // exec 없음 = stale id 또는 aborted/running 상태 — raw results 에서 raw status 확인.
+  if (!exec) {
+    const raw = useTestStore.getState().results.find(r => r.trace_id === selectedExecutionId);
+    const rawStatus = String(raw?.status || '').toLowerCase();
+    const heading = rawStatus === 'aborted' ? '이 실행은 중단되었습니다'
+      : rawStatus === 'running' ? '진행 중인 테스트입니다'
+      : '결과를 찾을 수 없습니다';
+    const description = rawStatus === 'aborted'
+      ? '"진행 중" 패널의 "이어서 실행" 으로 중단 지점부터 재개할 수 있습니다.'
+      : rawStatus === 'running'
+        ? '"진행 중" 패널에서 해당 실행을 선택하면 실시간 화면을 볼 수 있습니다.'
+        : '선택한 실행 이력이 더 이상 존재하지 않거나 표시할 수 있는 결과가 없습니다.';
+    return (
+      <div className="flex flex-col h-[calc(100vh-4rem)]">
+        <SubHeader
+          leftContent={(
+            <button
+              type="button"
+              onClick={() => { setSelectedExecutionId(null); setSelectedFailTC(null); }}
+              className="flex items-center gap-1 text-[#9ca3af] hover:text-[#3615CF] transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="text-sm">이력</span>
+            </button>
+          )}
+        />
+        <div className="flex-1 flex items-center justify-center bg-white">
+          <div className="max-w-md text-center">
+            <div className="text-sm font-semibold text-[#1a1a2e] mb-2">{heading}</div>
+            <div className="text-xs text-[#6b7280]">{description}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const activeError = historyDetailTab === 'FAIL' ? (mockDetailErrors.find(e => e.id === selectedFailTC) ?? mockDetailErrors[0]) : null;
   const activePass = historyDetailTab === 'PASS' ? (mockPassCases.find(p => p.id === selectedFailTC) ?? null) : null;

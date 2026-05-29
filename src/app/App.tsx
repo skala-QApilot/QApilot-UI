@@ -192,9 +192,6 @@ export default function App() {
   const [editingGroupName, setEditingGroupName] = useState('');
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
   const [isTestRunning, setIsTestRunning] = useState(false);
-  const [completedAgentStages, setCompletedAgentStages] = useState<string[]>([]);
-  const [currentAgentStage, setCurrentAgentStage] = useState<string>('');
-  const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [scenarioSidebarTab, setScenarioSidebarTab] = useState<'TOTAL' | 'PASS' | 'FILTERED'>('TOTAL');
   const [scenarioFilter] = useState<string>('TOTAL');
   const [expandedScenarios, setExpandedScenarios] = useState<string[]>(['TS1']);
@@ -415,14 +412,6 @@ export default function App() {
   const allTCsSelected = allTCIds.length > 0 && allTCIds.every(id => selectedTCIds.includes(id));
   const someSelected = selectedTCIds.length > 0;
 
-  const parallelDone = ['UI', 'API', 'DB'].every(s => completedAgentStages.includes(s));
-  const getNodeStatus = (stage: string): 'inactive' | 'running' | 'complete' => {
-    if (completedAgentStages.includes(stage)) return 'complete';
-    const isParallel = ['UI', 'API', 'DB'].includes(stage);
-    if (isParallel && !parallelDone) return 'running';
-    if (!isParallel && parallelDone && currentAgentStage === stage) return 'running';
-    return 'inactive';
-  };
 
   const selectedService = services.find(s => s.id === selectedServiceId) ?? null;
 
@@ -533,20 +522,6 @@ export default function App() {
     }, 1800);
   };
 
-  const advanceAgentStage = () => {
-    const order = ['UI', 'API', 'DB', 'Cross-check', '원인 분석', 'Report 생성'];
-    const nextIncomplete = order.find(s => !completedAgentStages.includes(s));
-    if (!nextIncomplete) return;
-    const newCompleted = [...completedAgentStages, nextIncomplete];
-    setCompletedAgentStages(newCompleted);
-    const newParallelDone = ['UI', 'API', 'DB'].every(s => newCompleted.includes(s));
-    if (newParallelDone) {
-      const seq = ['Cross-check', '원인 분석', 'Report 생성'];
-      const nextSeq = seq.find(s => !newCompleted.includes(s));
-      setCurrentAgentStage(nextSeq || '');
-      if (!nextSeq) setShowCompletionModal(true);
-    }
-  };
 
   // ── Service navigation helpers ────────────────────────────────────────────
 
@@ -828,8 +803,6 @@ export default function App() {
     setRunningTests(prev => [...prev, newRun]);
     setSelectedRunningTestId(newRun.id);
     setSelectedTestGroup(newRun.name);
-    setCompletedAgentStages([]);
-    setCurrentAgentStage('');
     setIsTestRunning(false);
     setRetestCheckedIds(new Set());
     setShowRetestNavModal(false);
@@ -1143,16 +1116,10 @@ export default function App() {
                   setSelectedRunningTestId={setSelectedRunningTestId}
                   isTestRunning={isTestRunning}
                   setIsTestRunning={setIsTestRunning}
-                  setCompletedAgentStages={setCompletedAgentStages}
-                  setCurrentAgentStage={setCurrentAgentStage}
                   highlightedLogIdx={highlightedLogIdx}
                   setHighlightedLogIdx={setHighlightedLogIdx}
                   setSelectedRunningForDetail={setSelectedRunningForDetail}
-                  advanceAgentStage={advanceAgentStage}
-                  getNodeStatus={getNodeStatus}
-                  setShowCompletionModal={setShowCompletionModal}
                   selectedRunningForDetail={selectedRunningForDetail}
-                  showCompletionModal={showCompletionModal}
                   setRunningTests={setRunningTests}
                   scenarioSidebarTab={scenarioSidebarTab}
                   setScenarioSidebarTab={setScenarioSidebarTab}
@@ -1245,13 +1212,10 @@ export default function App() {
                   setRunningTests(prev => [...prev, newRun]);
                   setSelectedRunningTestId(newRun.id);
                   setSelectedTestGroup(newRun.name);
-                  setCompletedAgentStages([]);
-                  setCurrentAgentStage('');
                   setIsTestRunning(false);
                   setRetestCheckedIds(new Set());
                   setShowRetestNavModal(false);
                   setCurrentPage('테스트');
-                  setSelectedRunningForDetail(newRun.id);
                   setSelectedRunningForDetail(newRun.id);
                 }}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium text-sm hover:shadow-md transition-shadow"

@@ -7,7 +7,7 @@ import { SubHeader } from '../components/common/SubHeader';
 import { AgentProgressStrip } from '../components/common/AgentProgressStrip';
 import { TerminalFrame, RuntimeTerminal } from '../components/common/RuntimeTerminal';
 import { StatusIcon } from '../components/common/StatusIcon';
-import { mockTestLogs, mockTVEndpoints, type HttpMethod } from '../data/mockData';
+import { mockTVEndpoints, type HttpMethod } from '../data/mockData';
 import { useScenarioStore, toUiScenario, toUiTestCase } from '../../store/scenarioStore';
 import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
@@ -109,16 +109,10 @@ interface TestRunningPageProps {
   setSelectedRunningTestId: React.Dispatch<React.SetStateAction<string | null>>;
   isTestRunning: boolean;
   setIsTestRunning: React.Dispatch<React.SetStateAction<boolean>>;
-  setCompletedAgentStages: React.Dispatch<React.SetStateAction<string[]>>;
-  setCurrentAgentStage: React.Dispatch<React.SetStateAction<string>>;
   highlightedLogIdx: number | null;
   setHighlightedLogIdx: React.Dispatch<React.SetStateAction<number | null>>;
   setSelectedRunningForDetail: React.Dispatch<React.SetStateAction<string | null>>;
-  advanceAgentStage: () => void;
-  getNodeStatus: (stage: string) => 'inactive' | 'running' | 'complete';
-  setShowCompletionModal: React.Dispatch<React.SetStateAction<boolean>>;
   selectedRunningForDetail: string | null;
-  showCompletionModal: boolean;
   setRunningTests: React.Dispatch<React.SetStateAction<RunningTest[]>>;
   scenarioSidebarTab: ScenarioSidebarTab;
   setScenarioSidebarTab: React.Dispatch<React.SetStateAction<ScenarioSidebarTab>>;
@@ -139,16 +133,10 @@ export const TestRunningPage = ({
   setSelectedRunningTestId,
   isTestRunning,
   setIsTestRunning,
-  setCompletedAgentStages,
-  setCurrentAgentStage,
   highlightedLogIdx,
   setHighlightedLogIdx,
   setSelectedRunningForDetail,
-  advanceAgentStage,
-  getNodeStatus,
-  setShowCompletionModal,
   selectedRunningForDetail: _selectedRunningForDetail,
-  showCompletionModal,
   setRunningTests,
   scenarioSidebarTab,
   setScenarioSidebarTab,
@@ -221,12 +209,36 @@ export const TestRunningPage = ({
   const liveLogs = React.useMemo(() => toRuntimeLogs(runProgress), [runProgress]);
 
   /**
-   * 현재 selectedRun 을 같은 scenarios 로 재실행한다.
-   * - groupId 있으면 scenarioStore 에서 group 찾아 scenarioIds 추출
-   * - groupId null 이면 E2E (filter='all')
-   * - selectedRun.status === 'aborted' 이면 resume_from_trace 로 끊긴 TC 부터 이어서 실행
+   * AgentProgressStrip 의 단계별 상태를 runProgress + selectedRun 에서 derive.
+   * - UI/API/DB: TC 당 ui_result/api_result/db_result 가 디스크에 쓰이면 카운트.
+   *   전체 카운트 > 0 면 "running", 전 항목에 결과 있으면 "complete".
+   * - Cross-check / 원인 분석 / Report: 별도 endpoint 없어서 heuristic.
+   *   selectedRun.status === 'completed' 면 모두 complete.
+   *   그 외엔 inactive (실제 진행 표시는 향후 L3 API 도입 시 보강).
    */
-  const rerunSelected = React.useCallback(() => {
+  const liveGetNodeStatus = React.useCallback((stage: string): 'inactive' | 'running' | 'complete' => {
+    if (!runProgress || runProgress.items.length === 0) return 'inactive';
+    const total = runProgress.items.length;
+    const has = (kind: 'ui' | 'api' | 'db') => runProgress.items.filter(it => (it as any)[kind]).length;
+    if (stage === 'UI' || stage === 'API' || stage === 'DB') {
+      const kind = stage.toLowerCase() as 'ui' | 'api' | 'db';
+      const done = has(kind);
+      if (done === 0) return 'inactive';
+      if (done >= total && selectedRun?.status !== 'running') return 'complete';
+      if (done >= total) return 'complete';
+      return 'running';
+    }
+    // L3 stages: completed 시 일괄 complete, 그 외 inactive.
+    if (selectedRun?.status === 'completed') return 'complete';
+    return 'inactive';
+  }, [runProgress, selectedRun?.status]);
+
+  /**
+   * 현재 selectedRun 을 같은 scenarios 로 다시 실행한다.
+   * @param resume true 면 selectedRun.id 를 resume_from_trace 로 전달 (이어서 실행).
+   *               false 면 처음부터 모든 TC 실행 (전체 재실행).
+   */
+  const triggerRun = React.useCallback((resume: boolean) => {
     if (!selectedRun || !onStartRun) return;
     const groupId = selectedRun.groupId;
     let scenarioIds: string[] | undefined;
@@ -234,7 +246,7 @@ export const TestRunningPage = ({
       const g = useScenarioStore.getState().groups.find(gr => gr.groupId === groupId);
       scenarioIds = g?.scenarioIds && g.scenarioIds.length ? g.scenarioIds : undefined;
     }
-    const resumeFromTrace = selectedRun.status === 'aborted' ? selectedRun.id : null;
+    const resumeFromTrace = resume && selectedRun.status === 'aborted' ? selectedRun.id : null;
     onStartRun(scenarioIds, selectedRun.name, groupId, resumeFromTrace);
   }, [selectedRun, onStartRun]);
 
@@ -468,8 +480,9 @@ export const TestRunningPage = ({
                               setExpandedTestCases(prev =>
                                 prev.includes(tcKey) ? prev.filter(id => id !== tcKey) : [...prev, tcKey]
                               );
-                              const logIdx = tc.status === 'failed' ? mockTestLogs.findIndex(l => l.isError) : 0;
-                              scrollToLog(Math.max(0, logIdx));
+                              // TC 클릭 시 로그 패널 상단으로 스크롤. 정확한 TC↔로그 매핑은
+                              // 추후 liveLogs 의 action 텍스트 매칭으로 보강 예정.
+                              scrollToLog(0);
                             }}>
                             <button className="flex-shrink-0" onClick={e => e.stopPropagation()}>
                               {tc.values.length > 0
@@ -504,7 +517,7 @@ export const TestRunningPage = ({
                             return (
                               <div key={tv.id} className="border-b border-[#f0f0f0]/30" style={{ paddingLeft: '3.25rem' }}>
                                 <div className="group flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer transition-colors bg-white hover:bg-slate-50"
-                                  onClick={() => scrollToLog(tv.status === 'failed' ? 4 : 0)}>
+                                  onClick={() => scrollToLog(0)}>
                                   <span className="px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 bg-slate-100 text-slate-500">{tv.id}</span>
                                   {ep ? (
                                     <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -558,17 +571,19 @@ export const TestRunningPage = ({
             <div className="flex gap-2 justify-center items-center">
               <button
                 onClick={async () => {
-                  // selectedRun.status 가 ground truth — 'running' 이면 정지, 그 외엔 (재)실행.
+                  // selectedRun.status 가 ground truth.
+                  //   running  → 정지 (stop API)
+                  //   aborted  → 이어서 실행 (resume_from_trace)
+                  //   그 외    → 실행 (fresh start)
                   if (selectedRun?.status === 'running' && serviceUuid) {
                     try {
                       await stopRun(serviceUuid, selectedRun.id);
-                      // 폴링 effect 가 trace.status="aborted" 를 감지해 runningTests 자동 갱신.
                     } catch (err) {
                       console.error('정지 요청 실패', err);
                     }
                     setIsTestRunning(false);
                   } else {
-                    rerunSelected();
+                    triggerRun(selectedRun?.status === 'aborted');
                     setIsTestRunning(true);
                   }
                 }}
@@ -581,19 +596,14 @@ export const TestRunningPage = ({
               </button>
               <button
                 onClick={() => {
-                  setCompletedAgentStages([]); setCurrentAgentStage(''); setIsTestRunning(false);
-                  rerunSelected();
+                  // "전체 재실행" = 항상 fresh start. aborted 라도 처음부터 모든 TC 실행.
+                  setIsTestRunning(false);
+                  triggerRun(false);
                 }}
                 className="flex-1 min-w-0 px-3 py-2 bg-white border border-[#f0f0f0] rounded-lg text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5">
                 <RotateCcw className="w-4 h-4" /> 전체 재실행
               </button>
             </div>
-            {isTestRunning && (
-              <button onClick={advanceAgentStage}
-                className="w-full px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs text-[#6b7280] transition-colors">
-                단계 진행 (시뮬레이션)
-              </button>
-            )}
           </div>
         </div>
 
@@ -606,7 +616,7 @@ export const TestRunningPage = ({
         {/* Main panel */}
         <div className="flex-1 min-w-0 overflow-hidden bg-[#eef1f4] p-4">
           <div className="flex h-full min-h-0 flex-col gap-3">
-            <AgentProgressStrip getNodeStatus={getNodeStatus} />
+            <AgentProgressStrip getNodeStatus={liveGetNodeStatus} />
             <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4">
               <TerminalFrame title="qapilot-preview - zsh" bodyClassName="aspect-video flex items-center justify-center p-0 overflow-hidden">
                 {screenshotUrl ? (
@@ -629,7 +639,7 @@ export const TestRunningPage = ({
                 )}
               </TerminalFrame>
               <RuntimeTerminal
-                logs={liveLogs.length > 0 ? liveLogs : mockTestLogs}
+                logs={liveLogs}
                 highlightedLogIdx={highlightedLogIdx}
                 idPrefix="ip-log"
                 scrollContainerRef={runtimeLogRef}
@@ -639,33 +649,6 @@ export const TestRunningPage = ({
         </div>
       </div>
 
-      {/* Completion Modal */}
-      {showCompletionModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-            <CheckCircle2 className="w-12 h-12 text-primary-blue mx-auto mb-4" />
-            <div className="font-semibold text-lg mb-2">테스트 실행이 완료되었습니다.</div>
-            <div className="text-sm text-[#6b7280] mb-6">결과 페이지로 이동하시겠습니까?</div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowCompletionModal(false);
-                  setRunningTests(prev => prev.map(t => t.id === selectedRunningTestId ? { ...t, status: 'completed' } : t));
-                  setSelectedRunningTestId(null);
-                  setSelectedRunningForDetail(null);
-                  setSelectedExecutionId(useTestStore.getState().getExecutionHistory()[0]?.id ?? null);
-                }}
-                className="flex-1 px-4 py-2 bg-primary-blue text-white rounded-lg font-medium">
-                이동
-              </button>
-              <button onClick={() => setShowCompletionModal(false)}
-                className="flex-1 px-4 py-2 bg-white border border-[#f0f0f0] rounded-lg hover:bg-gray-50">
-                나중에
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
