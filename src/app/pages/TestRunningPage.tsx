@@ -11,7 +11,7 @@ import { mockTestLogs, mockTVEndpoints, type HttpMethod } from '../data/mockData
 import { useScenarioStore, toUiScenario, toUiTestCase } from '../../store/scenarioStore';
 import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
-import { fetchLatestScreenshotUrl, getRunProgress, type RunProgress } from '../../api/runs';
+import { fetchLatestScreenshotUrl, getRunProgress, stopRun, type RunProgress } from '../../api/runs';
 
 interface RuntimeLog {
   time: string;
@@ -557,12 +557,27 @@ export const TestRunningPage = ({
           <div className="p-4 border-t border-[#f0f0f0] space-y-2 bg-white flex-shrink-0">
             <div className="flex gap-2 justify-center items-center">
               <button
-                onClick={() => {
-                  if (isTestRunning) { setShowCompletionModal(true); setIsTestRunning(false); }
-                  else { rerunSelected(); setIsTestRunning(true); }
+                onClick={async () => {
+                  // selectedRun.status 가 ground truth — 'running' 이면 정지, 그 외엔 (재)실행.
+                  if (selectedRun?.status === 'running' && serviceUuid) {
+                    try {
+                      await stopRun(serviceUuid, selectedRun.id);
+                      // 폴링 effect 가 trace.status="aborted" 를 감지해 runningTests 자동 갱신.
+                    } catch (err) {
+                      console.error('정지 요청 실패', err);
+                    }
+                    setIsTestRunning(false);
+                  } else {
+                    rerunSelected();
+                    setIsTestRunning(true);
+                  }
                 }}
                 className="flex-1 min-w-0 px-3 py-2 bg-primary-blue text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md transition-shadow">
-                {isTestRunning ? <><Pause className="w-4 h-4" /> 정지</> : <><Play className="w-4 h-4" /> 실행</>}
+                {selectedRun?.status === 'running'
+                  ? <><Pause className="w-4 h-4" /> 정지</>
+                  : selectedRun?.status === 'aborted'
+                    ? <><Play className="w-4 h-4" /> 이어서 실행</>
+                    : <><Play className="w-4 h-4" /> 실행</>}
               </button>
               <button
                 onClick={() => {

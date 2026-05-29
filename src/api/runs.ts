@@ -96,6 +96,11 @@ export async function getRunProgress(
   return res.data;
 }
 
+/** 진행 중인 파이프라인 즉시 중단 — trace.status → "aborted". */
+export async function stopRun(serviceId: string, runId: string): Promise<void> {
+  await api.post(`${basePath(serviceId)}/${encodeURIComponent(runId)}/stop`);
+}
+
 /**
  * 가장 최근 PNG 스크린샷을 Blob URL 로 반환. 결과 없으면 null.
  * 호출자는 사용 후 `URL.revokeObjectURL()` 로 메모리 해제 필요.
