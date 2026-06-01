@@ -791,8 +791,8 @@ export default function App() {
           ? payload.repos.map(r => ({
               repo_url: r.url,
               token: r.token || null,
-              branch: null,   // ServiceSetupPage 가 아직 branch 입력 UI 없음 — FastAPI 가 "main" default 적용
-              role: null,     // 동일 — URL 에서 자동 유추
+              branch: r.branch || null,   // 비우면 FastAPI 가 "main" default 적용
+              role: null,                  // URL 에서 자동 유추
             }))
           : undefined,
         staging_url: payload.stagingUrl || undefined,

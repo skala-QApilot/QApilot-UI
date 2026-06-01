@@ -1,17 +1,18 @@
 import React, { useState, useRef } from 'react';
-import { Plus, Sparkles, FileText, Upload, X, Server, ChevronLeft, CornerDownRight, Info, ExternalLink } from 'lucide-react';
+import { Plus, Sparkles, FileText, Upload, X, Server, ChevronLeft, CornerDownRight, Info, ExternalLink, GitBranch } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
 interface GithubEntry {
   id: string;
   url: string;
   token: string;
+  branch: string;
 }
 
 /** App.tsx 가 받는 setup-complete payload. blank entry 는 호출 직전에 필터링됨. */
 export interface ServiceSetupPayload {
   name: string;
-  repos: Array<{ url: string; token: string }>;
+  repos: Array<{ url: string; token: string; branch: string }>;
   stagingUrl: string;
 }
 
@@ -29,18 +30,18 @@ export function ServiceSetupPage({ serviceName = '', onGenerateScenarios }: Serv
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [githubEntries, setGithubEntries] = useState<GithubEntry[]>([
-    { id: '1', url: '', token: '' },
+    { id: '1', url: '', token: '', branch: '' },
   ]);
 
   const addGithubEntry = () => {
-    setGithubEntries(prev => [...prev, { id: `${Date.now()}`, url: '', token: '' }]);
+    setGithubEntries(prev => [...prev, { id: `${Date.now()}`, url: '', token: '', branch: '' }]);
   };
 
   const removeGithubEntry = (id: string) => {
     setGithubEntries(prev => prev.filter(e => e.id !== id));
   };
 
-  const updateGithubEntry = (id: string, field: 'url' | 'token', value: string) => {
+  const updateGithubEntry = (id: string, field: 'url' | 'token' | 'branch', value: string) => {
     setGithubEntries(prev => prev.map(e => e.id === id ? { ...e, [field]: value } : e));
   };
 
@@ -177,6 +178,19 @@ export function ServiceSetupPage({ serviceName = '', onGenerateScenarios }: Serv
                           </div>
                         </div>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <CornerDownRight className="h-4 w-4 shrink-0 text-[#c4c9d4]" />
+                        <div className="relative flex-1">
+                          <GitBranch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#c4c9d4]" />
+                          <input
+                            type="text"
+                            value={entry.branch}
+                            onChange={e => updateGithubEntry(entry.id, 'branch', e.target.value)}
+                            placeholder="branch (기본: main)"
+                            className="w-full rounded-xl border border-[#e5e7eb] bg-white pl-9 pr-3 py-3 font-mono text-sm transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 focus:outline-none"
+                          />
+                        </div>
+                      </div>
                       </div>
                       {githubEntries.length > 1 && (
                         <button
@@ -268,7 +282,11 @@ export function ServiceSetupPage({ serviceName = '', onGenerateScenarios }: Serv
                   name: name.trim(),
                   repos: githubEntries
                     .filter(entry => entry.url.trim().length > 0)
-                    .map(entry => ({ url: entry.url.trim(), token: entry.token.trim() })),
+                    .map(entry => ({
+                      url: entry.url.trim(),
+                      token: entry.token.trim(),
+                      branch: entry.branch.trim(),
+                    })),
                   stagingUrl: stagingUrl.trim(),
                 })}
                 disabled={!canSubmit}
