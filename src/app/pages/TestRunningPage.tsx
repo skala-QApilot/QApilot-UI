@@ -12,6 +12,7 @@ import { useScenarioStore, toUiScenario, toUiTestCase } from '../../store/scenar
 import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
 import { fetchLatestScreenshotUrl, getRunProgress, stopRun, type RunProgress } from '../../api/runs';
+import { useRunStream } from '../../hooks/useRunStream';
 
 interface RuntimeLog {
   time: string;
@@ -158,10 +159,13 @@ export const TestRunningPage = ({
   const [runProgress, setRunProgress] = React.useState<RunProgress | null>(null);
   const screenshotUrlRef = React.useRef<string | null>(null);
 
+  // tick 함수를 ref 로 — SSE 이벤트 핸들러가 stale closure 없이 최신 버전 호출 가능.
+  const tickRef = React.useRef<() => Promise<void>>();
+
   React.useEffect(() => {
     // 폴링 조건: serviceUuid + selectedRun 모두 있을 때.
-    // - running: 1초 간격 폴링
-    // - aborted/completed: 마지막 디스크 상태 1회만 fetch (interval 없음)
+    // - running: 1초 간격 폴링 + SSE 이벤트 도착 시 즉시 추가 tick
+    // - aborted/completed: 마지막 디스크 상태 1회만 fetch
     if (!serviceUuid || !selectedRun) {
       if (screenshotUrlRef.current) {
         URL.revokeObjectURL(screenshotUrlRef.current);
@@ -169,6 +173,7 @@ export const TestRunningPage = ({
       }
       setScreenshotUrl(null);
       setRunProgress(null);
+      tickRef.current = undefined;
       return;
     }
 
@@ -196,11 +201,14 @@ export const TestRunningPage = ({
         if (cancelled) return;
       }
     };
+    tickRef.current = tick;
 
     tick();
+    // 1초 폴링은 SSE 가 끊겼을 때 fallback. SSE 가 떠 있어도 무해 (idempotent 상태 갱신).
     const timer = isLive ? setInterval(tick, 1000) : null;
     return () => {
       cancelled = true;
+      tickRef.current = undefined;
       if (timer) clearInterval(timer);
       if (screenshotUrlRef.current) {
         URL.revokeObjectURL(screenshotUrlRef.current);
@@ -208,6 +216,16 @@ export const TestRunningPage = ({
       }
     };
   }, [serviceUuid, selectedRun?.id, selectedRun?.status]);
+
+  // SSE — 이벤트 도착하면 즉시 tick 트리거. 1초 폴링 대비 latency ~0.
+  useRunStream(
+    serviceUuid,
+    selectedRun?.id ?? null,
+    {
+      enabled: selectedRun?.status === 'running',
+      onEvent: () => { void tickRef.current?.(); },
+    },
+  );
 
   const liveLogs = React.useMemo(() => toRuntimeLogs(runProgress), [runProgress]);
 
