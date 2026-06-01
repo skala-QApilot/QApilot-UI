@@ -92,11 +92,19 @@ export const TestPage = ({
               {activeRunningTests.length === 0 && (
                 <div className="py-16 text-center text-sm text-[#9ca3af]">실행 중인 테스트 없음</div>
               )}
-              {activeRunningTests.map(run => (
+              {activeRunningTests.map(run => {
+                // testStore.results 에 진행중/중단된 trace 의 partial tc_results 가 들어있음.
+                // 그 값으로 P/F/N derive — aborted 의 경우 정확한 진척, running 의 경우 마지막 폴링 시점 값.
+                const raw = testResults.find(r => r.trace_id === run.id);
+                const passN = raw?.pass_count ?? 0;
+                const failN = raw?.fail_count ?? 0;
+                const totalN = raw?.total_tc_count ?? 0;
+                const notRunN = Math.max(0, totalN - passN - failN);
+                return (
                 <div key={run.id} className="h-[56px] px-8 border-b border-[#f5f5f5] flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <ExecutionHistoryRow
-                      exec={{ id: run.id, groupId: run.name, startDate: run.startTime, pass: 0, fail: 0, notRun: 0 }}
+                      exec={{ id: run.id, groupId: run.name, startDate: run.startTime, pass: passN, fail: failN, notRun: notRunN }}
                       onClick={() => {
                         setSelectedRunningTestId(run.id);
                         setSelectedTestGroup(run.name);
@@ -118,7 +126,8 @@ export const TestPage = ({
                     </>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

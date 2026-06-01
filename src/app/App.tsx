@@ -30,6 +30,7 @@ import { getProject, type ProjectDashboardResponse } from '../api/projects';
 import { useProjectStore } from '../store/projectStore';
 import { useNotificationStore } from '../store/notificationStore';
 import { useRtmStore } from '../store/rtmStore';
+// loadVersions 는 service 진입 useEffect 에서 useRtmStore.getState().loadVersions(...) 로 호출.
 import { useFileStore } from '../store/fileStore';
 import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
 import { startRun, listAllRuns, resumeRun } from '../api/runs';
@@ -607,6 +608,11 @@ export default function App() {
         await useTestStore.getState().loadAll(scenarioGenPollingServiceId);
       } catch (err) {
         console.error('test 도메인 loadAll 실패', err);
+      }
+      try {
+        await useRtmStore.getState().loadVersions(scenarioGenPollingServiceId);
+      } catch (err) {
+        console.error('RTM loadVersions 실패', err);
       }
     })();
     return () => { cancelled = true; };
