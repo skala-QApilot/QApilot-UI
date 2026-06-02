@@ -4,6 +4,7 @@ export interface AgentStartResponse {
   trace_id: string;
   run_id: string;
   status: string;
+  session_id?: string;
 }
 
 export type ScenarioTrigger = 'init' | 'natural_lang' | 'doc_update';
@@ -12,6 +13,7 @@ export type RunFilter = 'all' | 'failed' | 'affected';
 export interface ScenarioGenerationPayload {
   trigger: ScenarioTrigger;
   user_input?: string;
+  session_id?: string;
   scenario_ids?: string[];
   filter?: RunFilter;
   tags?: string[];

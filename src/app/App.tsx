@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { FileList } from './components/common/FileList';
 import AgentTracePanel from './components/AgentTracePanel';
-import { ScenarioManagerPanel } from './components/ScenarioManagerPanel';
 import { ScenarioChatbar } from './components/ScenarioChatbar';
 import { LinkedFilesModal } from './components/LinkedFilesModal';
 import { RetestNavModal } from './components/RetestNavModal';
@@ -193,13 +192,12 @@ export default function App() {
 
   // ── RTM state ────────────────────────────────────────────────────────────
 
-  // scenario manager panel
-  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  // chatbot state
   const [aiMessages, setAiMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([
     { role: 'assistant', text: '테스트할 기능을 자연어로 설명해 주세요. 시나리오와 테스트 케이스를 자동으로 생성/수정해 드립니다.' },
   ]);
   const [aiInput, setAiInput] = useState('');
-  const [aiContextPrefill, setAiContextPrefill] = useState('');
+  const chatSessionIdRef = useRef<string | null>(null);
 
   // test group management
   const [testDepth, setTestDepth] = useState<0 | 1>(0);
@@ -452,47 +450,6 @@ export default function App() {
     navigate(`/${currentSlug}/test`);
   };
 
-  const sendAiMessage = (text: string) => {
-    setAiMessages(prev => [...prev, { role: 'user', text }]);
-    setAiInput('');
-    setTimeout(() => {
-      setAiMessages(prev => [...prev, { role: 'assistant', text: `"${text}" 관련 시나리오를 분석하고 있습니다...` }]);
-    }, 500);
-    if (currentPage === '시나리오') {
-      setTimeout(() => {
-        setAiMessages(prev => [...prev, { role: 'assistant', text: '시나리오 초안을 생성했습니다. 사이드바에서 확인 후 승인해 주세요.' }]);
-        const newId = `TS${dynamicScenarios.length + 1}`;
-        const label = text.length > 20 ? text.slice(0, 20) + '...' : text;
-        setDynamicScenarios(prev => [...prev, {
-          id: newId, name: label, status: 'pending', testCases: 2, hasChanges: false, lastRunAt: null,
-        }]);
-        setDynamicAIItems(prev => ({ ...prev, [newId]: { reason: text.slice(0, 50), trigger: 'chatbot', timestamp: new Date().toISOString().slice(0, 16).replace('T', ' ') } }));
-        setDynamicTestCases(prev => ({
-          ...prev,
-          [newId]: [
-            { id: 'TC1', name: 'AI 기본 케이스', status: 'pending', values: [
-              { id: 'TV1', name: '정상 입력', field: 'input', value: '', type: 'string', purpose: 'normal', status: 'pending' },
-              { id: 'TV2', name: '경계값 입력', field: 'input', value: '', type: 'string', purpose: 'boundary', status: 'pending' },
-            ] },
-            { id: 'TC2', name: 'AI 엣지 케이스', status: 'pending', values: [
-              { id: 'TV1', name: '오류 입력', field: 'input', value: '', type: 'string', purpose: 'edge', status: 'pending' },
-            ] },
-          ],
-        }));
-        setExpandedTSForTC(prev => [...prev, newId]);
-      }, 1500);
-    }
-  };
-
-  const openAiWithContext = (context: string) => {
-    setAiContextPrefill(context);
-    setAiPanelOpen(true);
-    setScenarioQuickOpen(false);
-    setAiMessages(prev => [...prev,
-      { role: 'user', text: `[수정 요청] ${context}` },
-      { role: 'assistant', text: '해당 변경사항에 대한 시나리오를 수정하겠습니다. 구체적인 요구사항을 알려주세요.' },
-    ]);
-  };
 
   const onReviewConfirm = async () => {
     const stableVersions = scenarioVersions.filter(v => !v.hasChange);
@@ -637,6 +594,67 @@ export default function App() {
     if (!scenarioGenPollingServiceId) return;
     syncScenarioFromStore(scenarioGenPollingServiceId);
   }, [scenarioGenPollingServiceId, syncScenarioFromStore]);
+
+  // ── 챗봇 메시지 전송 — natural_lang 파이프라인 연결 ──────────────────────────
+  const sendAiMessage = useCallback(async (text: string) => {
+    setAiMessages(prev => [...prev, { role: 'user', text }]);
+    setAiInput('');
+
+    const serviceId = scenarioGenPollingServiceId;
+    const token = useAuthStore.getState().accessToken;
+    if (!serviceId || !token) {
+      setAiMessages(prev => [...prev, { role: 'assistant', text: '서비스가 선택되지 않았습니다. 서비스를 먼저 선택해 주세요.' }]);
+      return;
+    }
+
+    setAiMessages(prev => [...prev, { role: 'assistant', text: '분석 중입니다...' }]);
+
+    try {
+      const resp = await startScenarioGeneration(serviceId, {
+        trigger: 'natural_lang',
+        user_input: text,
+        session_id: chatSessionIdRef.current ?? undefined,
+      }, token);
+
+      if (resp.session_id) chatSessionIdRef.current = resp.session_id;
+
+      const poll = async () => {
+        const { getTrace } = await import('../api/trace');
+        for (let i = 0; i < 60; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const trace = await getTrace(serviceId, resp.trace_id, token);
+          if (trace.status === 'completed') {
+            const summary = (trace.result_summary ?? {}) as Record<string, unknown>;
+            const qs = (summary.query_status as string) ?? 'sufficient';
+            const feedback = (summary.query_feedback as string) ?? '';
+            if (qs === 'sufficient') {
+              setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: '시나리오 생성/수정이 완료됐습니다.' }]);
+              syncScenarioFromStore(serviceId);
+            } else {
+              setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: feedback || '요청을 처리할 수 없습니다.' }]);
+            }
+            return;
+          }
+          if (trace.status === 'aborted') {
+            setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: `오류: ${trace.error ?? '알 수 없는 오류'}` }]);
+            return;
+          }
+        }
+        setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: '처리 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.' }]);
+      };
+      poll();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '알 수 없는 오류';
+      setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: `오류: ${msg}` }]);
+    }
+  }, [scenarioGenPollingServiceId, syncScenarioFromStore]);
+
+  const openAiWithContext = useCallback((context: string) => {
+    setAiMessages(prev => [...prev,
+      { role: 'user', text: `[수정 요청] ${context}` },
+      { role: 'assistant', text: '해당 변경사항에 대한 시나리오를 수정하겠습니다. 구체적인 요구사항을 알려주세요.' },
+    ]);
+  }, []);
 
   // service UUID 가 확정되면 backend 에서 test runs 이력 복원 + testStore 로드.
   // 새로고침 후에도 실행중/완료된 테스트 목록을 그대로 표시한다.
@@ -1353,7 +1371,6 @@ export default function App() {
                 someSelected={someSelected}
                 openAiWithContext={openAiWithContext}
                 triggerCodeChangeDetection={triggerCodeChangeDetection}
-                ScenarioManagerPanel={ScenarioManagerPanel}
                 setCurrentPage={setCurrentPage}
                 setTestDepth={setTestDepth}
                 highlightedBotRow={highlightedBotRow}
@@ -1511,18 +1528,6 @@ export default function App() {
       )}
 
 
-      {/* ── Scenario Manager Panel ── */}
-      {currentPage === '시나리오' && (
-        <ScenarioManagerPanel
-          aiPanelOpen={aiPanelOpen}
-          setAiPanelOpen={setAiPanelOpen}
-          aiMessages={aiMessages}
-          aiInput={aiInput}
-          setAiInput={setAiInput}
-          aiContextPrefill={aiContextPrefill}
-          sendAiMessage={sendAiMessage}
-        />
-      )}
 
       {/* ── Modals ── */}
       <LinkedFilesModal
