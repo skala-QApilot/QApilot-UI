@@ -175,6 +175,15 @@ export default function App() {
   );
   const [showAgentTrace, setShowAgentTrace] = useState(false);
 
+  const homeTabs = useMemo(
+    () => [
+      { key: 'overview', label: 'home', icon: BarChart2 },
+      { key: 'people', label: 'people', icon: Users },
+      { key: 'settings', label: 'setting', icon: Settings },
+    ],
+    [],
+  );
+
   // ── RTM state ────────────────────────────────────────────────────────────
 
   // scenario manager panel
@@ -326,12 +335,21 @@ export default function App() {
         setProjectMeta(data.project);
         setProjectSummary(data.summary);
         if (data.credentials) setProjectCredentials(data.credentials);
-        setServices([{
-          id: data.project.project_slug,
-          name: data.project.display_name,
-          isNew: false,
-          createdAt: (data.project.updated_at || data.project.created_at || '').slice(0, 10),
-        }]);
+        setServices((prev) => {
+          const nextService = {
+            id: data.project.project_slug,
+            name: data.project.display_name,
+            isNew: false,
+            createdAt: (data.project.updated_at || data.project.created_at || '').slice(0, 10),
+          };
+          const existingIndex = prev.findIndex((service) => service.id === nextService.id);
+          if (existingIndex === -1) {
+            return [...prev, nextService];
+          }
+          return prev.map((service, index) => (
+            index === existingIndex ? { ...service, ...nextService } : service
+          ));
+        });
         setSelectedServiceId(data.project.project_slug);
         // currentPage 는 이미 URL 에서 도출되므로 별도 setCurrentPage 불필요
         setProjectLoadState('loaded');
@@ -976,6 +994,9 @@ export default function App() {
                   currentPage === '시나리오' ? '시나리오' :
                   currentPage === 'RTM' ? 'RTM' : ''
                 }
+                tabs={currentPage === 'HOME' ? homeTabs : undefined}
+                activeTab={currentPage === 'HOME' ? homeTab : undefined}
+                onTabChange={currentPage === 'HOME' ? setHomeTab : undefined}
                 titleExtra={currentPage === 'RTM' ? (
                   <div className="relative ml-1">
                     <button

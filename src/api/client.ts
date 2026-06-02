@@ -41,6 +41,22 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  if (env.isDev) {
+    const headers = { ...(config.headers as Record<string, string>) };
+    if (headers.Authorization) {
+      headers.Authorization = '[REDACTED]';
+    }
+    console.log('[API REQUEST]', {
+      method: config.method,
+      url: config.url,
+      accessToken: token,
+      authorizationHeader: config.headers.Authorization,
+      headers,
+      body: config.data,
+    });
+  }
+
   return config;
 });
 
@@ -73,6 +89,14 @@ function emitAuthExpired() {
 // ── Response interceptor: envelope unwrap + 401 refresh ───────────────────
 api.interceptors.response.use(
   (response) => {
+    if (env.isDev) {
+      console.log('[API RESPONSE]', {
+        status: response.status,
+        url: response.config.url,
+        data: response.data,
+      });
+    }
+
     const body = response.data as ApiEnvelope<unknown> | unknown;
     if (body && typeof body === 'object' && 'success' in body) {
       const envelope = body as ApiEnvelope<unknown>;
@@ -86,6 +110,14 @@ api.interceptors.response.use(
     return response;
   },
   async (error: AxiosError<ApiEnvelope<unknown>>) => {
+    if (env.isDev) {
+      console.log('[API RESPONSE ERROR]', {
+        status: error.response?.status,
+        url: error.config?.url,
+        data: error.response?.data,
+      });
+    }
+
     const status = error.response?.status;
     const original = error.config as RetryableRequestConfig | undefined;
 

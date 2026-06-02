@@ -11,12 +11,14 @@ interface LoginPageProps {
   projectSlug?: string;
 }
 
+const FALLBACK_PROJECT_SLUG = 'temp-project';
+const FALLBACK_SERVER_AUTH_TOKEN = 'temp-server-auth-token';
+
 export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [serverAuthToken, setServerAuthToken] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,8 +43,8 @@ export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
           name,
           email,
           password,
-          project_slug: projectSlug,
-          ...(serverAuthToken ? { server_auth_token: serverAuthToken } : {}),
+          project_slug: projectSlug || FALLBACK_PROJECT_SLUG,
+          server_auth_token: FALLBACK_SERVER_AUTH_TOKEN,
         });
         useAuthStore.getState().setSession(tokens);
       }
@@ -155,23 +157,6 @@ export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
                 </button>
               </div>
             </div>
-
-            {/* Server auth token (register only) */}
-            {!isLogin && (
-              <div>
-                <label className="block text-xs font-semibold text-[#374151] mb-1.5">
-                  서버 인증 토큰
-                  <span className="ml-1 text-[#9ca3af] font-normal">(최초 관리자 가입 시 불필요)</span>
-                </label>
-                <input
-                  type="text"
-                  value={serverAuthToken}
-                  onChange={e => setServerAuthToken(e.target.value)}
-                  placeholder="qap_..."
-                  className="w-full px-4 py-3 rounded-xl border border-[#e5e7eb] bg-[#f9f8ff] focus:bg-white focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 focus:outline-none text-sm text-[#1a1a2e] placeholder-[#c4c9d4] transition-all font-mono"
-                />
-              </div>
-            )}
 
             {/* Error */}
             {error && (
