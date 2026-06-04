@@ -33,6 +33,7 @@ import { useRtmStore } from '../store/rtmStore';
 // loadVersions 는 service 진입 useEffect 에서 useRtmStore.getState().loadVersions(...) 로 호출.
 import { useFileStore } from '../store/fileStore';
 import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
+import { uploadFile } from '../api/files';
 import { startRun, listAllRuns, resumeRun } from '../api/runs';
 import { useTestStore } from '../store/testStore';
 import { CodeGenConfirmModal } from './components/CodeGenConfirmModal';
@@ -809,6 +810,16 @@ export default function App() {
 
       // 생성 직후 ScenarioPage 로 이동 (overlay 가 진행 상황 표시).
       navigate(`/${created.id}/scenarios`);
+
+      // PRD/정책 등 업로드 — 시나리오 생성 *전에* 끝나야 _doc_import 가 인지함.
+      // 한 파일이라도 실패하면 콘솔에만 남기고 나머지는 계속 (silent fail).
+      for (const file of payload.files) {
+        try {
+          await uploadFile(created.serviceId, file);
+        } catch (err) {
+          console.error('도메인 파일 업로드 실패', file.name, err);
+        }
+      }
 
       // 시나리오 생성 자동 트리거 — agent API 는 service_id (UUID) 기반.
       try {

@@ -14,6 +14,7 @@ export interface ServiceSetupPayload {
   name: string;
   repos: Array<{ url: string; token: string; branch: string }>;
   stagingUrl: string;
+  files: File[];
 }
 
 interface ServiceSetupPageProps {
@@ -288,6 +289,7 @@ export function ServiceSetupPage({ serviceName = '', onGenerateScenarios }: Serv
                       branch: entry.branch.trim(),
                     })),
                   stagingUrl: stagingUrl.trim(),
+                  files: uploadedFiles,
                 })}
                 disabled={!canSubmit}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#3615CF] px-5 py-3.5 text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-40"

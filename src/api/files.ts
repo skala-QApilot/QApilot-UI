@@ -20,3 +20,12 @@ export async function listFiles(serviceId: string): Promise<DomainFile[]> {
   const res = await api.get<{ files: DomainFile[]; count: number }>(basePath(serviceId));
   return res.data.files;
 }
+
+export async function uploadFile(serviceId: string, file: File): Promise<DomainFile> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await api.post<{ file: DomainFile }>(basePath(serviceId), form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data.file;
+}
