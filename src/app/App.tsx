@@ -34,6 +34,8 @@ import { useRtmStore } from '../store/rtmStore';
 import { useFileStore } from '../store/fileStore';
 import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
 import { uploadFile } from '../api/files';
+import { createScenarioGroup } from '../api/scenarioGroups';
+import { createScenarioVersion, deleteScenarioVersion, restoreScenarioVersion } from '../api/scenarioVersions';
 import { startRun, listAllRuns, resumeRun } from '../api/runs';
 import { useTestStore } from '../store/testStore';
 import { CodeGenConfirmModal } from './components/CodeGenConfirmModal';
@@ -467,14 +469,41 @@ export default function App() {
     ]);
   };
 
-  const onReviewConfirm = () => {
+  const onReviewConfirm = async () => {
     const stableVersions = scenarioVersions.filter(v => !v.hasChange);
     const latestLabel = stableVersions[stableVersions.length - 1]?.label ?? 'v1.0';
     const match = latestLabel.match(/^v(\d+)\.(\d+)$/);
     const [major, minor] = match ? [parseInt(match[1]), parseInt(match[2])] : [1, 0];
-    const newLabel = `v${major}.${minor + 1}`;
+    let newLabel = `v${major}.${minor + 1}`;
     const today = new Date();
     const date = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    // 백엔드 박제 — 현재 시점 시나리오 N개를 통째로 scenario_versions row 로 저장.
+    // UNIQUE(service_id, label) 충돌 시 minor 한 단계 더 올려 재시도 (자동 계산 미스 안전망).
+    const token = useAuthStore.getState().accessToken;
+    if (selectedServiceId && token) {
+      let attempt = 0;
+      while (attempt < 3) {
+        try {
+          await createScenarioVersion(selectedServiceId, {
+            label: newLabel,
+            description: '검토 확인 시 자동 저장',
+          });
+          break;
+        } catch (err: any) {
+          // UNIQUE 충돌이면 라벨 +1 후 재시도, 그 외엔 중단.
+          const status = err?.response?.status;
+          if (status === 409 || status === 500) {
+            attempt += 1;
+            newLabel = `v${major}.${minor + 1 + attempt}`;
+            continue;
+          }
+          console.error('버전 저장 실패', err);
+          break;
+        }
+      }
+    }
+
     setScenarioVersions([
       ...stableVersions,
       { id: newLabel, label: newLabel, date, hasChange: false, isFavorite: false },
@@ -760,6 +789,56 @@ export default function App() {
       console.error('테스트 실행 트리거 실패', err);
     }
   }, [scenarioGenPollingServiceId, currentSlug, navigate]);
+
+  /**
+   * 시나리오 그룹 생성 + 그 그룹으로 실행 트리거.
+   * createScenarioGroup → scenario_groups row + → handleStartRun(group.id).
+   * service/토큰 미확보 시 fallback: 그룹 없이 ad-hoc 실행 (이전 패턴 유지).
+   */
+  const handleCreateAndRunGroup = useCallback(async (
+    scenarioIds: string[] | undefined,
+    groupName: string,
+  ) => {
+    const token = useAuthStore.getState().accessToken;
+    if (!token || !scenarioGenPollingServiceId) {
+      handleStartRun(scenarioIds, groupName, `group-${Date.now()}`);
+      return;
+    }
+    try {
+      const group = await createScenarioGroup(scenarioGenPollingServiceId, {
+        name: groupName,
+        scenarioIds: scenarioIds && scenarioIds.length ? scenarioIds : undefined,
+      });
+      handleStartRun(group.scenarioIds, group.name, group.groupId);
+    } catch (err) {
+      console.error('그룹 생성 실패 — ad-hoc 실행으로 fallback', err);
+      handleStartRun(scenarioIds, groupName, `group-${Date.now()}`);
+    }
+  }, [scenarioGenPollingServiceId, handleStartRun]);
+
+  /** 시나리오 마일스톤 삭제 — scenario_versions row 한 건 DELETE. */
+  const handleVersionDelete = useCallback(async (versionId: string) => {
+    const token = useAuthStore.getState().accessToken;
+    if (!token || !scenarioGenPollingServiceId) return;
+    try {
+      await deleteScenarioVersion(scenarioGenPollingServiceId, versionId);
+      setScenarioVersions(prev => prev.filter(v => v.id !== versionId));
+    } catch (err) {
+      console.error('버전 삭제 실패', err);
+    }
+  }, [scenarioGenPollingServiceId]);
+
+  /** 시나리오 마일스톤 복원 — 그 시점 시나리오들을 새 scenarios row 로 INSERT (이력 보존). */
+  const handleVersionRollback = useCallback(async (versionId: string) => {
+    const token = useAuthStore.getState().accessToken;
+    if (!token || !scenarioGenPollingServiceId) return;
+    try {
+      const { restoredCount } = await restoreScenarioVersion(scenarioGenPollingServiceId, versionId);
+      console.log('복원 완료', { versionId, restoredCount });
+    } catch (err) {
+      console.error('버전 복원 실패', err);
+    }
+  }, [scenarioGenPollingServiceId]);
 
   const handleServiceSelect = (service: Service) => {
     setSelectedServiceId(service.id);
@@ -1149,6 +1228,9 @@ export default function App() {
                 showCodeGeneratingOverlay={showCodeGenerating}
                 setShowCodeGeneratingOverlay={setShowCodeGenerating}
                 onStartRun={handleStartRun}
+                onCreateAndRunGroup={handleCreateAndRunGroup}
+                onVersionDelete={handleVersionDelete}
+                onVersionRollback={handleVersionRollback}
               />
             )}
             {currentPage === '테스트' && (

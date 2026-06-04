@@ -58,3 +58,13 @@ export async function deleteScenarioVersion(
 ): Promise<void> {
   await api.delete(`${basePath(serviceId)}/${encodeURIComponent(versionId)}`);
 }
+
+export async function restoreScenarioVersion(
+  serviceId: string,
+  versionId: string,
+): Promise<{ restoredCount: number }> {
+  const res = await api.post<{ restoredCount: number }>(
+    `${basePath(serviceId)}/${encodeURIComponent(versionId)}/restore`,
+  );
+  return res.data;
+}

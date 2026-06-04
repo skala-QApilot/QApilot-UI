@@ -85,6 +85,9 @@ setShowGeneratingOverlay,
 showCodeGeneratingOverlay = false,
 setShowCodeGeneratingOverlay,
 onStartRun,
+onCreateAndRunGroup,
+onVersionDelete,
+onVersionRollback,
 }: ScenarioPageProps) => {
 
   const viewMode = viewModeProp as 'table' | 'graph';
@@ -551,10 +554,14 @@ onStartRun,
                           <div className="text-[10px] font-semibold text-[#1a1a2e] mb-0.5">{ver.label || '버전'}</div>
                           <div className="text-[9px] text-[#9ca3af] mb-3">{ver.date}</div>
                           <div className="space-y-0.5">
-                            <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[11px] text-[#6b7280] hover:text-[#1a1a2e]">
+                            <button
+                              onClick={() => onVersionRollback?.(ver.id)}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[11px] text-[#6b7280] hover:text-[#1a1a2e]">
                               <RotateCcw className="w-3 h-3 flex-shrink-0" /> 되돌리기
                             </button>
-                            <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[11px] text-[#6b7280] hover:text-[#1a1a2e]">
+                            <button
+                              onClick={() => onVersionDelete?.(ver.id)}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-[11px] text-[#6b7280] hover:text-[#1a1a2e]">
                               <Trash2 className="w-3 h-3 flex-shrink-0" /> 삭제
                             </button>
                             <button
@@ -1179,7 +1186,8 @@ onStartRun,
                 setSelectedTCIds([]);
                 const tsIds = Array.from(new Set(selectedTCs.map(t => t.tsId).filter((id): id is string => Boolean(id))));
                 const groupName = groupNameInput || `시나리오 그룹`;
-                onStartRun?.(tsIds.length ? tsIds : undefined, groupName, `group-${Date.now()}`);
+                // 그룹 → DB 저장 + 그 그룹으로 실행. 실패 시 App.handleCreateAndRunGroup 가 fallback 처리.
+                onCreateAndRunGroup?.(tsIds.length ? tsIds : undefined, groupName);
               }}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium">
                 생성 확인
