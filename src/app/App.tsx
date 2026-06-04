@@ -225,7 +225,10 @@ export default function App() {
   //   aborted   = 중간에 끊김 (Ctrl+C / 예외). 이어서 실행 가능.
   //   completed = 파이프라인 정상 종료. TC 별 pass/fail 는 별개 축.
   const [runningTests, setRunningTests] = useState<Array<{
-    id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'aborted' | 'completed';
+    id: string; name: string; groupId: string | null; startTime: string;
+    status: 'running' | 'aborted' | 'completed';
+    /** 이 run 이 대상으로 한 시나리오 ts_id 목록. null/undefined → 전체 실행. */
+    scenarioIds?: string[] | null;
   }>>([]);
   const [selectedRunningTestId, setSelectedRunningTestId] = useState<string | null>(null);
   const [retestCheckedIds, setRetestCheckedIds] = useState<Set<string>>(new Set());
@@ -625,6 +628,7 @@ export default function App() {
             groupId: null as string | null,
             startTime: (r.startTime || '').slice(0, 16).replace('T', ' '),
             status,
+            scenarioIds: r.scenario_ids ?? null,
           };
         });
         setRunningTests(mapped);
@@ -779,6 +783,7 @@ export default function App() {
       })();
       setRunningTests(prev => [...prev, {
         id: run.id, name: runName, groupId, startTime, status: 'running' as const,
+        scenarioIds: scenarioIds ?? null,
       }]);
       setSelectedRunningTestId(run.id);
       setSelectedRunningForDetail(run.id);

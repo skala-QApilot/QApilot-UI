@@ -8,6 +8,8 @@ export interface Run {
   completedAt?: string;
   error?: string | null;
   result_summary?: Record<string, unknown>;
+  /** 이 run 이 어느 시나리오들을 대상으로 실행했는지. null/undefined 면 전체 실행. */
+  scenario_ids?: string[] | null;
 }
 
 export interface RunCreatePayload {
@@ -40,6 +42,7 @@ export async function startRun(
     name: `test - ${res.data.run_id.slice(0, 8)}`,
     status: res.data.status,
     startTime: new Date().toISOString(),
+    scenario_ids: payload.scenario_ids ?? null,
   };
 }
 

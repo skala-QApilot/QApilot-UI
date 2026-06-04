@@ -354,9 +354,16 @@ export const TestRunningPage = ({
   };
 
   // 시나리오 / TC — scenarioStore 에서 derive (Phase 1 회귀 복구).
+  // selectedRun.scenarioIds 가 있으면 그 시나리오만 표시 (그룹 단위 실행).
+  // 없으면 전체 (E2E 실행).
   const storeScenarios = useScenarioStore((s) => s.scenarios);
   const storeTestCasesByTs = useScenarioStore((s) => s.testCasesByTs);
-  const scenarios = React.useMemo(() => storeScenarios.map(toUiScenario), [storeScenarios]);
+  const runScenarioIds = (selectedRun as any)?.scenarioIds as string[] | null | undefined;
+  const scenarios = React.useMemo(() => {
+    const all = storeScenarios.map(toUiScenario);
+    if (!runScenarioIds || !runScenarioIds.length) return all;
+    return all.filter(s => runScenarioIds.includes(s.id));
+  }, [storeScenarios, runScenarioIds]);
   const testCasesMap = React.useMemo(() => {
     const map: Record<string, ReturnType<typeof toUiTestCase>[]> = {};
     for (const [tsId, list] of Object.entries(storeTestCasesByTs)) {
