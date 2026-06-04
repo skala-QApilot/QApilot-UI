@@ -600,9 +600,10 @@ export default function App() {
     setAiMessages(prev => [...prev, { role: 'user', text }]);
     setAiInput('');
 
-    const serviceId = scenarioGenPollingServiceId;
+    const serviceId = scenarioGenPollingServiceId;  // FastAPI UUID — scenario-generation API에 사용
+    const springServiceId = selectedServiceId;        // Spring UUID — scenarioStore.loadAll에 사용
     const token = useAuthStore.getState().accessToken;
-    if (!serviceId || !token) {
+    if (!serviceId || !springServiceId || !token) {
       setAiMessages(prev => [...prev, { role: 'assistant', text: '서비스가 선택되지 않았습니다. 서비스를 먼저 선택해 주세요.' }]);
       return;
     }
@@ -629,7 +630,7 @@ export default function App() {
             const feedback = (summary.query_feedback as string) ?? '';
             if (qs === 'sufficient') {
               setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: '시나리오 생성/수정이 완료됐습니다.' }]);
-              syncScenarioFromStore(serviceId);
+              syncScenarioFromStore(springServiceId);
             } else {
               setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: feedback || '요청을 처리할 수 없습니다.' }]);
             }
@@ -647,7 +648,7 @@ export default function App() {
       const msg = err instanceof Error ? err.message : '알 수 없는 오류';
       setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: `오류: ${msg}` }]);
     }
-  }, [scenarioGenPollingServiceId, syncScenarioFromStore]);
+  }, [scenarioGenPollingServiceId, selectedServiceId, syncScenarioFromStore]);
 
   const openAiWithContext = useCallback((context: string) => {
     setAiMessages(prev => [...prev,
