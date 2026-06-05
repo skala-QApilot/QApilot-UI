@@ -134,15 +134,18 @@ export default function App() {
   }, [navigate]);
 
   // ── Services 목록 — projectStore 가 source of truth ─────────────────────────
-  // 로그인된 상태(accessToken 존재) 면 마운트 시 1회 listServices() 호출.
+  // accessToken 을 구독해 토큰이 생기면(로그인 직후 포함) listServices() 호출.
+  // getState()+[] deps 로 읽으면 로그인은 App 을 remount 하지 않아 effect 가 재실행되지
+  // 않고, 새로고침해야 목록이 뜨는 문제가 생긴다 — 토큰 전환에 reactive 하게 반응시킨다.
   // 새 서비스 생성 후엔 store 가 자체 push 하므로 별도 reload 불필요.
   const storeServices = useProjectStore((s) => s.services);
+  const accessToken = useAuthStore((s) => s.accessToken);
   useEffect(() => {
-    if (!useAuthStore.getState().accessToken) return;
+    if (!accessToken) return;
     useProjectStore.getState().loadServices().catch((err) => {
       console.error('listServices 실패', err);
     });
-  }, []);
+  }, [accessToken]);
 
   // ── Top-level app state ──────────────────────────────────────────────────
 
