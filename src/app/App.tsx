@@ -669,6 +669,11 @@ export default function App() {
       } catch (err) {
         console.error('RTM loadVersions 실패', err);
       }
+      try {
+        await useFileStore.getState().loadFiles(scenarioGenPollingServiceId);
+      } catch (err) {
+        console.error('도메인 파일 loadFiles 실패', err);
+      }
     })();
     return () => { cancelled = true; };
   }, [scenarioGenPollingServiceId]);
@@ -1203,6 +1208,19 @@ export default function App() {
                 projectMeta={projectMeta}
                 projectSummary={projectSummary}
                 projectCredentials={projectCredentials}
+                onServiceUpdated={(dto) => {
+                  // 저장(PATCH) 후 최신값 반영 — projectMeta(설정 탭 source) + services 이름.
+                  setProjectMeta(prev => (prev ? {
+                    ...prev,
+                    service_id: dto.service_id,
+                    display_name: dto.display_name,
+                    repos: dto.repos ?? [],
+                    staging_url: dto.staging_url ?? null,
+                  } : prev));
+                  setServices(prev => prev.map(s => (
+                    s.id === dto.project_slug ? { ...s, name: dto.display_name } : s
+                  )));
+                }}
               />
             )}
             {currentPage === '시나리오' && (

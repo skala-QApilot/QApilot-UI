@@ -6,7 +6,7 @@ export const SIDEBAR_BG = '#f2f3f5';
 
 interface LeftNavigationProps {
   slug: string;
-  runningTests: Array<{ id: string; status: 'running' | 'aborted' | 'completed' }>;
+  runningTests: Array<{ id: string; status: 'pending' | 'running' | 'aborted' | 'completed' }>;
 }
 
 export const LeftNavigation = ({ slug, runningTests }: LeftNavigationProps) => {
