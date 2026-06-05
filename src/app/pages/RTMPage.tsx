@@ -1,16 +1,54 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle, ChevronRight, Clock, XCircle } from 'lucide-react';
 import { RTMDonutChart } from '../components/common/RTMDonutChart';
 import { useRtmStore } from '../../store/rtmStore';
+import { useScenarioStore } from '../../store/scenarioStore';
 import type { RtmRequirement } from '../../api/rtm';
 
 /** Zustand 무한 루프 회피 — `?? []` 인라인 fallback 은 매 렌더 새 배열 유발. */
 const EMPTY_REQUIREMENTS: RtmRequirement[] = [];
 
+function formatKstDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export const RTMPage = () => {
   // 선택된 RTM 버전의 requirements 에서 derive — store-backed.
   const selectedRtmVersion = useRtmStore((s) => s.getSelectedVersion());
   const rtmRequirements = selectedRtmVersion?.requirements ?? EMPTY_REQUIREMENTS;
+  const serviceId = selectedRtmVersion?.serviceId ?? null;
+
+  // TC 이름 조회용 — scenarioStore 에서 testCasesByTs 로 flat map 구성.
+  const testCasesByTs = useScenarioStore((s) => s.testCasesByTs);
+  const scenarioLoadState = useScenarioStore((s) => s.loadState);
+  useEffect(() => {
+    if (serviceId && scenarioLoadState === 'idle') {
+      useScenarioStore.getState().loadScenarios(serviceId);
+    }
+  }, [serviceId, scenarioLoadState]);
+  const tcNameMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const tcs of Object.values(testCasesByTs)) {
+      for (const tc of tcs) {
+        if (tc.tc_id) m[tc.tc_id] = tc.name;
+      }
+    }
+    return m;
+  }, [testCasesByTs]);
 
   const [selectedFrId, setSelectedFrId] = useState<string>(rtmRequirements[0]?.frId ?? '');
 
@@ -25,10 +63,6 @@ export const RTMPage = () => {
   const overallPassTotal = rtmRequirements.reduce((s, r) => s + r.passCount, 0);
   const overallTotal = rtmRequirements.reduce((s, r) => s + r.totalCount, 0);
   const overallPct = overallTotal > 0 ? Math.round((overallPassTotal / overallTotal) * 100) : 0;
-  const mockTesters: Record<string, string> = {
-    'TS1_TC1': '김지수', 'TS1_TC2': '이민준', 'TS1_TC3': '박서연',
-    'TS2_TC1': '최현우', 'TS3_TC3': '정유진',
-  };
 
   // 빈 상태 — RTM 버전 없음 또는 requirements 비어있음 (로드 전 / 신규 서비스).
   if (!selectedFr) {
@@ -152,7 +186,7 @@ export const RTMPage = () => {
             <table className="w-full">
               <thead className="sticky top-0 bg-[#E4E5E8] border-b border-[#D5D6DA] z-10">
                 <tr>
-                  {['TS', 'TC', '최신실행 이력 ID', '최근테스트자', 'PASS / FAIL'].map(h => (
+                  {['TS', 'TC', '테스트 케이스명', '최근 테스트 일자', 'PASS / FAIL'].map(h => (
                     <th key={h} className="text-left px-5 py-3 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wide whitespace-nowrap">
                       {h}
                     </th>
@@ -161,9 +195,9 @@ export const RTMPage = () => {
               </thead>
               <tbody className="bg-white divide-y divide-[#f0f0f0]">
                 {selectedFr.history.map((raw, i) => {
-                  // RtmRequirementHistoryEntry 가 [key: string]: unknown — JSX 렌더링용 string 캐스팅.
-                  const row = raw as { ts?: string; tc?: string; latestTest?: string; date?: string; pass?: boolean };
-                  const tester = mockTesters[`${row.ts}_${row.tc}`] ?? '—';
+                  const row = raw as { ts?: string; tc?: string; date?: string; pass?: boolean };
+                  const tcName = row.tc ? (tcNameMap[row.tc] ?? '') : '';
+                  const dateStr = row.date ? formatKstDate(row.date) : '—';
                   return (
                     <tr key={i} className="hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-4">
@@ -172,17 +206,11 @@ export const RTMPage = () => {
                       <td className="px-5 py-4">
                         <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.tc ?? ''}</span>
                       </td>
-                      <td className="px-5 py-4">
-                        <div className="text-xs text-[#6b7280]">{row.latestTest ?? ''}</div>
-                        <div className="text-[10px] text-[#9ca3af] mt-0.5">{row.date ?? ''}</div>
+                      <td className="px-5 py-4 max-w-xs">
+                        <span className="text-xs text-[#374151] leading-snug">{tcName || <span className="text-[#9ca3af]">—</span>}</span>
                       </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-[#EAE8F9] flex items-center justify-center text-[10px] font-semibold text-[#3615CF] flex-shrink-0">
-                            {tester !== '—' ? tester[0] : '?'}
-                          </div>
-                          <span className="text-xs text-[#6b7280]">{tester}</span>
-                        </div>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className="text-xs text-[#6b7280] font-mono">{dateStr}</span>
                       </td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
