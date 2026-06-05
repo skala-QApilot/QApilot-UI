@@ -18,7 +18,9 @@ export const RTMPage = () => {
   const totalReqs = rtmRequirements.length;
   const metReqs = rtmRequirements.filter(r => r.status === '충족').length;
   const unmetReqs = rtmRequirements.filter(r => r.status === '미충족').length;
-  const unrunReqs = rtmRequirements.filter(r => r.totalCount === 0).length;
+  // 미측정 = status 기준. totalCount===0(연결 TC 없음)은 '미측정'의 부분집합일 뿐 —
+  // 연결된 TC 가 있으나 미실행/부분측정인 요구사항도 백엔드가 '미측정'으로 분류한다.
+  const unrunReqs = rtmRequirements.filter(r => r.status === '미측정').length;
 
   const overallPassTotal = rtmRequirements.reduce((s, r) => s + r.passCount, 0);
   const overallTotal = rtmRequirements.reduce((s, r) => s + r.totalCount, 0);
@@ -63,12 +65,13 @@ export const RTMPage = () => {
           {rtmRequirements.map(req => {
             const isActive = selectedFrId === req.frId;
             const pct = req.totalCount > 0 ? Math.round((req.passCount / req.totalCount) * 100) : 0;
+            const isUnmeasured = req.status === '미측정';
             const fillColor = isActive
-              ? (req.totalCount === 0 ? '#d1d5db' : req.status === '충족' ? '#3615CF' : '#C5C0EC')
-              : (req.totalCount === 0 ? '#d1d5db' : '#6b7280');
+              ? (isUnmeasured ? '#d1d5db' : req.status === '충족' ? '#3615CF' : '#C5C0EC')
+              : (isUnmeasured ? '#d1d5db' : '#6b7280');
             const trackColor = isActive ? '#E5E7EB' : '#f3f4f6';
-            const statusLabel = req.totalCount === 0 ? '미측정' : req.status;
-            const statusClass = req.totalCount === 0
+            const statusLabel = req.status;
+            const statusClass = isUnmeasured
               ? 'bg-[#f3f4f6] text-[#9ca3af]'
               : req.status === '충족' ? 'bg-[#EAE8F9] text-[#3615CF]' : 'bg-[#EAE8F9]/60 text-[#6b7280]';
 
@@ -129,9 +132,9 @@ export const RTMPage = () => {
         <div className="bg-white border-b border-[#f0f0f0] px-6 py-4 flex items-center gap-3 flex-shrink-0">
           <span className="font-mono text-sm font-bold text-[#1a1a2e]">{selectedFr.frId}</span>
           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-            selectedFr.totalCount === 0 ? 'bg-[#f3f4f6] text-[#9ca3af]' :
+            selectedFr.status === '미측정' ? 'bg-[#f3f4f6] text-[#9ca3af]' :
             selectedFr.status === '충족' ? 'bg-[#EAE8F9] text-[#3615CF]' : 'bg-[#EAE8F9]/60 text-[#6b7280]'
-          }`}>{selectedFr.totalCount === 0 ? '미측정' : selectedFr.status}</span>
+          }`}>{selectedFr.status}</span>
           <span className="text-sm text-[#6b7280] flex-1 min-w-0 truncate">{selectedFr.content}</span>
           <span className="text-xs text-[#9ca3af] flex-shrink-0 font-mono">
             {selectedFr.passCount}/{selectedFr.totalCount} PASS

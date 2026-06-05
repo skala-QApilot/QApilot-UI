@@ -9,6 +9,7 @@ import { useMemo } from 'react';
 import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
 import type { RtmRequirement } from '../../api/rtm';
+import { updateService, type ServiceDto } from '../../api/services';
 
 /** 모듈 상수 — `?? []` 인라인 fallback 은 매 렌더 새 배열을 만들어 Zustand 무한 루프 유발. */
 const EMPTY_REQUIREMENTS: RtmRequirement[] = [];
@@ -23,6 +24,11 @@ export interface ProjectMeta {
   language: string;
   created_at: string;
   updated_at: string;
+  /** 백엔드 service_id (UUID) — 설정 저장(PATCH) 시 필요. */
+  service_id?: string;
+  /** 설정 화면용 — repo 메타(PAT 실제 값 없음, token_set 만). */
+  repos?: Array<{ repo_url: string; branch?: string | null; role?: string | null; token_set?: boolean }>;
+  staging_url?: string | null;
 }
 
 export interface ProjectSummary {
@@ -94,24 +100,38 @@ function CopyBlock({ label, icon, value }: { label: string; icon: React.ReactNod
 function SettingsTab({
   serviceName,
   projectSlug,
+  serviceId,
   dashboardUrl,
   serverAuthToken,
   localPath,
   framework,
   language,
+  reposFromServer,
+  stagingUrlFromServer,
+  onServiceUpdated,
 }: {
   serviceName: string;
   projectSlug?: string;
+  serviceId?: string;
   dashboardUrl?: string;
   serverAuthToken?: string;
   localPath?: string;
   framework?: string;
   language?: string;
+  reposFromServer?: Array<{ repo_url: string; branch?: string | null; role?: string | null; token_set?: boolean }>;
+  stagingUrlFromServer?: string | null;
+  onServiceUpdated?: (dto: ServiceDto) => void;
 }) {
   type GithubEntry = {
     id: string;
     url: string;
+    /** 신규 입력 PAT. 비우면 기존 토큰 유지(서버 보존). */
     token: string;
+    /** 서버에 이미 저장된 PAT 가 있는지 — 표시/placeholder 용. */
+    tokenSet: boolean;
+    /** UI 미편집 — round-trip 으로 보존. */
+    branch: string | null;
+    role: string | null;
   };
 
   type SettingsDraft = {
@@ -124,52 +144,41 @@ function SettingsTab({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     url: '',
     token: '',
+    tokenSet: false,
+    branch: null,
+    role: null,
   });
 
-  const createDefaultDraft = (): SettingsDraft => ({
-    name: serviceName,
-    githubEntries: [createGithubEntry()],
-    stagingUrl: dashboardUrl || '',
-  });
+  // 서버 응답(repos/staging_url)에서 초기 draft 를 구성한다 — localStorage 사용 X.
+  const buildDraftFromServer = (): SettingsDraft => {
+    const entries: GithubEntry[] = (reposFromServer ?? []).map(r => ({
+      id: `${r.repo_url}-${Math.random().toString(36).slice(2, 8)}`,
+      url: r.repo_url,
+      token: '',
+      tokenSet: Boolean(r.token_set),
+      branch: r.branch ?? null,
+      role: r.role ?? null,
+    }));
+    return {
+      name: serviceName,
+      githubEntries: entries.length ? entries : [createGithubEntry()],
+      stagingUrl: stagingUrlFromServer ?? '',
+    };
+  };
 
   const [editing, setEditing] = useState(false);
-  const key = `project_settings:${projectSlug ?? 'global'}`;
-  const [draft, setDraft] = useState<SettingsDraft>(createDefaultDraft);
-  const [savedDraft, setSavedDraft] = useState<SettingsDraft>(createDefaultDraft);
+  const [draft, setDraft] = useState<SettingsDraft>(buildDraftFromServer);
+  const [savedDraft, setSavedDraft] = useState<SettingsDraft>(buildDraftFromServer);
+  const [saving, setSaving] = useState(false);
 
+  // 서버에서 받은 값이 바뀌면(프로젝트 로드/저장 후) draft 재구성. 편집 중이면 덮어쓰지 않음.
   useEffect(() => {
-    const fallback = createDefaultDraft();
-    const stored = localStorage.getItem(key);
-
-    if (!stored) {
-      setDraft(fallback);
-      setSavedDraft(fallback);
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(stored) as Partial<SettingsDraft>;
-      const githubEntries = Array.isArray(parsed.githubEntries) && parsed.githubEntries.length > 0
-        ? parsed.githubEntries.map(entry => ({
-            id: entry.id || createGithubEntry().id,
-            url: entry.url || '',
-            token: entry.token || '',
-          }))
-        : fallback.githubEntries;
-
-      const nextDraft = {
-        name: parsed.name || fallback.name,
-        githubEntries,
-        stagingUrl: parsed.stagingUrl || fallback.stagingUrl,
-      };
-
-      setDraft(nextDraft);
-      setSavedDraft(nextDraft);
-    } catch {
-      setDraft(fallback);
-      setSavedDraft(fallback);
-    }
-  }, [key, serviceName, dashboardUrl]);
+    if (editing) return;
+    const next = buildDraftFromServer();
+    setDraft(next);
+    setSavedDraft(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceName, stagingUrlFromServer, reposFromServer]);
 
   const addGithubEntry = () => {
     setDraft(prev => ({
@@ -194,10 +203,35 @@ function SettingsTab({
     }));
   };
 
-  const handleSave = () => {
-    localStorage.setItem(key, JSON.stringify(draft));
-    setSavedDraft(draft);
-    setEditing(false);
+  const handleSave = async () => {
+    if (!serviceId) {
+      console.error('설정 저장 실패: serviceId 미확보');
+      return;
+    }
+    setSaving(true);
+    try {
+      // token 이 빈 entry 는 token 미전송 → 서버가 기존 PAT 보존.
+      const repos = draft.githubEntries
+        .filter(e => e.url.trim())
+        .map(e => ({
+          repo_url: e.url.trim(),
+          token: e.token.trim() ? e.token.trim() : null,
+          branch: e.branch,
+          role: e.role,
+        }));
+      const dto = await updateService(serviceId, {
+        name: draft.name,
+        repos,
+        staging_url: draft.stagingUrl,
+      });
+      onServiceUpdated?.(dto);
+      setSavedDraft(draft);
+      setEditing(false);
+    } catch (err) {
+      console.error('설정 저장 실패', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -229,10 +263,10 @@ function SettingsTab({
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={!isDirty}
+                  disabled={!isDirty || saving}
                   className="rounded-xl bg-[#3615CF] px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-[#2d11b0] disabled:cursor-not-allowed disabled:bg-[#cfc9f8]"
                 >
-                  저장
+                  {saving ? '저장 중...' : '저장'}
                 </button>
               </>
             ) : (
@@ -298,7 +332,7 @@ function SettingsTab({
                       value={entry.token}
                       onChange={e => updateGithubEntry(entry.id, 'token', e.target.value)}
                       disabled={!editing}
-                      placeholder="GitHub Personal Access Token (optional)"
+                      placeholder={entry.tokenSet ? '토큰 저장됨 — 변경하려면 새 토큰 입력' : 'GitHub Personal Access Token (optional)'}
                       className="w-full rounded-xl border border-[#e5e7eb] bg-white px-4 py-3 font-mono text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
                     />
                   </div>
@@ -481,6 +515,7 @@ export function HomePage({
   projectMeta,
   projectSummary,
   projectCredentials,
+  onServiceUpdated,
 }: {
   setCurrentPage: (page: string) => void;
   navigateToHistory: (filter: string) => void;
@@ -490,6 +525,7 @@ export function HomePage({
   projectMeta?: ProjectMeta | null;
   projectSummary?: ProjectSummary | null;
   projectCredentials?: { dashboard_url: string; server_auth_token: string } | null;
+  onServiceUpdated?: (dto: ServiceDto) => void;
 }) {
   void navigateToHistory;
 
@@ -499,7 +535,8 @@ export function HomePage({
   const totalReqs = rtmRequirements.length;
   const metReqs = rtmRequirements.filter(r => r.status === '충족').length;
   const unmetReqs = rtmRequirements.filter(r => r.status === '미충족').length;
-  const unrunReqs = rtmRequirements.filter(r => r.totalCount === 0).length;
+  // 미측정 = status 기준 (totalCount===0 은 '미측정'의 부분집합 — RTMPage 와 동일).
+  const unrunReqs = rtmRequirements.filter(r => r.status === '미측정').length;
   const overallPassTotal = rtmRequirements.reduce((s, r) => s + r.passCount, 0);
   const overallTotal = rtmRequirements.reduce((s, r) => s + r.totalCount, 0);
   const overallPct = overallTotal > 0 ? Math.round((overallPassTotal / overallTotal) * 100) : 0;
@@ -580,11 +617,15 @@ export function HomePage({
         <SettingsTab
           serviceName={serviceName}
           projectSlug={projectSlug}
+          serviceId={projectMeta?.service_id}
           dashboardUrl={projectCredentials?.dashboard_url || (projectSlug ? `http://localhost:8080/${projectSlug}` : undefined)}
           serverAuthToken={projectCredentials?.server_auth_token}
           localPath={projectMeta?.local_path}
           framework={projectMeta?.framework}
           language={projectMeta?.language}
+          reposFromServer={projectMeta?.repos}
+          stagingUrlFromServer={projectMeta?.staging_url}
+          onServiceUpdated={onServiceUpdated}
         />
       )}
     </div>
