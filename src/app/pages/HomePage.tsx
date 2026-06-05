@@ -587,7 +587,7 @@ export function HomePage({
           <div className="flex-1 min-h-0 overflow-y-auto flex gap-8 px-12 py-10">
 
             {/* FILES */}
-            <div className="flex-1 min-w-0 rounded-[2.5rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm px-8 py-7">
+            <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col rounded-[2.5rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm px-8 py-7">
               <FileList />
             </div>
 

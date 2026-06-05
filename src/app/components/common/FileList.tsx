@@ -16,8 +16,8 @@ export const FileList = ({ showNewButton = true }: FileListProps) => {
   const files = useMemo(() => useFileStore.getState().getUiFiles(), [storeFiles]);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
+    <div className="flex flex-col min-h-0 h-full">
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <Label>Files</Label>
         {showNewButton && (
           <button className="flex items-center gap-1 text-xs text-[#9ca3af] hover:text-[#3615CF] transition-colors">
@@ -25,13 +25,13 @@ export const FileList = ({ showNewButton = true }: FileListProps) => {
           </button>
         )}
       </div>
-      <div className="space-y-1">
+      <div className="space-y-1 flex-1 min-h-0 overflow-y-auto max-h-[60vh] pr-1">
         {files.map(file => (
           <div key={file.id} className="flex items-center gap-3 py-2.5 group">
             <Folder className="w-5 h-5 flex-shrink-0 text-[#a0a8b4]" fill="currentColor" strokeWidth={0} />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-[#1a1a2e]">{file.name}</div>
-              <div className="text-xs text-[#9ca3af]">{file.version} · {file.date}</div>
+              <div className="text-[13px] font-medium text-[#1a1a2e]">{file.name}</div>
+              <div className="text-[11px] text-[#9ca3af]">{file.version} · {file.date}</div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {file.reflected ? (
