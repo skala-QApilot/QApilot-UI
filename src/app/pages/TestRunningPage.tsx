@@ -231,6 +231,33 @@ export const TestRunningPage = ({
 
   const liveLogs = React.useMemo(() => toRuntimeLogs(runProgress), [runProgress]);
 
+  // 현재 실행 중인 ts_id / tc_id — 마지막 로그 액션에서 추출.
+  const [currentTsId, currentTcId] = React.useMemo(() => {
+    if (selectedRun?.status !== 'running' || !liveLogs.length) return [null, null];
+    const lastLog = liveLogs[liveLogs.length - 1];
+    const parts = lastLog?.action?.split('/') ?? [];
+    return [parts[0] ?? null, parts[1]?.split(' ')[0] ?? null];
+  }, [selectedRun?.status, liveLogs]);
+
+  // 현재 run progress 에서 tc_id → 실시간 pass/fail 맵.
+  // scenarioStore 의 last_run_status(이전 실행 결과)를 덮어써서 X / ✓ 가 즉시 반영되도록.
+  const liveStatusMap = React.useMemo<Record<string, 'passed' | 'failed'>>(() => {
+    if (!runProgress?.items?.length) return {};
+    const map: Record<string, 'passed' | 'failed'> = {};
+    for (const item of runProgress.items) {
+      const uiStatus = (item.ui as any)?.status ?? (item.ui as any)?.tc_status;
+      if (uiStatus === 'pass') { map[item.tc_id] = 'passed'; continue; }
+      if (uiStatus === 'fail') { map[item.tc_id] = 'failed'; continue; }
+      if (item.ui) {
+        const steps: any[] = (item.ui as any)?.steps ?? [];
+        const hasFail = steps.some((s: any) => s.status === 'fail');
+        if (hasFail) map[item.tc_id] = 'failed';
+        else if (steps.length > 0) map[item.tc_id] = 'passed';
+      }
+    }
+    return map;
+  }, [runProgress]);
+
   /**
    * AgentProgressStrip 의 단계별 상태를 runProgress + selectedRun 에서 derive.
    * - UI/API/DB: TC 당 ui_result/api_result/db_result 가 디스크에 쓰이면 카운트.
@@ -316,6 +343,19 @@ export const TestRunningPage = ({
     return `${s}s`;
   };
 
+  // 현재 실행 중인 TS 자동 펼침
+  React.useEffect(() => {
+    if (!currentTsId) return;
+    setExpandedScenarios(prev => prev.includes(currentTsId) ? prev : [...prev, currentTsId]);
+  }, [currentTsId]);
+
+  // 현재 실행 중인 TC 가 보이도록 사이드바 자동 스크롤
+  React.useEffect(() => {
+    if (!currentTcId) return;
+    const el = scenarioListRef.current?.querySelector<HTMLElement>(`[data-tc-id="${currentTcId}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [currentTcId]);
+
   const formatDate  = (value: string) => value.split(' ')[0] ?? value;
   const formatClock = (value: string) => value.split(' ').slice(-1)[0] ?? value;
 
@@ -326,6 +366,7 @@ export const TestRunningPage = ({
   const startXRef  = React.useRef(0);
   const startWRef  = React.useRef(0);
   const runtimeLogRef = React.useRef<HTMLDivElement>(null);
+  const scenarioListRef = React.useRef<HTMLDivElement>(null);
 
   const handleDragStart = (e: React.MouseEvent) => {
     dragRef.current   = true;
@@ -388,8 +429,8 @@ export const TestRunningPage = ({
   );
 
   const allTCs    = scenarios.flatMap(s => (testCasesMap[s.id] || []).map(tc => ({ sId: s.id, tc })));
-  const passedTCs = allTCs.filter(({ tc }) => tc.status === 'passed' || tc.status === 'completed');
-  const failedTCs = allTCs.filter(({ tc }) => tc.status === 'failed');
+  const passedTCs = allTCs.filter(({ tc }) => { const s = liveStatusMap[tc.id] ?? tc.status; return s === 'passed' || s === 'completed'; });
+  const failedTCs = allTCs.filter(({ tc }) => (liveStatusMap[tc.id] ?? tc.status) === 'failed');
 
   // empty state
   if (!selectedRun) {
@@ -475,26 +516,39 @@ export const TestRunningPage = ({
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto py-1">
+          <div ref={scenarioListRef} className="flex-1 min-h-0 overflow-y-auto py-1">
             <div>
               {scenarios.map(scenario => {
                 const isExpanded = expandedScenarios.includes(scenario.id);
+                const isCurrentTs = selectedRun?.status === 'running' && currentTsId === scenario.id;
                 const allTcs = testCasesMap[scenario.id] || [];
                 const tcs = scenarioSidebarTab === 'PASS'
-                  ? allTcs.filter(tc => tc.status === 'passed' || tc.status === 'completed')
+                  ? allTcs.filter(tc => { const s = liveStatusMap[tc.id] ?? tc.status; return s === 'passed' || s === 'completed'; })
                   : scenarioSidebarTab === 'FILTERED'
-                  ? allTcs.filter(tc => tc.status === 'failed')
+                  ? allTcs.filter(tc => (liveStatusMap[tc.id] ?? tc.status) === 'failed')
                   : allTcs;
+                // TS 단위 live 상태 — TC live 결과에서 derive.
+                const liveTsStatus = (() => {
+                  if (!allTcs.length) return scenario.status;
+                  const statuses = allTcs.map(tc => liveStatusMap[tc.id] ?? tc.status);
+                  if (statuses.some(s => s === 'failed')) return 'failed';
+                  if (statuses.every(s => s === 'passed' || s === 'completed')) return 'passed';
+                  return scenario.status;
+                })();
                 if (scenarioSidebarTab !== 'TOTAL' && tcs.length === 0) return null;
                 return (
                   <div key={scenario.id}>
                     {/* TS 행 */}
-                    <div className="group flex items-center gap-1.5 px-2 py-2 border-b border-[#f0f0f0]/60 hover:bg-gray-50 cursor-pointer"
+                    <div
+                      className={`group flex items-center gap-1.5 px-2 py-2 border-b border-[#f0f0f0]/60 cursor-pointer transition-colors ${
+                        isCurrentTs
+                          ? 'bg-[#EAE8F9]/50 border-l-[3px] border-l-[#3615CF] hover:bg-[#EAE8F9]/70'
+                          : 'hover:bg-gray-50'
+                      }`}
                       onClick={() => {
                         setExpandedScenarios(prev =>
                           prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]
                         );
-                        scrollToLog(0);
                       }}>
                       <button className="flex-shrink-0" onClick={e => e.stopPropagation()}>
                         {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-[#9ca3af]" /> : <ChevronRight className="w-3.5 h-3.5 text-[#9ca3af]" />}
@@ -506,24 +560,27 @@ export const TestRunningPage = ({
                           <span className="text-[10px] truncate text-[#6b7280]">{scenario.name}</span>
                         </div>
                       </div>
-                      <StatusIcon status={scenario.status} size="w-3.5 h-3.5" />
+                      <StatusIcon status={liveTsStatus} size="w-3.5 h-3.5" />
                     </div>
 
                     {/* TC 행 */}
                     {isExpanded && tcs.map(tc => {
                       const tcKey = `${scenario.id}_${tc.id}`;
                       const isTCExpanded = expandedTestCases.includes(tcKey);
+                      const isCurrentTc = isCurrentTs && currentTcId === tc.id;
                       const frEntries = rtmMappings.filter(r => r.ts === scenario.id && r.tc === tc.id);
                       return (
-                        <div key={tc.id}>
-                          <div className="group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b border-[#f0f0f0]/40 bg-[#F9FAFB] hover:bg-opacity-80 cursor-pointer"
+                        <div key={tc.id} data-tc-id={tc.id}>
+                          <div
+                            className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b border-[#f0f0f0]/40 cursor-pointer transition-colors ${
+                              isCurrentTc
+                                ? 'bg-[#EAE8F9]/70 border-l-[3px] border-l-[#3615CF]'
+                                : 'bg-[#F9FAFB] hover:bg-opacity-80'
+                            }`}
                             onClick={() => {
                               setExpandedTestCases(prev =>
                                 prev.includes(tcKey) ? prev.filter(id => id !== tcKey) : [...prev, tcKey]
                               );
-                              // TC 클릭 시 로그 패널 상단으로 스크롤. 정확한 TC↔로그 매핑은
-                              // 추후 liveLogs 의 action 텍스트 매칭으로 보강 예정.
-                              scrollToLog(0);
                             }}>
                             <button className="flex-shrink-0" onClick={e => e.stopPropagation()}>
                               {tc.values.length > 0
@@ -546,7 +603,9 @@ export const TestRunningPage = ({
                                 ))}
                               </div>
                             </div>
-                            <StatusIcon status={tc.status} size="w-3 h-3" />
+                            {isCurrentTc
+                              ? <Loader2 className="w-3 h-3 text-[#3615CF] animate-spin flex-shrink-0" />
+                              : <StatusIcon status={liveStatusMap[tc.id] ?? tc.status} size="w-3 h-3" />}
                           </div>
 
                           {/* TV 행 */}
