@@ -779,10 +779,41 @@ export default function App() {
     }
   }, [scenarioGenPollingServiceId, currentSlug, navigate]);
 
+  const nowStartTime = () => {
+    const n = new Date();
+    const p = (v: number) => String(v).padStart(2, '0');
+    return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`;
+  };
+
+  /**
+   * 테스트 화면에 "대기(pending)" 엔트리만 만들고 이동 — 실제 startRun 은 호출하지 않음.
+   * 사용자가 TestRunningPage 의 "실행" 버튼을 눌러야 handleStartRun 으로 실제 실행.
+   */
+  const handlePrepareRun = useCallback((
+    scenarioIds: string[] | undefined,
+    runName: string,
+    groupId: string | null = null,
+  ) => {
+    const pendingId = `pending-${Date.now()}`;
+    setRunningTests(prev => [...prev, {
+      id: pendingId, name: runName, groupId, startTime: nowStartTime(), status: 'pending' as const,
+      scenarioIds: scenarioIds ?? null,
+    }]);
+    setSelectedRunningTestId(pendingId);
+    setSelectedRunningForDetail(pendingId);
+    setSelectedTestGroup(runName);
+    navigate(`/${currentSlug}/test`);
+  }, [currentSlug, navigate]);
+
+  /**
+   * 실제 테스트 실행 (Spring POST /runs). TestRunningPage 의 "실행"/"전체 재실행" 버튼에서 호출.
+   * pendingId 가 주어지면 그 대기 엔트리를 실제 run 으로 교체하고, 없으면 새 엔트리 추가.
+   */
   const handleStartRun = useCallback(async (
     scenarioIds: string[] | undefined,
     runName: string,
     groupId: string | null = null,
+    pendingId: string | null = null,
   ) => {
     const token = useAuthStore.getState().accessToken;
     if (!token || !scenarioGenPollingServiceId) {
@@ -794,15 +825,13 @@ export default function App() {
         scenario_ids: scenarioIds,
         filter: scenarioIds && scenarioIds.length ? 'affected' : 'all',
       });
-      const startTime = (() => {
-        const n = new Date();
-        const p = (v: number) => String(v).padStart(2, '0');
-        return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`;
-      })();
-      setRunningTests(prev => [...prev, {
-        id: run.id, name: runName, groupId, startTime, status: 'running' as const,
+      const entry = {
+        id: run.id, name: runName, groupId, startTime: nowStartTime(), status: 'running' as const,
         scenarioIds: scenarioIds ?? null,
-      }]);
+      };
+      setRunningTests(prev => pendingId
+        ? prev.map(t => (t.id === pendingId ? entry : t))
+        : [...prev, entry]);
       setSelectedRunningTestId(run.id);
       setSelectedRunningForDetail(run.id);
       setSelectedTestGroup(runName);
@@ -824,7 +853,7 @@ export default function App() {
   ) => {
     const token = useAuthStore.getState().accessToken;
     if (!token || !scenarioGenPollingServiceId) {
-      handleStartRun(scenarioIds, groupName, `group-${Date.now()}`);
+      handlePrepareRun(scenarioIds, groupName, `group-${Date.now()}`);
       return;
     }
     try {
@@ -832,12 +861,12 @@ export default function App() {
         name: groupName,
         scenarioIds: scenarioIds && scenarioIds.length ? scenarioIds : undefined,
       });
-      handleStartRun(group.scenarioIds, group.name, group.groupId);
+      handlePrepareRun(group.scenarioIds, group.name, group.groupId);
     } catch (err) {
-      console.error('그룹 생성 실패 — ad-hoc 실행으로 fallback', err);
-      handleStartRun(scenarioIds, groupName, `group-${Date.now()}`);
+      console.error('그룹 생성 실패 — ad-hoc 준비로 fallback', err);
+      handlePrepareRun(scenarioIds, groupName, `group-${Date.now()}`);
     }
-  }, [scenarioGenPollingServiceId, handleStartRun]);
+  }, [scenarioGenPollingServiceId, handlePrepareRun]);
 
   /** 시나리오 마일스톤 삭제 — scenario_versions row 한 건 DELETE. */
   const handleVersionDelete = useCallback(async (versionId: string) => {
@@ -1253,7 +1282,7 @@ export default function App() {
                 }}
                 showCodeGeneratingOverlay={showCodeGenerating}
                 setShowCodeGeneratingOverlay={setShowCodeGenerating}
-                onStartRun={handleStartRun}
+                onPrepareRun={handlePrepareRun}
                 onCreateAndRunGroup={handleCreateAndRunGroup}
                 onVersionDelete={handleVersionDelete}
                 onVersionRollback={handleVersionRollback}

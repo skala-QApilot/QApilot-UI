@@ -84,7 +84,7 @@ showGeneratingOverlay = false,
 setShowGeneratingOverlay,
 showCodeGeneratingOverlay = false,
 setShowCodeGeneratingOverlay,
-onStartRun,
+onPrepareRun,
 onCreateAndRunGroup,
 onVersionDelete,
 onVersionRollback,
@@ -1000,7 +1000,7 @@ onVersionRollback,
                     <button
                       onClick={() => {
                         const scenarioIds = _dynamicScenarios.map(s => s.id);
-                        onStartRun?.(scenarioIds.length ? scenarioIds : undefined, 'E2E TEST', null);
+                        onPrepareRun?.(scenarioIds.length ? scenarioIds : undefined, 'E2E TEST', null);
                       }}
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#3615CF] text-white text-xs font-semibold hover:shadow-md hover:bg-[#3615CF]/90 transition-all">
                       <Play className="w-3.5 h-3.5" />
@@ -1074,7 +1074,7 @@ onVersionRollback,
                           onClick={e => {
                             e.stopPropagation();
                             if (hasPendingAIReview || isGeneratingCode) return;
-                            onStartRun?.(group.scenarios as string[], group.name, group.id);
+                            onPrepareRun?.(group.scenarios as string[], group.name, group.id);
                           }}
                           className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium transition-colors ${
                             hasPendingAIReview || isGeneratingCode

@@ -4,6 +4,7 @@ import { CheckCircle, ChevronLeft, Download, Eye, RotateCcw, XCircle } from 'luc
 import { SubHeader } from '../components/common/SubHeader';
 import { useTestStore } from '../../store/testStore';
 import { listDefects, type Defect } from '../../api/defects';
+import { getTcResult, tcScreenshotUrl, type UiResult } from '../../api/artifacts';
 
 type HistoryDetailTab = 'FAIL' | 'PASS';
 
@@ -90,6 +91,11 @@ export const TestResultPage = ({
     })();
     return () => { cancelled = true; };
   }, [serviceUuid, selectedExecutionId]);
+
+  // 선택된 FAIL TC 의 ui_result.json (= tc_results.payload) — fail step 의 실제 error 메시지 + step_no
+  // 표시용. 빈 값이면 placeholder.
+  const [activeUiResult, setActiveUiResult] = useState<UiResult | null>(null);
+
   // PASS 탭 — 별도 PR 에서 tc_results API 로 채울 예정. 현재는 빈 배열.
   const passCases: Array<{ id: string; scenario: string; testCase: string; tcName: string; runtimeLog: string }> = [];
 
@@ -149,6 +155,31 @@ export const TestResultPage = ({
   const activeError = historyDetailTab === 'FAIL'
     ? (detailErrors.find(e => e.id === selectedFailTC) ?? detailErrors[0] ?? null)
     : null;
+
+  // activeError 변하면 그 TC 의 ui_result.json 을 가져옴. fail step 의 error 메시지 + 스크린샷 step_no
+  // 모두 그 안에 있음.
+  useEffect(() => {
+    if (!serviceUuid || !selectedExecutionId || !activeError) {
+      setActiveUiResult(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const ui = await getTcResult(serviceUuid, selectedExecutionId, activeError.scenario,
+        `${activeError.scenario}-${activeError.testCase}`);
+      if (!cancelled) setActiveUiResult(ui);
+    })();
+    return () => { cancelled = true; };
+  }, [serviceUuid, selectedExecutionId, activeError]);
+
+  // 첫 fail step 의 step_no + error — Runtime 에러 로그 영역과 UI 캡처 step 선택에 사용.
+  const failStep = activeUiResult?.steps?.find(s => s.status === 'fail') ?? null;
+  const liveErrorLog = failStep?.error ?? activeError?.errorLog ?? '';
+  const screenshotSrc = (activeError && serviceUuid && selectedExecutionId && failStep)
+    ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeError.scenario,
+                       `${activeError.scenario}-${activeError.testCase}`, failStep.step_no)
+    : null;
+
   const activePass = historyDetailTab === 'PASS'
     ? (passCases.find(p => p.id === selectedFailTC) ?? null)
     : null;
@@ -381,11 +412,16 @@ export const TestResultPage = ({
         <div className="w-64 bg-white border-l border-[#f0f0f0] flex flex-col overflow-y-auto flex-shrink-0">
           <div className="p-4 border-b border-[#f0f0f0]">
             <div className="text-xs font-semibold text-[#6b7280] mb-2 uppercase tracking-wide">UI 캡처</div>
-            <div className="w-full h-36 bg-gray-100 rounded border border-[#f0f0f0] flex items-center justify-center">
-              <div className="text-center text-[#9ca3af]">
-                <Eye className="w-6 h-6 mx-auto mb-1 opacity-40" />
-                <div className="text-xs">스크린샷</div>
-              </div>
+            <div className="w-full h-36 bg-gray-100 rounded border border-[#f0f0f0] flex items-center justify-center overflow-hidden">
+              {screenshotSrc ? (
+                <img src={screenshotSrc} alt="에러 시점 캡처" className="w-full h-full object-contain"
+                     onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+              ) : (
+                <div className="text-center text-[#9ca3af]">
+                  <Eye className="w-6 h-6 mx-auto mb-1 opacity-40" />
+                  <div className="text-xs">스크린샷 없음</div>
+                </div>
+              )}
             </div>
           </div>
           <div className="p-4 flex-1">
@@ -393,7 +429,7 @@ export const TestResultPage = ({
               {historyDetailTab === 'PASS' ? 'Runtime 로그' : 'Runtime 에러 로그'}
             </div>
             <div className="bg-[#1e1e2e] rounded p-3 overflow-x-auto">
-              {historyDetailTab === 'FAIL' && activeError && activeError.errorLog.split('\n').map((line, i) => (
+              {historyDetailTab === 'FAIL' && activeError && liveErrorLog.split('\n').map((line, i) => (
                 <div key={i} className={`font-mono text-[10px] leading-5 ${
                   i === 0 ? 'text-status-fail font-semibold' : 'text-[#9ca3af]'
                 }`}>{line}</div>

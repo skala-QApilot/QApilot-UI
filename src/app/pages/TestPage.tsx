@@ -5,7 +5,7 @@ import { PassRateChart } from '../components/common/PassRateChart';
 import { ExecutionHistoryRow } from '../components/common/ExecutionHistoryRow';
 import { useTestStore } from '../../store/testStore';
 
-type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'aborted' | 'completed' };
+type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'pending' | 'running' | 'aborted' | 'completed' };
 
 interface ExecutionHistoryPageProps {
   historyFilter: string;

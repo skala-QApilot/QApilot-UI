@@ -101,7 +101,7 @@ const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
   );
 };
 
-type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'running' | 'aborted' | 'completed' };
+type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'pending' | 'running' | 'aborted' | 'completed' };
 type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED';
 
 interface TestRunningPageProps {
@@ -122,8 +122,9 @@ interface TestRunningPageProps {
   expandedTestCases: string[];
   setExpandedTestCases: React.Dispatch<React.SetStateAction<string[]>>;
   setSelectedExecutionId: React.Dispatch<React.SetStateAction<string | null>>;
-  /** App.tsx 의 handleStartRun — selectedRun 을 같은 scenario_ids 로 fresh start. */
-  onStartRun?: (scenarioIds: string[] | undefined, runName: string, groupId: string | null) => void;
+  /** App.tsx 의 handleStartRun — selectedRun 을 같은 scenario_ids 로 fresh start.
+   *  pendingId 가 주어지면 그 대기 엔트리를 실제 run 으로 교체. */
+  onStartRun?: (scenarioIds: string[] | undefined, runName: string, groupId: string | null, pendingId?: string | null) => void;
   /** App.tsx 의 handleResumeRun — 같은 trace_id 로 재개. aborted 상태에서만 동작. */
   onResumeRun?: (traceId: string) => void;
   /** Spring 호출에 필요한 service UUID. selectedRun.id 는 trace_id 라 함께 필요. */
@@ -166,7 +167,8 @@ export const TestRunningPage = ({
     // 폴링 조건: serviceUuid + selectedRun 모두 있을 때.
     // - running: 1초 간격 폴링 + SSE 이벤트 도착 시 즉시 추가 tick
     // - aborted/completed: 마지막 디스크 상태 1회만 fetch
-    if (!serviceUuid || !selectedRun) {
+    // pending = 아직 실행 전 (실제 trace 없음) → 폴링/스크린샷 fetch 안 함.
+    if (!serviceUuid || !selectedRun || selectedRun.status === 'pending') {
       if (screenshotUrlRef.current) {
         URL.revokeObjectURL(screenshotUrlRef.current);
         screenshotUrlRef.current = null;
@@ -268,11 +270,16 @@ export const TestRunningPage = ({
     if (!onStartRun) return;
     const groupId = selectedRun.groupId;
     let scenarioIds: string[] | undefined;
-    if (groupId) {
+    if (selectedRun.status === 'pending') {
+      // 대기 엔트리는 ScenarioPage 에서 저장한 자신의 scenarioIds 를 그대로 사용.
+      const sids = (selectedRun as any).scenarioIds as string[] | null | undefined;
+      scenarioIds = sids && sids.length ? sids : undefined;
+    } else if (groupId) {
       const g = useScenarioStore.getState().groups.find(gr => gr.groupId === groupId);
       scenarioIds = g?.scenarioIds && g.scenarioIds.length ? g.scenarioIds : undefined;
     }
-    onStartRun(scenarioIds, selectedRun.name, groupId);
+    const pendingId = selectedRun.status === 'pending' ? selectedRun.id : undefined;
+    onStartRun(scenarioIds, selectedRun.name, groupId, pendingId);
   }, [selectedRun, onStartRun, onResumeRun]);
 
   // duration stopwatch
@@ -423,7 +430,9 @@ export const TestRunningPage = ({
         className="!py-[14px]"
         titleExtra={(
           <div className="flex items-center gap-3 ml-1">
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#3615CF]/10 text-[#3615CF]">실행 중</span>
+            {selectedRun.status === 'pending'
+              ? <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#9ca3af]/15 text-[#6b7280]">대기</span>
+              : <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#3615CF]/10 text-[#3615CF]">실행 중</span>}
             <span className="text-sm text-[#9ca3af]">{formatDate(selectedRun.startTime)}</span>
             <span className="text-sm text-[#9ca3af]">{formatClock(selectedRun.startTime)}</span>
             <span className="text-sm text-[#9ca3af]">{formatDuration(elapsedSeconds)}</span>
@@ -665,7 +674,11 @@ export const TestRunningPage = ({
                       <Eye className="w-8 h-8 mx-auto mb-3 opacity-70" />
                     )}
                     <div className="font-mono text-xs">
-                      {selectedRun?.status === 'running' ? '스크린샷을 기다리는 중...' : '테스트 실행 중 실시간 화면이 표시됩니다'}
+                      {selectedRun?.status === 'running'
+                        ? '스크린샷을 기다리는 중...'
+                        : selectedRun?.status === 'pending'
+                          ? '"실행" 버튼을 누르면 테스트가 시작됩니다'
+                          : '테스트 실행 중 실시간 화면이 표시됩니다'}
                     </div>
                   </div>
                 )}
