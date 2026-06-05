@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { CheckCircle, ChevronLeft, Download, Eye, RotateCcw, XCircle } from 'lucide-react';
 import { SubHeader } from '../components/common/SubHeader';
 import { useTestStore } from '../../store/testStore';
+import { listDefects, type Defect } from '../../api/defects';
 
 type HistoryDetailTab = 'FAIL' | 'PASS';
 
@@ -15,6 +17,42 @@ interface TestResultPageProps {
   retestCheckedIds: Set<string>;
   setRetestCheckedIds: Dispatch<SetStateAction<Set<string>>>;
   setShowRetestNavModal: Dispatch<SetStateAction<boolean>>;
+  /** Spring 호출에 필요한 service UUID. selectedExecutionId 는 trace_id. */
+  serviceUuid: string | null;
+}
+
+interface DetailError {
+  id: string;
+  scenario: string;
+  testCase: string;
+  tcName: string;
+  errorCode: string;
+  summary: string;
+  solutions: Array<{ cause: string; solution: string }>;
+  errorLog: string;
+}
+
+/**
+ * defects 한 row → TestResultPage 가 기대하는 DetailError 모양으로 변환.
+ * scenario 는 ts_id ("TS-002"), testCase 는 tc_id 의 TC- 이후 ("TC-05").
+ * Backend 가 단일 root cause + 단일 fix suggestion 만 채우므로 solutions 도 1개.
+ * tcName / errorLog 는 defect 스키마에 없음 — 향후 scenario payload + ui_result 조인 필요.
+ */
+function defectToDetailError(d: Defect): DetailError {
+  const tcParts = d.tc_id.split('-TC-');
+  const testCase = tcParts.length >= 2 ? `TC-${tcParts[1]}` : d.tc_id;
+  return {
+    id: d.id,
+    scenario: d.ts_id,
+    testCase,
+    tcName: '',  // TODO: scenarios 의 test_cases 에서 join
+    errorCode: d.category,
+    summary: d.root_cause_top1 ?? '',
+    solutions: d.root_cause_top1 || d.solution_guide
+      ? [{ cause: d.root_cause_top1 ?? '', solution: d.solution_guide ?? '' }]
+      : [],
+    errorLog: d.file_location ?? '',
+  };
 }
 
 export const TestResultPage = ({
@@ -27,58 +65,45 @@ export const TestResultPage = ({
   retestCheckedIds,
   setRetestCheckedIds,
   setShowRetestNavModal,
+  serviceUuid,
 }: TestResultPageProps) => {
-  const mockDetailErrors = [
-    {
-      id: 'TS3_TC1', scenario: 'TS3', testCase: 'TC1', tcName: '상품 추가',
-      errorCode: 'UI_RENDER_ERROR',
-      summary: 'UI 상태 업데이트 로직에서 마지막 추가 항목이 반영되지 않음',
-      solutions: [
-        { cause: 'CartIcon 컴포넌트의 useEffect가 cartItems 변경을 감지하지 못함', solution: 'useEffect 의존성 배열에 cartItems 추가' },
-        { cause: 'Redux store의 addItem action 후 count 재계산 누락', solution: 'cartSlice에서 addItem action 후 즉시 count 재계산 로직 추가' },
-        { cause: 'API 응답 후 UI 동기화 미처리', solution: 'API 응답 후 UI 강제 리렌더링 트리거' },
-      ],
-      errorLog: 'Error: Cart count mismatch\n  at CartIcon.updateCount (CartIcon.tsx:42:15)\n  at Array.forEach (<anonymous>)\n  at updateState (store.js:128:8)',
-    },
-    {
-      id: 'TS1_TC2', scenario: 'TS1', testCase: 'TC2', tcName: '비밀번호 오류',
-      errorCode: '401',
-      summary: 'API /auth/login 응답의 error 필드가 UI 컴포넌트에 바인딩되지 않음',
-      solutions: [
-        { cause: 'AuthForm에서 API error 응답 처리 로직 부재', solution: 'AuthForm 컴포넌트에서 API error 응답 처리 로직 추가' },
-        { cause: 'error state 관리 미흡으로 렌더링 조건 누락', solution: 'error state를 useState로 관리하고 렌더링 조건 수정' },
-      ],
-      errorLog: 'TypeError: Cannot read property "message" of undefined\n  at AuthForm.handleError (AuthForm.tsx:88:22)\n  at async login (auth.ts:34:5)',
-    },
-    {
-      id: 'TS2_TC1', scenario: 'TS2', testCase: 'TC1', tcName: '검색어 입력',
-      errorCode: 'UI_STALE_STATE',
-      summary: 'AutoComplete 컴포넌트의 useEffect에서 deps 배열 누락으로 재렌더링 안됨',
-      solutions: [
-        { cause: 'useEffect deps 배열에 searchQuery 누락', solution: 'useEffect deps 배열에 searchQuery 추가' },
-        { cause: '자동완성 상태 관리 위치 부적절', solution: '자동완성 목록 상태를 부모 컴포넌트로 lift up' },
-      ],
-      errorLog: 'Warning: Missing dependency "searchQuery" in useEffect hook\n  at AutoComplete (AutoComplete.tsx:56)\n  Expected items to update but state was stale',
-    },
-  ];
+  // 실제 defects API → mockDetailErrors 형태로 변환.
+  // PASS 탭의 mockPassCases 는 향후 tc_results API 로 교체 예정 (현재는 빈 배열).
+  const [detailErrors, setDetailErrors] = useState<DetailError[]>([]);
 
-  const mockPassCases = [
-    { id: 'TS1_TC1', scenario: 'TS1', testCase: 'TC1', tcName: '로그인 성공', runtimeLog: 'PASS: navigate to /login\nPASS: fill email\nPASS: fill password\nPASS: click submit\nPASS: assert redirect to /dashboard' },
-    { id: 'TS2_TC2', scenario: 'TS2', testCase: 'TC2', tcName: '상품 목록 조회', runtimeLog: 'PASS: navigate to /products\nPASS: assert list length > 0\nPASS: assert image src exists\nPASS: GET /api/products 200 142ms' },
-    { id: 'TS3_TC2', scenario: 'TS3', testCase: 'TC2', tcName: '결제 완료', runtimeLog: 'PASS: navigate to /cart\nPASS: click checkout\nPASS: POST /api/orders 201 320ms\nPASS: assert success message' },
-  ];
+  useEffect(() => {
+    if (!serviceUuid || !selectedExecutionId) {
+      setDetailErrors([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const defects = await listDefects(serviceUuid, { runId: selectedExecutionId });
+        if (cancelled) return;
+        setDetailErrors(defects.map(defectToDetailError));
+      } catch (err) {
+        if (cancelled) return;
+        console.error('defects 로드 실패', err);
+        setDetailErrors([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [serviceUuid, selectedExecutionId]);
+  // PASS 탭 — 별도 PR 에서 tc_results API 로 채울 예정. 현재는 빈 배열.
+  const passCases: Array<{ id: string; scenario: string; testCase: string; tcName: string; runtimeLog: string }> = [];
 
-  const failsByTS = mockDetailErrors.reduce((acc, err) => {
+  const failsByTS = detailErrors.reduce((acc, err) => {
     if (!acc[err.scenario]) acc[err.scenario] = [];
     acc[err.scenario].push(err);
     return acc;
-  }, {} as Record<string, typeof mockDetailErrors>);
+  }, {} as Record<string, DetailError[]>);
 
-  const passByTS = mockPassCases.reduce((acc, p) => {
+  const passByTS = passCases.reduce((acc, p) => {
     if (!acc[p.scenario]) acc[p.scenario] = [];
     acc[p.scenario].push(p);
     return acc;
-  }, {} as Record<string, typeof mockPassCases>);
+  }, {} as Record<string, typeof passCases>);
 
   if (!selectedExecutionId) return null;
 
@@ -121,8 +146,12 @@ export const TestResultPage = ({
     );
   }
 
-  const activeError = historyDetailTab === 'FAIL' ? (mockDetailErrors.find(e => e.id === selectedFailTC) ?? mockDetailErrors[0]) : null;
-  const activePass = historyDetailTab === 'PASS' ? (mockPassCases.find(p => p.id === selectedFailTC) ?? null) : null;
+  const activeError = historyDetailTab === 'FAIL'
+    ? (detailErrors.find(e => e.id === selectedFailTC) ?? detailErrors[0] ?? null)
+    : null;
+  const activePass = historyDetailTab === 'PASS'
+    ? (passCases.find(p => p.id === selectedFailTC) ?? null)
+    : null;
 
   const formatDuration = (duration: string) => duration;
 
@@ -209,7 +238,7 @@ export const TestResultPage = ({
                   <span className="ml-auto text-xs text-status-fail">FAIL {errors.length}</span>
                 </div>
                 {errors.map(err => {
-                  const isActive = (selectedFailTC ?? mockDetailErrors[0].id) === err.id;
+                  const isActive = (selectedFailTC ?? detailErrors[0]?.id) === err.id;
                   const isChecked = retestCheckedIds.has(err.id);
                   return (
                     <div

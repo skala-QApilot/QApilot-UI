@@ -1294,6 +1294,7 @@ export default function App() {
                   retestCheckedIds={retestCheckedIds}
                   setRetestCheckedIds={setRetestCheckedIds}
                   setShowRetestNavModal={setShowRetestNavModal}
+                  serviceUuid={scenarioGenPollingServiceId}
                 />
               ) : (
                 <TestPage
