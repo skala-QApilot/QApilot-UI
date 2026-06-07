@@ -3,15 +3,22 @@ import { Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit
 import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
 import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
 import { SearchBar } from '../components/common/SearchBar';
-import { mockTSFlows, mockTVEndpoints, type HttpMethod } from '../data/mockData';
+import { mockTSFlows } from '../data/mockData';
 import { useRtmStore } from '../../store/rtmStore';
 import { useScenarioStore, toUiGroup } from '../../store/scenarioStore';
+import type { UiScenario, UiTestCase } from '../../store/scenarioStore';
+
+type TestCaseMap = Record<string, UiTestCase[]>;
+import type { ChangeRequestStatus } from '../../api/scenarioChangeRequests';
+import { updateScenario, deleteScenario } from '../../api/scenarios';
 
 interface ScenarioPageProps {
   [key: string]: any;
 }
 
 export const ScenarioPage = ({
+serviceId,
+onRejectedSync,
 selectedScenario,
 setSelectedScenario,
 scenarioPageTab,
@@ -41,7 +48,6 @@ aiItemActions,
 setAiItemActions,
 showDeferredAIItems,
 setShowDeferredAIItems,
-codeChangeDetected,
 dynamicScenarios,
 setDynamicScenarios,
 dynamicAIItems,
@@ -95,12 +101,23 @@ onVersionRollback,
   const viewMode = viewModeProp as 'table' | 'graph';
   const setViewMode = setViewModeProp as (m: 'table' | 'graph') => void;
   const [showReviewActions, setShowReviewActions] = React.useState(false);
+  const [hasDraftEdit, setHasDraftEdit] = React.useState(false);
   const [isGeneratingCode, setIsGeneratingCode] = React.useState(false);
   const generateCodeTimerRef = React.useRef<number | null>(null);
 
-  // TV JSON editor state
-  const [tvEditingKey, setTvEditingKey] = React.useState<string | null>(null);
-  const [tvEditContent, setTvEditContent] = React.useState('');
+  // TC/TV 상세 패널 펼침 state (여러 개를 동시에 펼칠 수 있도록 키 목록으로 관리 — detailPanelRow는 단일 선택이라 그래프 동기화 전용으로 분리)
+  const [expandedTcDetailKeys, setExpandedTcDetailKeys] = React.useState<string[]>([]);
+  const [expandedTvDetailKeys, setExpandedTvDetailKeys] = React.useState<string[]>([]);
+  const toggleTcDetail = (key: string) => setExpandedTcDetailKeys(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  const toggleTvDetail = (key: string) => setExpandedTvDetailKeys(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+
+  // TC 상세(given/when/then/tags) 편집 state
+  const [tcDetailEditKey, setTcDetailEditKey] = React.useState<string | null>(null);
+  const [tcDetailEditDraft, setTcDetailEditDraft] = React.useState({ given: '', when: '', then: '', tags: '' });
+
+  // TV 상세(field/type/value/purpose) 편집 state
+  const [tvDetailEditKey, setTvDetailEditKey] = React.useState<string | null>(null);
+  const [tvDetailEditDraft, setTvDetailEditDraft] = React.useState({ field: '', type: '', value: '', purpose: '' });
   const [tvCopied, setTvCopied] = React.useState<string | null>(null);
 
   // 예약하기 모달 state
@@ -150,7 +167,11 @@ onVersionRollback,
   // typed aliases to suppress implicit-any from loose prop types
   const _selectedTCIds: string[] = selectedTCIds as string[];
   const _dynamicScenarios: Array<{ id: string; name: string; tags: string[] }> = dynamicScenarios as any[];
-  const _dynamicTestCases: Record<string, Array<{ id: string; name: string; values: Array<{ id: string; name: string }> }>> = dynamicTestCases as any;
+  const _dynamicTestCases: Record<string, Array<{
+    id: string; name: string;
+    given?: string; when?: string; then?: string; tags?: string[];
+    values: Array<{ id: string; name: string; field?: string; value?: string; type?: string; purpose?: string }>;
+  }>> = dynamicTestCases as any;
   const _aiItemActions: Record<string, string> = aiItemActions as Record<string, string>;
   const _dynamicAIItems: Record<string, { reason: string; trigger: string; timestamp: string }> = dynamicAIItems as any;
 
@@ -211,69 +232,12 @@ onVersionRollback,
     );
   };
 
-  const mockValidationConditions: Record<string, string[]> = {
-    'TS1_TC1_TV1': ['입력: 유효한 이메일 (test@example.com)', '기대: 로그인 성공, 대시보드 이동', '제한: 3초 이내'],
-    'TS1_TC1_TV2': ['입력: 유효한 비밀번호 (8자 이상)', '기대: 인증 성공 (200 OK)', '검증: JWT 토큰 발급'],
-    'TS1_TC2_TV1': ['입력: 유효한 이메일', '기대: 입력 필드 유효성 통과'],
-    'TS1_TC2_TV2': ['입력: 잘못된 비밀번호 (5자 미만)', '기대: 오류 메시지 표시', '코드: 401 Unauthorized'],
-  };
-
-  // ── TV 엔드포인트 헬퍼 ────────────────────────────────────────
-  const METHOD_STYLE: Record<HttpMethod, string> = {
-    GET:    'bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/20',
-    POST:   'bg-[#3615CF]/10 text-[#3615CF] border border-[#3615CF]/20',
-    PUT:    'bg-gray-100 text-[#6b7280] border border-gray-200',
-    PATCH:  'bg-gray-100 text-[#6b7280] border border-gray-200',
-    DELETE: 'bg-[#f43b47]/10 text-[#f43b47] border border-[#f43b47]/20',
-  };
-
-  const HTTP_STATUS_TEXT: Record<number, string> = {
-    200: 'OK', 201: 'Created', 204: 'No Content',
-    400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
-    404: 'Not Found', 422: 'Unprocessable Entity', 500: 'Internal Server Error',
-  };
-
-  // 라이트 테마 JSON 구문 강조
-  const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
-    const lines = JSON.stringify(obj, null, 2).split('\n');
-    return (
-      <code className="block font-mono text-[10.5px] leading-[1.7]">
-        {lines.map((line, i) => {
-          const m = line.match(/^(\s*)("[\w\s가-힣\-./[\]_]+")(\s*:\s*)(".*?"|[\d.]+|true|false|null)(,?)$/);
-          if (m) {
-            const isStr = m[4].startsWith('"');
-            return (
-              <div key={i}>
-                <span className="text-slate-400">{m[1]}</span>
-                <span className="text-[#3615CF]">{m[2]}</span>
-                <span className="text-slate-400">{m[3]}</span>
-                <span className={isStr ? 'text-[#3615CF]/70' : 'text-[#f43b47]'}>{m[4]}</span>
-                <span className="text-slate-400">{m[5]}</span>
-              </div>
-            );
-          }
-          return <div key={i}><span className="text-slate-500">{line}</span></div>;
-        })}
-      </code>
-    );
-  };
-
-  const handleTVCopy = (tvKey: string) => {
-    const ep = mockTVEndpoints[tvKey];
-    const text = ep
-      ? JSON.stringify({ method: ep.method, path: ep.path, requestBody: ep.requestBody ?? {}, statusCode: ep.statusCode, responseBody: ep.responseBody ?? {} }, null, 2)
-      : '{}';
+  const handleTVCopy = (tvKey: string, tv: { field?: string; type?: string; value?: string; purpose?: string }) => {
+    const text = JSON.stringify({ field: tv.field ?? '', type: tv.type ?? '', value: tv.value ?? '', purpose: tv.purpose ?? '' }, null, 2);
     navigator.clipboard.writeText(text).then(() => {
       setTvCopied(tvKey);
       setTimeout(() => setTvCopied(null), 1800);
     });
-  };
-
-  const handleTVEditSave = (tvId: string, tsId_: string, tcId_: string) => {
-    // tvEditContent는 requestBody JSON이 들어있음
-    try { JSON.parse(tvEditContent); } catch { setTvEditingKey(null); return; }
-    // 이름 변경은 별도이므로 여기서는 편집 종료만 (실제 저장은 확장 가능)
-    setTvEditingKey(null);
   };
 
   // ── 사이드바 필터링 ────────────────────────────────────────────
@@ -293,14 +257,30 @@ onVersionRollback,
     const isDeferred = _aiItemActions[scenario.id] === 'deferred';
     const isRejected = _aiItemActions[scenario.id] === 'rejected';
     const isApproved = _aiItemActions[scenario.id] === 'approved';
-    const isCodeChangeItem = codeChangeDetected && scenario.id === 'TS1' && !_aiItemActions.TS1 && !_dynamicAIItems.TS1;
-    const hasAIItem = isCodeChangeItem || !!_dynamicAIItems[scenario.id];
+    const hasAIItem = !!_dynamicAIItems[scenario.id];
     return hasAIItem && !isDeferred && !isRejected && !isApproved;
   }).length;
   const hasPendingAIReview = pendingAIReviewCount > 0;
 
+  const resolveAIItem = (itemId: string, status: 'approved' | 'rejected' | 'deferred') => {
+    const requestId = (dynamicAIItems as Record<string, { requestId?: string }>)[itemId]?.requestId;
+    setAiItemActions((prev: Record<string, string>) => ({ ...prev, [itemId]: status }));
+    if (serviceId && requestId) {
+      useScenarioStore.getState().resolveChangeRequest(serviceId, requestId, status)
+        .then(() => {
+          // 거절 시 Spring이 이전 버전으로 롤백 → App.tsx syncScenarioFromStore로 완전 갱신
+          if (status === 'rejected') {
+            onRejectedSync?.();
+          }
+        })
+        .catch(console.error);
+    }
+  };
+
   const handleApproveAIItem = (itemId: string) => {
-    setAiItemActions(prev => ({ ...prev, [itemId]: 'approved' }));
+    resolveAIItem(itemId, 'approved');
+    // AI 승인도 새로운 변경 — 버전 확정 전까지 draft 상태 유지
+    markDirectEdit();
     setIsGeneratingCode(true);
     if (generateCodeTimerRef.current) window.clearTimeout(generateCodeTimerRef.current);
     generateCodeTimerRef.current = window.setTimeout(() => {
@@ -309,9 +289,49 @@ onVersionRollback,
     }, 2000);
   };
 
+  // 사용자가 "검토 확인"을 클릭해 저장한 버전이 있는지 확인
+  // init 자동 생성(v1.0, desc="초기 자동 생성")과 구분
+  const hasUserConfirmedVersion = React.useMemo(
+    () => (scenarioVersions as any[])?.some(
+      v => v.changeDesc === '검토 확인 시 자동 저장'
+    ) ?? false,
+    [scenarioVersions]
+  );
+
+  // draft 상태 localStorage 키 (서비스별)
+  const draftKey = serviceId ? `draft_edit_${serviceId}` : null;
+
   React.useEffect(() => {
-    if (hasPendingAIReview) setShowReviewActions(false);
-  }, [hasPendingAIReview]);
+    const storedDraftEdit = draftKey ? localStorage.getItem(draftKey) === 'true' : false;
+    setHasDraftEdit(storedDraftEdit);
+    if (hasPendingAIReview) {
+      setShowReviewActions(false);
+    } else if (hasUserConfirmedVersion) {
+      // localStorage에 직접 수정 draft 마크가 있으면 검토 확인 모드 유지
+      setShowReviewActions(!storedDraftEdit);
+    }
+  }, [hasPendingAIReview, hasUserConfirmedVersion, draftKey]);
+
+  const latestConfirmedVersionId = React.useMemo(
+    () => (scenarioVersions as any[])?.find(v => !v.hasChange)?.id ?? null,
+    [scenarioVersions]
+  );
+
+  const selectedVersion = React.useMemo(
+    () => (scenarioVersions as any[])?.find(v => v.id === selectedScenarioVersion) ?? null,
+    [scenarioVersions, selectedScenarioVersion]
+  );
+
+  const isSelectedConfirmedVersion = Boolean(selectedVersion && !selectedVersion.hasChange);
+  const isSelectedDraftHead = hasDraftEdit && selectedScenarioVersion === latestConfirmedVersionId;
+  const canUseConfirmedVersionActions = showReviewActions || (isSelectedConfirmedVersion && !isSelectedDraftHead);
+  const shouldShowDraftNode = !showReviewActions && hasUserConfirmedVersion && hasDraftEdit;
+  const reviewBlocked = isSelectedDraftHead && (hasPendingAIReview || isGeneratingCode);
+  const reviewButtonLabel = isSelectedDraftHead && isGeneratingCode
+    ? '코드 생성중...'
+    : isSelectedDraftHead && hasPendingAIReview
+      ? `검토 확인 (${pendingAIReviewCount})`
+      : '검토 확인';
 
   React.useEffect(() => {
     return () => {
@@ -376,25 +396,30 @@ onVersionRollback,
       setEditingDetailItem(null);
       return;
     }
+    markDirectEdit();
 
     if (editingDetailItem.type === 'ts') {
-      setDynamicScenarios(prev => prev.map(s => s.id === editingDetailItem.key ? { ...s, name: value } : s));
-    } else if (editingDetailItem.type === 'tc') {
-      const [tsId, tcId] = editingDetailItem.key.split('_');
-      setDynamicTestCases(prev => ({
-        ...prev,
-        [tsId]: (prev[tsId] || []).map(tc => tc.id === tcId ? { ...tc, name: value } : tc),
-      }));
+      const tsId = editingDetailItem.key;
+      setDynamicScenarios((prev: UiScenario[]) => prev.map(s => s.id === tsId ? { ...s, name: value } : s));
+      if (serviceId) {
+        updateScenario(serviceId, tsId, { name: value } as any).catch(err => {
+          console.error('TS 이름 수정 실패:', err);
+          onRejectedSync?.();
+        });
+      }
     } else {
-      const [tsId, tcId, tvId] = editingDetailItem.key.split('_');
-      setDynamicTestCases(prev => ({
-        ...prev,
-        [tsId]: (prev[tsId] || []).map(tc =>
-          tc.id === tcId
-            ? { ...tc, values: tc.values.map(tv => tv.id === tvId ? { ...tv, name: value } : tv) }
-            : tc
-        ),
-      }));
+      // TC 이름 수정
+      const [tsId, tcId] = editingDetailItem.key.split('_');
+      const newTcs = (dynamicTestCases[tsId] || []).map((tc: any) =>
+        tc.id === tcId ? { ...tc, name: value } : tc
+      );
+      setDynamicTestCases((prev: TestCaseMap) => ({ ...prev, [tsId]: newTcs }));
+      if (serviceId) {
+        updateScenario(serviceId, tsId, { test_cases: toApiTestCases(newTcs) as any }).catch(err => {
+          console.error('TC 이름 수정 실패:', err);
+          onRejectedSync?.();
+        });
+      }
     }
 
     setEditingDetailItem(null);
@@ -405,14 +430,14 @@ onVersionRollback,
       <input
         autoFocus
         value={editingDetailItem?.value ?? ''}
-        onChange={e => setEditingDetailItem(prev => prev ? { ...prev, value: e.target.value } : null)}
+        onChange={e => setEditingDetailItem((prev: { type: 'ts' | 'tc'; key: string; value: string } | null) => prev ? { ...prev, value: e.target.value } : null)}
         onKeyDown={e => {
           if (e.key === 'Enter') saveSidebarEdit();
           if (e.key === 'Escape') setEditingDetailItem(null);
         }}
         className={`min-w-0 flex-1 px-1.5 py-0.5 border border-[#3615CF]/50 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#3615CF]/30 ${className}`}
       />
-      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-status-pass flex-shrink-0">
+      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-[#3615CF] flex-shrink-0">
         <CheckCircle className="w-3 h-3 text-white" />
       </button>
       <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0">
@@ -424,59 +449,178 @@ onVersionRollback,
   // ── TS 추가 ──────────────────────────────────────────────────
   const addNewTS = () => {
     const newId = `TS${_dynamicScenarios.length + 1}`;
-    setDynamicScenarios(prev => [...prev, { id: newId, name: '새 시나리오', tags: [] }]);
-    setDynamicTestCases(prev => ({ ...prev, [newId]: [] }));
-    setExpandedTSForTC(prev => [...prev, newId]);
+    setDynamicScenarios((prev: UiScenario[]) => [...prev, { id: newId, name: '새 시나리오', tags: [] }]);
+    setDynamicTestCases((prev: TestCaseMap) => ({ ...prev, [newId]: [] }));
+    setExpandedTSForTC((prev: string[]) => [...prev, newId]);
   };
 
   // ── TC 추가 ──────────────────────────────────────────────────
   const addNewTC = (tsId: string) => {
     const existing = _dynamicTestCases[tsId] || [];
     const newId = `TC${existing.length + 1}`;
-    setDynamicTestCases(prev => ({
+    setDynamicTestCases((prev: TestCaseMap) => ({
       ...prev,
       [tsId]: [...existing, { id: newId, name: '새 테스트케이스', values: [] }],
     }));
-    setExpandedTSForTC(prev => prev.includes(tsId) ? prev : [...prev, tsId]);
+    setExpandedTSForTC((prev: string[]) => prev.includes(tsId) ? prev : [...prev, tsId]);
   };
 
   // ── TV 추가 ──────────────────────────────────────────────────
   const addNewTV = (tsId: string, tcId: string) => {
     const tcKey = `${tsId}_${tcId}`;
-    setDynamicTestCases(prev => ({
+    setDynamicTestCases((prev: TestCaseMap) => ({
       ...prev,
-      [tsId]: (prev[tsId] || []).map(tc => {
+      [tsId]: (prev[tsId] || []).map((tc: UiTestCase) => {
         if (tc.id !== tcId) return tc;
         const newId = `TV${tc.values.length + 1}`;
         return { ...tc, values: [...tc.values, { id: newId, name: '새 테스트변수' }] };
       }),
     }));
-    setExpandedTCMain(prev => prev.includes(tcKey) ? prev : [...prev, tcKey]);
+    setExpandedTCMain((prev: string[]) => prev.includes(tcKey) ? prev : [...prev, tcKey]);
+  };
+
+  // UI TestCase → API TestCase 변환 (tc_id, values.field 복원)
+  const toApiTestCases = (uiTcs: any[]) =>
+    uiTcs.map(tc => ({
+      tc_id: tc.id,
+      name: tc.name,
+      given: tc.given,
+      when: tc.when,
+      then: tc.then,
+      values: (tc.values || []).map((v: any) => ({
+        field: v.field || v.id,
+        value: v.value,
+        type: v.type,
+        purpose: v.purpose,
+      })),
+      tags: tc.tags || [],
+      req_id: tc.req_id,
+    }));
+
+  // 직접 수정/삭제 발생 시 draft 상태로 전환 (검토 확인 필요 표시)
+  const markDirectEdit = () => {
+    if (hasUserConfirmedVersion) {
+      setShowReviewActions(false);
+      setHasDraftEdit(true);
+      if (draftKey) localStorage.setItem(draftKey, 'true');
+    }
+  };
+
+  // 검토 확인 완료 시 draft 상태 해제
+  const clearDraftMark = () => {
+    setHasDraftEdit(false);
+    if (draftKey) localStorage.removeItem(draftKey);
+  };
+
+  // ── TC 상세(given/when/then/tags) 저장 ─────────────────────────
+  const startTcDetailEdit = (tsId: string, tcId: string, tc: any) => {
+    setTcDetailEditDraft({
+      given: tc.given || '',
+      when: tc.when || '',
+      then: tc.then || '',
+      tags: (tc.tags || []).join(', '),
+    });
+    setTcDetailEditKey(`${tsId}_${tcId}`);
+  };
+
+  const saveTcDetailEdit = (tsId: string, tcId: string) => {
+    markDirectEdit();
+    const tags = tcDetailEditDraft.tags.split(',').map(t => t.trim()).filter(Boolean);
+    const newTcs = (dynamicTestCases[tsId] || []).map((tc: any) =>
+      tc.id === tcId
+        ? { ...tc, given: tcDetailEditDraft.given, when: tcDetailEditDraft.when, then: tcDetailEditDraft.then, tags }
+        : tc
+    );
+    setDynamicTestCases((prev: TestCaseMap) => ({ ...prev, [tsId]: newTcs }));
+    if (serviceId) {
+      updateScenario(serviceId, tsId, { test_cases: toApiTestCases(newTcs) as any }).catch(err => {
+        console.error('TC 상세 수정 실패:', err);
+        onRejectedSync?.();
+      });
+    }
+    setTcDetailEditKey(null);
+  };
+
+  // ── TV 상세(field/type/value/purpose) 저장 ─────────────────────
+  const startTvDetailEdit = (tsId: string, tcId: string, tvId: string, tv: any) => {
+    setTvDetailEditDraft({
+      field: tv.field || '',
+      type: tv.type || '',
+      value: tv.value ?? '',
+      purpose: tv.purpose || '',
+    });
+    setTvDetailEditKey(`${tsId}_${tcId}_${tvId}`);
+  };
+
+  const saveTvDetailEdit = (tsId: string, tcId: string, tvId: string) => {
+    markDirectEdit();
+    const draft = tvDetailEditDraft;
+    const newTcs = (dynamicTestCases[tsId] || []).map((tc: any) =>
+      tc.id === tcId
+        ? {
+            ...tc,
+            values: (tc.values || []).map((tv: any) => tv.id === tvId
+              ? { ...tv, field: draft.field, type: draft.type, value: draft.value, purpose: draft.purpose, name: draft.purpose || draft.field || tv.name }
+              : tv),
+          }
+        : tc
+    );
+    setDynamicTestCases((prev: TestCaseMap) => ({ ...prev, [tsId]: newTcs }));
+    if (serviceId) {
+      updateScenario(serviceId, tsId, { test_cases: toApiTestCases(newTcs) as any }).catch(err => {
+        console.error('TV 상세 수정 실패:', err);
+        onRejectedSync?.();
+      });
+    }
+    setTvDetailEditKey(null);
   };
 
   // ── TS 삭제 ──────────────────────────────────────────────────
   const deleteTS = (tsId: string) => {
-    setDynamicScenarios(prev => prev.filter(s => s.id !== tsId));
+    markDirectEdit();
+    // 낙관적 UI 업데이트
+    setDynamicScenarios((prev: UiScenario[]) => prev.filter((s: UiScenario) => s.id !== tsId));
     if (detailPanelRow?.tsId === tsId) setDetailPanelRow(null);
+    // Spring 영속화
+    if (serviceId) {
+      deleteScenario(serviceId, tsId).catch(err => {
+        console.error('deleteTS 실패, 롤백:', err);
+        onRejectedSync?.(); // 실패 시 서버 상태로 복원
+      });
+    }
   };
 
   // ── TC 삭제 ──────────────────────────────────────────────────
   const deleteTC = (tsId: string, tcId: string) => {
-    setDynamicTestCases(prev => ({
-      ...prev,
-      [tsId]: (prev[tsId] || []).filter(t => t.id !== tcId),
-    }));
+    markDirectEdit();
+    const newTcs = (dynamicTestCases[tsId] || []).filter((t: any) => t.id !== tcId);
+    // 낙관적 UI 업데이트
+    setDynamicTestCases((prev: TestCaseMap) => ({ ...prev, [tsId]: newTcs }));
     if (detailPanelRow?.tcId === tcId && detailPanelRow?.tsId === tsId) setDetailPanelRow(null);
+    // Spring 영속화 — 수정된 TC 목록으로 버전 저장
+    if (serviceId) {
+      updateScenario(serviceId, tsId, { test_cases: toApiTestCases(newTcs) as any }).catch(err => {
+        console.error('deleteTC 실패, 롤백:', err);
+        onRejectedSync?.();
+      });
+    }
   };
 
   // ── TV 삭제 ──────────────────────────────────────────────────
   const deleteTV = (tsId: string, tcId: string, tvId: string) => {
-    setDynamicTestCases(prev => ({
-      ...prev,
-      [tsId]: (prev[tsId] || []).map(t =>
-        t.id === tcId ? { ...t, values: t.values.filter(v => v.id !== tvId) } : t
-      ),
-    }));
+    markDirectEdit();
+    const newTcs = (dynamicTestCases[tsId] || []).map((t: any) =>
+      t.id === tcId ? { ...t, values: (t.values || []).filter((v: any) => v.id !== tvId) } : t
+    );
+    // 낙관적 UI 업데이트
+    setDynamicTestCases((prev: TestCaseMap) => ({ ...prev, [tsId]: newTcs }));
+    // Spring 영속화
+    if (serviceId) {
+      updateScenario(serviceId, tsId, { test_cases: toApiTestCases(newTcs) as any }).catch(err => {
+        console.error('deleteTV 실패, 롤백:', err);
+        onRejectedSync?.();
+      });
+    }
   };
 
   // 전체 TC ID 목록
@@ -519,7 +663,22 @@ onVersionRollback,
             <div className="flex min-h-full flex-col items-center justify-end pb-4">
               <div className="relative flex flex-col items-center gap-5">
                 <div className="absolute top-[10px] bottom-[10px] left-1/2 -translate-x-1/2 w-px bg-[#e5e7eb]" style={{ zIndex: 0 }} />
-              {[...(scenarioVersions as any[])].reverse().map(ver => {
+
+                {/* 점선 draft 노드 — 확정 버전 이후 미확인 변경사항이 있을 때 최상단 표시 */}
+                {shouldShowDraftNode && (
+                  <div className="relative flex flex-col items-center" style={{ zIndex: 10, overflow: 'visible' }}>
+                    <div className="relative flex items-center justify-center">
+                      <svg width={20} height={20} style={{ overflow: 'visible' }}>
+                        <circle cx={10} cy={10} r={8}
+                          fill="white"
+                          stroke="#3615CF" strokeWidth={1.5} strokeDasharray="4 2.5" />
+                      </svg>
+                    </div>
+                    <span className="text-[8px] text-[#9ca3af] mt-0.5">수정중</span>
+                  </div>
+                )}
+
+              {(scenarioVersions as any[]).map(ver => {
                 const isSelected = selectedScenarioVersion === ver.id;
                 const isFav = favoriteVersionIds.has(ver.id);
                 if (ver.hasChange) return (
@@ -530,7 +689,7 @@ onVersionRollback,
                       <svg width={20} height={20} style={{ overflow: 'visible' }}>
                         <circle cx={10} cy={10} r={8}
                           fill={isSelected ? '#EAE8F9' : 'white'}
-                          stroke="#3615CF" strokeWidth={1.5} strokeDasharray={showReviewActions ? undefined : '4 2.5'} />
+                          stroke="#3615CF" strokeWidth={1.5} strokeDasharray={canUseConfirmedVersionActions ? undefined : '4 2.5'} />
                       </svg>
                     </button>
                     <span className="text-[8px] text-[#c4c9d4]">{ver.date}</span>
@@ -619,7 +778,7 @@ onVersionRollback,
               <Sparkles className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => { if (deferredAIIds.length > 0) setShowDeferredAIItems(prev => !prev); }}
+              onClick={() => { if (deferredAIIds.length > 0) setShowDeferredAIItems((prev: boolean) => !prev); }}
               title="보류 항목"
               disabled={deferredAIIds.length === 0}
               className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all relative ${
@@ -670,7 +829,7 @@ onVersionRollback,
                       <div className="flex gap-1">
                         <button onClick={() => handleApproveAIItem(tsId)}
                           className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium">승인</button>
-                        <button onClick={() => setAiItemActions(prev => ({ ...prev, [tsId]: 'rejected' }))}
+                        <button onClick={() => resolveAIItem(tsId, 'rejected')}
                           className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-red-50 hover:text-red-500 hover:border-red-200">거절</button>
                       </div>
                     </div>
@@ -688,14 +847,11 @@ onVersionRollback,
               const tsEditKey = scenario.id;
               const isTSEditing = editingDetailItem?.type === 'ts' && editingDetailItem.key === tsEditKey;
 
-              const isCodeChangeItem = codeChangeDetected && scenario.id === 'TS1' && !_aiItemActions['TS1'] && !_dynamicAIItems['TS1'];
-              const aiInfo = isCodeChangeItem
-                ? { reason: 'login.tsx 비밀번호 검증 로직 변경 감지', trigger: 'code' as const, timestamp: '2026-04-27 10:23' }
-                : _dynamicAIItems[scenario.id];
+              const aiInfo = _dynamicAIItems[scenario.id];
               const isAIItem = !!aiInfo && _aiItemActions[scenario.id] !== 'approved' && _aiItemActions[scenario.id] !== 'rejected';
               const isDeferredItem = _aiItemActions[scenario.id] === 'deferred';
 
-              if (_aiItemActions[scenario.id] === 'rejected') return null;
+              // 거절: AI 태그만 제거, 시나리오 자체는 목록에 유지
               if (isDeferredItem) return null;
 
               const triggerLabel = aiInfo?.trigger === 'chatbot' ? '챗봇 질의' : aiInfo?.trigger === 'file' ? '파일 업데이트' : '코드 변경 감지';
@@ -715,7 +871,7 @@ onVersionRollback,
                       onChange={() => toggleTSSelection(scenario.id)}
                       className="scenario-checkbox w-3.5 h-3.5 flex-shrink-0"
                       onClick={e => e.stopPropagation()} />
-                    <button onClick={e => { e.stopPropagation(); setExpandedTSForTC(prev => prev.includes(scenario.id) ? prev.filter(id => id !== scenario.id) : [...prev, scenario.id]); }} className="flex-shrink-0">
+                    <button onClick={e => { e.stopPropagation(); setExpandedTSForTC((prev: string[]) => prev.includes(scenario.id) ? prev.filter((id: string) => id !== scenario.id) : [...prev, scenario.id]); }} className="flex-shrink-0">
                       {isExpanded ? <ChevronDown className={`w-3.5 h-3.5 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3.5 h-3.5 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} />}
                     </button>
                     <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTSEditing) { setSelectedScenario(scenario.id); setDetailPanelRow({ level: 'TS', tsId: scenario.id }); } }}>
@@ -760,9 +916,9 @@ onVersionRollback,
                       <div className="flex gap-1 flex-shrink-0">
                         <button onClick={() => handleApproveAIItem(scenario.id)}
                           className="px-2 py-0.5 bg-[#d97706] text-white rounded text-[9px] font-medium hover:bg-[#b45309]">승인</button>
-                        <button onClick={() => { setAiItemActions(prev => ({ ...prev, [scenario.id]: 'deferred' })); setShowDeferredAIItems(true); }}
+                        <button onClick={() => { resolveAIItem(scenario.id, 'deferred'); markDirectEdit(); setShowDeferredAIItems(true); }}
                           className="px-2 py-0.5 bg-white border border-[#fcd34d] text-[#d97706] rounded text-[9px] hover:bg-[#fffbeb]">보류</button>
-                        <button onClick={() => setAiItemActions(prev => ({ ...prev, [scenario.id]: 'rejected' }))}
+                        <button onClick={() => resolveAIItem(scenario.id, 'rejected')}
                           className="px-2 py-0.5 bg-white border border-red-200 text-red-500 rounded text-[9px] hover:bg-red-50">거절</button>
                       </div>
                     </div>
@@ -781,18 +937,25 @@ onVersionRollback,
                             onChange={() => toggleTCSelection(scenario.id, tc.id)}
                             className="scenario-checkbox w-3 h-3 flex-shrink-0"
                             onClick={e => e.stopPropagation()} />
-                          <button onClick={e => { e.stopPropagation(); setExpandedTCMain(prev => prev.includes(tcKey) ? prev.filter(id => id !== tcKey) : [...prev, tcKey]); }} className="flex-shrink-0">
+                          <button onClick={e => { e.stopPropagation(); setExpandedTCMain((prev: string[]) => prev.includes(tcKey) ? prev.filter((id: string) => id !== tcKey) : [...prev, tcKey]); }} className="flex-shrink-0">
                             {tc.values.length > 0
                               ? (isTCExpanded ? <ChevronDown className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} />)
                               : <span className="w-3" />}
                           </button>
-                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTCEditing) setDetailPanelRow({ level: 'TC', tsId: scenario.id, tcId: tc.id }); }}>
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => {
+                            if (isTCEditing) return;
+                            setDetailPanelRow({ level: 'TC', tsId: scenario.id, tcId: tc.id });
+                            toggleTcDetail(tcKey);
+                          }}>
                             <div className="flex items-center gap-1 flex-wrap">
                               <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tcBadge}`}>TC</span>
                               <span className={`text-xs font-medium flex-shrink-0 ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
                               {isTCEditing
                                 ? sidebarEditInput('text-xs')
                                 : <span className={`text-xs truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{tc.name}</span>}
+                              {!isTCEditing && tc.tags && tc.tags.length > 0 && tc.tags.map((tag: string) => (
+                                <span key={tag} className="px-1.5 py-0.5 bg-[#EAE8F9]/65 text-[#3615CF]/85 text-[9px] rounded-full font-medium flex-shrink-0">{tag}</span>
+                              ))}
                               {!isTCEditing && frEntries.map(fr => (
                                 <div key={fr.frId} className="relative group/fr flex-shrink-0">
                                   <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold rounded bg-[#EAE8F9] text-[#3615CF] border border-[#3615CF]/15 cursor-help">{fr.frId}</span>
@@ -829,28 +992,92 @@ onVersionRollback,
                           )}
                         </div>
 
-                        {/* TV 행 — 엔드포인트 카드 */}
+                        {/* TC 상세 정보 — given/when/then/tags (스웨거 스타일 상세 패널) */}
+                        {expandedTcDetailKeys.includes(tcKey) && (() => {
+                          const isEditingTcDetail = tcDetailEditKey === tcKey;
+                          const hasBdd = !!(tc.given || tc.when || tc.then);
+                          return (
+                            <div className="mb-1 py-1.5 bg-[#F9FAFB] border-b border-[#f0f0f0]/40">
+                            <div className="border-l border-slate-200 pl-3 space-y-1.5" style={{ marginLeft: '3.2rem' }}>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-widest">TC 상세 정보</span>
+                                {!isEditingTcDetail && (
+                                  <button onClick={() => startTcDetailEdit(scenario.id, tc.id, tc)}
+                                    title="편집"
+                                    className="w-4 h-4 flex items-center justify-center rounded text-slate-400 hover:text-[#3615CF] hover:bg-[#EAE8F9] transition-colors">
+                                    <Edit2 className="w-2.5 h-2.5" />
+                                  </button>
+                                )}
+                              </div>
+                              {isEditingTcDetail ? (
+                                <div className="space-y-1.5">
+                                  {(['given', 'when', 'then'] as const).map(stepKey => (
+                                    <div key={stepKey} className="flex items-center gap-2">
+                                      <span className="w-16 flex-shrink-0 text-[10px] font-semibold text-slate-400 uppercase">{stepKey}</span>
+                                      <input value={tcDetailEditDraft[stepKey]}
+                                        onChange={e => setTcDetailEditDraft(prev => ({ ...prev, [stepKey]: e.target.value }))}
+                                        className="w-72 max-w-full text-[11px] bg-white border border-[#3615CF]/30 rounded px-2 py-0.5 focus:outline-none focus:border-[#3615CF]/60" />
+                                    </div>
+                                  ))}
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-16 flex-shrink-0 text-[10px] font-semibold text-slate-400 uppercase">tags</span>
+                                    <input value={tcDetailEditDraft.tags}
+                                      onChange={e => setTcDetailEditDraft(prev => ({ ...prev, tags: e.target.value }))}
+                                      placeholder="쉼표로 구분 (예: boundary, smoke)"
+                                      className="w-72 max-w-full text-[11px] bg-white border border-[#3615CF]/30 rounded px-2 py-0.5 focus:outline-none focus:border-[#3615CF]/60" />
+                                  </div>
+                                  <div className="flex items-center gap-2 pt-0.5">
+                                    <span className="w-16 flex-shrink-0" />
+                                    <div className="w-72 max-w-full flex items-center justify-end gap-1.5">
+                                      <button onClick={() => saveTcDetailEdit(scenario.id, tc.id)}
+                                        className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#3615CF] text-white text-[10px] font-medium hover:opacity-90 transition-opacity">
+                                        <CheckCircle className="w-2.5 h-2.5" /> 저장
+                                      </button>
+                                      <button onClick={() => setTcDetailEditKey(null)}
+                                        className="flex items-center gap-1 px-2 py-0.5 rounded bg-gray-200 text-gray-500 text-[10px] font-medium hover:bg-gray-300 transition-colors">
+                                        <X className="w-2.5 h-2.5" /> 취소
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : hasBdd ? (
+                                <div className="space-y-1">
+                                  {tc.given && <div className="flex gap-2 text-[11px]"><span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">Given</span><span className="text-[#1a1a2e] leading-relaxed">{tc.given}</span></div>}
+                                  {tc.when && <div className="flex gap-2 text-[11px]"><span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">When</span><span className="text-[#1a1a2e] leading-relaxed">{tc.when}</span></div>}
+                                  {tc.then && <div className="flex gap-2 text-[11px] pb-2"><span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">Then</span><span className="text-[#1a1a2e] leading-relaxed">{tc.then}</span></div>}
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-[#c4c9d4]">given/when/then 정보가 없습니다.</div>
+                              )}
+                            </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* TV 행 — 테스트 값 카드 (스웨거 스타일 상세) */}
                         {isTCExpanded && tc.values.map(tv => {
                           const tvKey = `${scenario.id}_${tc.id}_${tv.id}`;
-                          const ep = mockTVEndpoints[tvKey];
-                          const isTVEditing = editingDetailItem?.type === 'tv' && editingDetailItem.key === tvKey;
-                          const isSelected = detailPanelRow?.tvId === tv.id && detailPanelRow?.tcId === tc.id;
+                          const isOpen = expandedTvDetailKeys.includes(tvKey);
                           const isCopied = tvCopied === tvKey;
-                          const isOk = ep ? ep.statusCode < 400 : true;
+                          const isEditingTvDetail = tvDetailEditKey === tvKey;
+                          const hasDetail = !!(tv.field || tv.type || tv.value !== undefined || tv.purpose);
 
                           return (
                             <div key={tv.id}
-                              className={`border-b ${isAIItem ? 'border-[#fde68a]/30' : 'border-[#f0f0f0]/30'}`}
-                              style={{ paddingLeft: '3.25rem' }}>
+                              className={`border-b ${isAIItem ? 'border-[#fde68a]/30' : 'border-[#f0f0f0]/30'}`}>
 
                               {/* ── TV 헤더 ── */}
                               <div
                                 className={`group flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer transition-colors ${
                                   isAIItem ? 'bg-[#fffbeb]/40 hover:bg-[#fffbeb]/40'
-                                  : isSelected ? 'bg-slate-50'
                                   : 'bg-white hover:bg-slate-50'
                                 }`}
-                                onClick={() => { if (!isTVEditing) { setDetailPanelRow({ level: 'TV', tsId: scenario.id, tcId: tc.id, tvId: tv.id }); setSelectedTvId(tv.id); } }}>
+                                style={{ paddingLeft: '3.25rem' }}
+                                onClick={() => {
+                                  setDetailPanelRow({ level: 'TV', tsId: scenario.id, tcId: tc.id, tvId: tv.id });
+                                  setSelectedTvId(tv.id);
+                                  toggleTvDetail(tvKey);
+                                }}>
 
                                 <input type="checkbox" checked={_selectedTCIds.includes(tvKey)}
                                   onChange={() => toggleTVSelection(tvKey)}
@@ -862,40 +1089,28 @@ onVersionRollback,
                                   isAIItem ? 'bg-[#fef3c7] text-[#d97706]' : 'bg-slate-100 text-slate-500'
                                 }`}>{tv.id}</span>
 
-                                {/* Method + Path 또는 이름 */}
-                                {ep ? (
+                                {/* field: value 미리보기 (없으면 name) */}
+                                {tv.field || tv.value !== undefined ? (
                                   <div className="flex items-center gap-1 flex-1 min-w-0">
-                                    <span className={`text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
-                                    <span className="font-mono text-[9.5px] text-slate-500 truncate">{ep.path}</span>
+                                    <span className="font-mono text-[10px] font-semibold text-slate-600 flex-shrink-0">{tv.field ?? tv.name}</span>
+                                    <span className="text-slate-300 flex-shrink-0">=</span>
+                                    <span className="font-mono text-[10px] text-[#3615CF]/80 truncate">{tv.value === '' ? <em className="not-italic text-slate-400">(빈 값)</em> : String(tv.value ?? '')}</span>
                                   </div>
                                 ) : (
-                                  isTVEditing ? (
-                                    <div className="flex items-center gap-1 flex-1 min-w-0" onClick={e => e.stopPropagation()}>
-                                      <input autoFocus value={editingDetailItem?.value ?? ''}
-                                        onChange={e => setEditingDetailItem((prev: any) => prev ? { ...prev, value: e.target.value } : null)}
-                                        onKeyDown={e => { if (e.key === 'Enter') saveSidebarEdit(); if (e.key === 'Escape') setEditingDetailItem(null); }}
-                                        className="flex-1 min-w-0 text-[10px] bg-white border border-[#3615CF]/50 rounded px-1.5 py-0.5 focus:outline-none" />
-                                      <button onClick={saveSidebarEdit} className="w-5 h-5 flex items-center justify-center rounded bg-status-pass flex-shrink-0"><CheckCircle className="w-3 h-3 text-white" /></button>
-                                      <button onClick={() => setEditingDetailItem(null)} className="w-5 h-5 flex items-center justify-center rounded bg-gray-200 flex-shrink-0"><X className="w-3 h-3 text-gray-500" /></button>
-                                    </div>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-500 truncate flex-1">{tv.name}</span>
-                                  )
+                                  <span className="text-[10px] text-slate-500 truncate flex-1">{tv.name}</span>
                                 )}
 
+                                {isOpen ? <ChevronDown className="w-3 h-3 text-slate-400 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-slate-300 flex-shrink-0" />}
+
                                 {/* 액션 (호버 시 표시) */}
-                                {!isAIItem && !isTVEditing && (
-                                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
-                                    <button onClick={e => { e.stopPropagation(); handleTVCopy(tvKey); }}
+                                {!isAIItem && (
+                                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity" onClick={e => e.stopPropagation()}>
+                                    <button onClick={() => handleTVCopy(tvKey, tv)}
                                       title={isCopied ? '복사됨' : '복사'}
                                       className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isCopied ? 'text-[#3615CF]' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
                                       {isCopied ? <CheckCircle className="w-2.5 h-2.5" /> : <svg className="w-2.5 h-2.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h8"/></svg>}
                                     </button>
-                                    <button onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tv', key: tvKey, value: tv.name }); }}
-                                      title="수정" className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
-                                      <Edit2 className="w-2.5 h-2.5" />
-                                    </button>
-                                    <button onClick={e => { e.stopPropagation(); deleteTV(scenario.id, tc.id, tv.id); }}
+                                    <button onClick={() => deleteTV(scenario.id, tc.id, tv.id)}
                                       title="삭제" className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-red-400 hover:bg-red-50 transition-colors">
                                       <Trash2 className="w-2.5 h-2.5" />
                                     </button>
@@ -903,39 +1118,57 @@ onVersionRollback,
                                 )}
                               </div>
 
-                              {/* ── 엔드포인트 인라인 프리뷰 ── */}
-                              {ep && !isTVEditing && (
-                                <div className="mx-2 mb-1 mt-0.5 rounded border border-slate-100 bg-slate-50 overflow-hidden">
-                                  {/* Request body */}
-                                  <div className="px-2 py-1.5 overflow-x-auto">
-                                    <LightJson obj={ep.requestBody ?? {}} />
+                              {/* ── TV 상세 정보 (펼쳤을 때) — field/type/value/purpose ── */}
+                              {isOpen && (
+                                <div className="mb-1 border-l border-slate-200 pl-3 py-1 space-y-1" style={{ marginLeft: '4.4rem' }}>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">TV 상세 정보</span>
+                                    {!isEditingTvDetail && (
+                                      <button onClick={() => startTvDetailEdit(scenario.id, tc.id, tv.id, tv)}
+                                        title="편집"
+                                        className="w-4 h-4 flex items-center justify-center rounded text-slate-400 hover:text-[#3615CF] hover:bg-[#EAE8F9] transition-colors">
+                                        <Edit2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    )}
                                   </div>
-                                  {/* Status footer */}
-                                  <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-[#EAE8F9]' : 'bg-red-50'}`}>
-                                    <span className={`font-mono text-[9px] font-bold ${isOk ? 'text-[#3615CF]/70' : 'text-red-500'}`}>
-                                      ← {ep.statusCode}
-                                    </span>
-                                    <span className={`text-[9px] ${isOk ? 'text-[#3615CF]' : 'text-red-400'}`}>
-                                      {HTTP_STATUS_TEXT[ep.statusCode] ?? ''}
-                                    </span>
-                                  </div>
+                                  {isEditingTvDetail ? (
+                                    <div className="space-y-1.5">
+                                      {([
+                                        ['field', 'FIELD'], ['type', 'TYPE'], ['value', 'VALUE'], ['purpose', 'PURPOSE'],
+                                      ] as const).map(([draftKey, label]) => (
+                                        <div key={draftKey} className="flex items-center gap-2">
+                                          <span className="w-16 flex-shrink-0 text-[10px] font-semibold text-slate-400">{label}</span>
+                                          <input value={tvDetailEditDraft[draftKey]}
+                                            onChange={e => setTvDetailEditDraft(prev => ({ ...prev, [draftKey]: e.target.value }))}
+                                            className="w-72 max-w-full text-[11px] font-mono bg-white border border-[#3615CF]/30 rounded px-2 py-0.5 focus:outline-none focus:border-[#3615CF]/60" />
+                                        </div>
+                                      ))}
+                                      <div className="flex items-center gap-2 pt-0.5">
+                                        <span className="w-16 flex-shrink-0" />
+                                        <div className="w-72 max-w-full flex items-center justify-end gap-1.5">
+                                          <button onClick={() => saveTvDetailEdit(scenario.id, tc.id, tv.id)}
+                                            className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#3615CF] text-white text-[10px] font-medium hover:opacity-90 transition-opacity">
+                                            <CheckCircle className="w-2.5 h-2.5" /> 저장
+                                          </button>
+                                          <button onClick={() => setTvDetailEditKey(null)}
+                                            className="flex items-center gap-1 px-2 py-0.5 rounded bg-gray-200 text-gray-500 text-[10px] font-medium hover:bg-gray-300 transition-colors">
+                                            <X className="w-2.5 h-2.5" /> 취소
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : hasDetail ? (
+                                    <div className="space-y-0.5">
+                                      <div className="flex gap-2 text-[11px]"><span className="w-16 flex-shrink-0 font-semibold text-slate-400">FIELD</span><span className="font-mono text-slate-700">{tv.field || '-'}</span></div>
+                                      <div className="flex gap-2 text-[11px]"><span className="w-16 flex-shrink-0 font-semibold text-slate-400">TYPE</span><span className="font-mono text-slate-700">{tv.type || '-'}</span></div>
+                                      <div className="flex gap-2 text-[11px]"><span className="w-16 flex-shrink-0 font-semibold text-slate-400">VALUE</span><span className="font-mono text-slate-700">{tv.value === '' ? <em className="not-italic text-slate-400">(빈 값)</em> : String(tv.value ?? '-')}</span></div>
+                                      <div className="flex gap-2 text-[11px]"><span className="w-16 flex-shrink-0 font-semibold text-slate-400">PURPOSE</span><span className="text-slate-600 leading-relaxed">{tv.purpose || '-'}</span></div>
+                                    </div>
+                                  ) : (
+                                    <div className="text-[10px] text-slate-300">상세 정보가 없습니다.</div>
+                                  )}
                                 </div>
                               )}
-                              {/* ── TV 검증 조건 인라인 ── */}
-                              {(() => {
-                                const validations = mockValidationConditions[tvKey] || [];
-                                if (validations.length === 0) return null;
-                                return (
-                                  <div className="mx-2 mb-1.5 space-y-0.5">
-                                    {validations.map((v, i) => (
-                                      <div key={i} className="flex gap-1.5 px-2 py-1 bg-gray-50 rounded border border-[#e5e7eb] text-[10px]">
-                                        <span className="text-[#3615CF] flex-shrink-0 font-bold">✓</span>
-                                        <span className="text-[#6b7280] leading-relaxed">{v}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                );
-                              })()}
                             </div>
                           );
                         })}
@@ -988,17 +1221,17 @@ onVersionRollback,
                     </button>
                   )}
                 </div>
-                {!showReviewActions ? (
+                {!canUseConfirmedVersionActions ? (
                   <button
-                    onClick={() => { if (!hasPendingAIReview && !isGeneratingCode) { onReviewConfirm?.(); setShowReviewActions(true); } }}
-                    disabled={hasPendingAIReview || isGeneratingCode}
+                    onClick={() => { if (!reviewBlocked) { onReviewConfirm?.(); setShowReviewActions(true); clearDraftMark(); } }}
+                    disabled={reviewBlocked}
                     className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-                      hasPendingAIReview || isGeneratingCode
+                      reviewBlocked
                         ? 'bg-[#cfd5dd] text-white cursor-not-allowed'
                         : 'bg-[#3615CF] text-white hover:shadow-md hover:bg-[#3615CF]/90'
                     }`}>
                     <CheckCircle className="w-3.5 h-3.5" />
-                    {isGeneratingCode ? '코드 생성중...' : hasPendingAIReview ? `검토 확인 (${pendingAIReviewCount})` : '검토 확인'}
+                    {reviewButtonLabel}
                   </button>
                 ) : (
                   <>
@@ -1019,7 +1252,7 @@ onVersionRollback,
                         someSelected
                           ? 'border-[#3615CF]/30 text-[#3615CF] hover:bg-[#EAE8F9]'
                           : 'border-[#e5e7eb] text-[#c4c9d4] cursor-default'
-                      } ${showReviewActions ? 'border-solid' : 'border-dashed'}`}>
+                      } ${canUseConfirmedVersionActions ? 'border-solid' : 'border-dashed'}`}>
                       <Plus className="w-3 h-3" />
                       {someSelected ? `${selectedTSCount}개 TS로 그룹 생성` : 'TC를 선택하면 그룹을 생성할 수 있어요'}
                     </button>

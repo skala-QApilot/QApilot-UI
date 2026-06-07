@@ -119,7 +119,7 @@ export function ScenarioChatbar({
               {aiMessages.map((msg, idx) => (
                 <div key={idx}>
                   <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed ${
+                    <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed whitespace-pre-wrap ${
                       msg.role === 'user'
                         ? 'bg-[#EAE8F9] text-[#3615CF]'
                         : 'bg-gray-100 text-[#1a1a2e]'

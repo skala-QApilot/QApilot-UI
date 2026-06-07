@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Folder, Plus, Upload } from 'lucide-react';
 import { useFileStore } from '../../../store/fileStore';
+import { addFileVersion, uploadFile } from '../../../api/files';
 
 const Label = ({ children }: { children: React.ReactNode }) => (
   <span className="text-xs font-bold text-[#9ca3af] uppercase tracking-widest">{children}</span>
@@ -8,20 +9,54 @@ const Label = ({ children }: { children: React.ReactNode }) => (
 
 interface FileListProps {
   showNewButton?: boolean;
+  serviceId?: string | null;
 }
 
-export const FileList = ({ showNewButton = true }: FileListProps) => {
+export const FileList = ({ showNewButton = true, serviceId }: FileListProps) => {
   // fileStore.files 변경 시에만 재계산 (getUiFiles 가 매 호출마다 새 배열을 만들기 때문에 selector 직접 호출 금지).
   const storeFiles = useFileStore((s) => s.files);
   const files = useMemo(() => useFileStore.getState().getUiFiles(), [storeFiles]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const targetFileIdRef = useRef<string | null>(null);
+
+  const triggerUpload = (targetFileId: string | null = null) => {
+    if (!serviceId || uploading) return;
+    targetFileIdRef.current = targetFileId;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const targetFileId = targetFileIdRef.current;
+    targetFileIdRef.current = null;
+    e.target.value = '';
+    if (!file || !serviceId) return;
+    setUploading(true);
+    try {
+      if (targetFileId) {
+        await addFileVersion(serviceId, targetFileId, file);
+      } else {
+        await uploadFile(serviceId, file);
+      }
+      await useFileStore.getState().loadFiles(serviceId);
+    } catch (err) {
+      console.error('파일 업로드 실패', err);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col min-h-0 h-full">
+      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} />
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <Label>Files</Label>
         {showNewButton && (
-          <button className="flex items-center gap-1 text-xs text-[#9ca3af] hover:text-[#3615CF] transition-colors">
-            <Plus className="w-3.5 h-3.5" /> new
+          <button onClick={() => triggerUpload()} disabled={!serviceId || uploading}
+            title={!serviceId ? '서비스를 선택해야 업로드할 수 있습니다' : undefined}
+            className="flex items-center gap-1 text-xs text-[#9ca3af] hover:text-[#3615CF] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#9ca3af]">
+            <Plus className="w-3.5 h-3.5" /> {uploading ? '업로드 중…' : 'new'}
           </button>
         )}
       </div>
@@ -43,7 +78,9 @@ export const FileList = ({ showNewButton = true }: FileListProps) => {
                   미반영
                 </span>
               )}
-              <button className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-[#e5e7eb] text-[#6b7280] hover:bg-gray-50 hover:text-[#1a1a2e] hover:border-[#d0d7de] transition-colors">
+              <button onClick={() => triggerUpload(file.id)} disabled={!serviceId || uploading}
+                title={!serviceId ? '서비스를 선택해야 업로드할 수 있습니다' : undefined}
+                className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-[#e5e7eb] text-[#6b7280] hover:bg-gray-50 hover:text-[#1a1a2e] hover:border-[#d0d7de] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#6b7280]">
                 <Upload className="w-3 h-3" /> 업데이트 +
               </button>
             </div>

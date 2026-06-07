@@ -33,7 +33,7 @@ export function useScenarioState() {
   const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }>>({});
   const [dynamicTestCases, setDynamicTestCases] = useState<TestCaseMap>({});
   const [loadingItemKey, setLoadingItemKey] = useState<string | null>(null);
-  const [editingDetailItem, setEditingDetailItem] = useState<{ type: 'ts' | 'tc' | 'tv'; key: string; value: string } | null>(null);
+  const [editingDetailItem, setEditingDetailItem] = useState<{ type: 'ts' | 'tc'; key: string; value: string } | null>(null);
   const [selectedTvId, setSelectedTvId] = useState<string | null>(null);
   const [selectedScenarioNode, setSelectedScenarioNode] = useState<{ level: 'TS' | 'TC' | 'TV'; tsId: string; tcId?: string; tvId?: string }>({ level: 'TS', tsId: 'TS1' });
   const [highlightedScenarioRow, setHighlightedScenarioRow] = useState<string | null>(null);

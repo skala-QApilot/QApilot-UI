@@ -62,8 +62,8 @@ export async function deleteScenarioVersion(
 export async function restoreScenarioVersion(
   serviceId: string,
   versionId: string,
-): Promise<{ restoredCount: number }> {
-  const res = await api.post<{ restoredCount: number }>(
+): Promise<{ restoredCount: number; snapshotCreatedAt?: string }> {
+  const res = await api.post<{ restoredCount: number; snapshotCreatedAt?: string }>(
     `${basePath(serviceId)}/${encodeURIComponent(versionId)}/restore`,
   );
   return res.data;

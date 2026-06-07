@@ -7,7 +7,7 @@ export interface AgentStartResponse {
   session_id?: string;
 }
 
-export type ScenarioTrigger = 'init' | 'natural_lang' | 'doc_update';
+export type ScenarioTrigger = 'init' | 'natural_lang' | 'doc_update' | 'code_change';
 export type RunFilter = 'all' | 'failed' | 'affected';
 
 export interface ScenarioGenerationPayload {
@@ -21,6 +21,8 @@ export interface ScenarioGenerationPayload {
 
 export interface CodeGenerationPayload {
   scenario_ids?: string[];
+  deleted_tc_ids?: string[];
+  incremental?: boolean;
 }
 
 export interface TestRunPayload {
