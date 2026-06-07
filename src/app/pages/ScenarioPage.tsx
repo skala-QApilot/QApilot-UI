@@ -82,8 +82,10 @@ viewMode: viewModeProp = 'table',
 setViewMode: setViewModeProp,
 showGeneratingOverlay = false,
 setShowGeneratingOverlay,
+scenarioGenProgress = null,
 showCodeGeneratingOverlay = false,
 setShowCodeGeneratingOverlay,
+codeGenProgress = null,
 onPrepareRun,
 onCreateAndRunGroup,
 onVersionDelete,
@@ -487,13 +489,17 @@ onVersionRollback,
 
       {/* 시나리오 생성 오버레이 — 전체 페이지 커버 */}
       {showGeneratingOverlay && (
-        <ScenarioGeneratingOverlay onComplete={() => setShowGeneratingOverlay?.(false)} />
+        <ScenarioGeneratingOverlay
+          onComplete={() => setShowGeneratingOverlay?.(false)}
+          progress={scenarioGenProgress}
+        />
       )}
 
       {/* 코드 생성 오버레이 — Layer 1B (action-mapping + Playwright 코드 작성). */}
       {showCodeGeneratingOverlay && (
         <ScenarioGeneratingOverlay
           onComplete={() => setShowCodeGeneratingOverlay?.(false)}
+          progress={codeGenProgress}
           steps={[
             { message: '시나리오를 분석하는 중...', duration: 2000 },
             { message: '액션 매핑을 작성하는 중...', duration: 2400 },

@@ -40,6 +40,7 @@ import { startRun, listAllRuns, resumeRun } from '../api/runs';
 import { useTestStore } from '../store/testStore';
 import { CodeGenConfirmModal } from './components/CodeGenConfirmModal';
 import { useTracePolling } from '../hooks/useTracePolling';
+import { useRunStream } from '../hooks/useRunStream';
 import { useScenarioStore, toUiScenario, toUiTestCase, toUiVersion, toUiAIItemsByScenario } from '../store/scenarioStore';
 import { ApiError, onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
@@ -592,6 +593,15 @@ export default function App() {
   );
   const scenarioGenPolling = useTracePolling(scenarioGenPollingServiceId, scenarioGenTraceId);
 
+  // 시나리오 생성 실시간 진행률 — SSE `progress` 이벤트로 오버레이 바를 구동.
+  // 생성 시작 시 {percent:0} 로 seed 하므로(아래 handleSetupComplete) 처음부터 controlled 모드 →
+  // 타이머 자동완료 race 없음. lastEvent 처리는 syncScenarioFromStore 정의 이후 effect 에서.
+  const [scenarioGenProgress, setScenarioGenProgress] =
+    useState<{ percent: number; message?: string } | null>(null);
+  const scenarioGenStream = useRunStream(scenarioGenPollingServiceId, scenarioGenTraceId, {
+    enabled: !!scenarioGenTraceId,
+  });
+
   /**
    * scenarioStore.loadAll(serviceId) 호출 + 결과를 dynamic* state 로 sync.
    * 사용처: 폴링 완료 시, 또는 페이지 진입/새로고침 시.
@@ -684,21 +694,55 @@ export default function App() {
     if (scenarioGenPolling.status === 'completed') {
       if (scenarioGenPollingServiceId) {
         syncScenarioFromStore(scenarioGenPollingServiceId);
+        // 생성 도중 백엔드가 초기 RTM 버전을 막 만들었으므로 RTM 도 다시 로드.
+        // (서비스 진입 effect 의 loadVersions 는 버전 생성 전에 1회 돌고 끝나 비어있음)
+        useRtmStore.getState().loadVersions(scenarioGenPollingServiceId).catch((err) => {
+          console.error('생성 완료 후 RTM loadVersions 실패', err);
+        });
       }
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
+      setScenarioGenProgress(null);
     } else if (scenarioGenPolling.status === 'aborted' || scenarioGenPolling.status === 'error') {
       console.error('시나리오 생성 실패', scenarioGenPolling.error);
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
+      setScenarioGenProgress(null);
     }
   }, [scenarioGenPolling.status, scenarioGenPolling.error, scenarioGenTraceId, scenarioGenPollingServiceId, syncScenarioFromStore]);
+
+  // SSE 이벤트 처리 — progress 는 바 구동, terminal status 는 overlay 닫기(폴링과 이중 안전망).
+  useEffect(() => {
+    const ev = scenarioGenStream.lastEvent;
+    if (!ev || !ev.data) return;
+    if (ev.type === 'progress') {
+      const percent = Number(ev.data.percent);
+      if (!Number.isNaN(percent)) {
+        setScenarioGenProgress({ percent, message: ev.data.message as string | undefined });
+      }
+    } else if (ev.type === 'status') {
+      const st = String(ev.data.status ?? '').toLowerCase();
+      if (st === 'completed' || st === 'succeeded' || st === 'aborted' || st === 'error') {
+        if (scenarioGenPollingServiceId) syncScenarioFromStore(scenarioGenPollingServiceId);
+        setShowScenarioGenerating(false);
+        setScenarioGenTraceId(null);
+        setScenarioGenProgress(null);
+      }
+    }
+  }, [scenarioGenStream.lastEvent, scenarioGenPollingServiceId, syncScenarioFromStore]);
 
   // ── Layer 1B: 코드 생성 (검토 확인 → 모달 → 트리거) ─────────────────────────
   const [codeGenConfirmOpen, setCodeGenConfirmOpen] = useState(false);
   const [showCodeGenerating, setShowCodeGenerating] = useState(false);
   const [codeGenTraceId, setCodeGenTraceId] = useState<string | null>(null);
   const codeGenPolling = useTracePolling(scenarioGenPollingServiceId, codeGenTraceId);
+
+  // 코드 생성 실시간 진행률 — 시나리오 생성과 동일 메커니즘.
+  const [codeGenProgress, setCodeGenProgress] =
+    useState<{ percent: number; message?: string } | null>(null);
+  const codeGenStream = useRunStream(scenarioGenPollingServiceId, codeGenTraceId, {
+    enabled: !!codeGenTraceId,
+  });
   useEffect(() => {
     if (!codeGenTraceId) return;
     if (codeGenPolling.status === 'completed') {
@@ -709,12 +753,34 @@ export default function App() {
       }
       setShowCodeGenerating(false);
       setCodeGenTraceId(null);
+      setCodeGenProgress(null);
     } else if (codeGenPolling.status === 'aborted' || codeGenPolling.status === 'error') {
       console.error('코드 생성 실패', codeGenPolling.error);
       setShowCodeGenerating(false);
       setCodeGenTraceId(null);
+      setCodeGenProgress(null);
     }
   }, [codeGenPolling.status, codeGenPolling.error, codeGenTraceId, scenarioGenPollingServiceId, syncScenarioFromStore]);
+
+  // SSE 이벤트 처리 — progress 바 구동 + terminal status 닫기 (시나리오 생성과 동일).
+  useEffect(() => {
+    const ev = codeGenStream.lastEvent;
+    if (!ev || !ev.data) return;
+    if (ev.type === 'progress') {
+      const percent = Number(ev.data.percent);
+      if (!Number.isNaN(percent)) {
+        setCodeGenProgress({ percent, message: ev.data.message as string | undefined });
+      }
+    } else if (ev.type === 'status') {
+      const st = String(ev.data.status ?? '').toLowerCase();
+      if (st === 'completed' || st === 'succeeded' || st === 'aborted' || st === 'error') {
+        if (scenarioGenPollingServiceId) syncScenarioFromStore(scenarioGenPollingServiceId);
+        setShowCodeGenerating(false);
+        setCodeGenTraceId(null);
+        setCodeGenProgress(null);
+      }
+    }
+  }, [codeGenStream.lastEvent, scenarioGenPollingServiceId, syncScenarioFromStore]);
 
   /** 모달의 "생성 시작" 클릭 시 호출 — Spring `POST /api/services/{id}/code-generation` 트리거. */
   const handleStartCodeGen = async () => {
@@ -725,6 +791,8 @@ export default function App() {
       return;
     }
     try {
+      // {percent:0} seed → 처음부터 controlled 모드 (타이머 자동완료 비활성).
+      setCodeGenProgress({ percent: 0, message: '생성을 준비하는 중...' });
       setShowCodeGenerating(true);
       const resp = await startCodeGeneration(scenarioGenPollingServiceId, null, token);
       setCodeGenTraceId(resp.trace_id);
@@ -962,6 +1030,10 @@ export default function App() {
 
       // 시나리오 생성 자동 트리거 — agent API 는 service_id (UUID) 기반.
       try {
+        // {percent:0} 로 seed → 오버레이가 처음부터 controlled 모드(타이머 자동완료 비활성).
+        // 실제 바는 SSE progress 이벤트가, 닫기는 완료 status/폴링이 구동한다.
+        // 첫 단계 doc_import 는 문서 임베딩/색인(bge-m3) 단계라 수십 초 소요 → 메시지로 명시.
+        setScenarioGenProgress({ percent: 0, message: '문서를 임베딩하는 중...' });
         setShowScenarioGenerating(true);
         const resp = await startScenarioGeneration(created.serviceId, { trigger: 'init' }, token);
         setScenarioGenTraceId(resp.trace_id);
@@ -1301,8 +1373,10 @@ export default function App() {
                   // 현 시점에서 dynamic* 는 hook 내부 local state 이므로 mock-reset 로직 자체 제거.
                   // 실제 데이터는 generation 완료 후 trace polling 이 scenarioStore.loadAll() 트리거.
                 }}
+                scenarioGenProgress={scenarioGenProgress}
                 showCodeGeneratingOverlay={showCodeGenerating}
                 setShowCodeGeneratingOverlay={setShowCodeGenerating}
+                codeGenProgress={codeGenProgress}
                 onPrepareRun={handlePrepareRun}
                 onCreateAndRunGroup={handleCreateAndRunGroup}
                 onVersionDelete={handleVersionDelete}
