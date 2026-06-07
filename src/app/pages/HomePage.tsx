@@ -592,7 +592,7 @@ export function HomePage({
             </div>
 
             {/* 이력 */}
-            <div className="flex-1 min-w-0 rounded-[2.5rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm px-8 py-7">
+            <div className="flex-1 min-w-0 rounded-[2.5rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm px-8 py-7 overflow-y-auto">
               <Label>이력</Label>
               <div className="mt-4 space-y-0.5">
                 {executionHistory.map(exec => (
