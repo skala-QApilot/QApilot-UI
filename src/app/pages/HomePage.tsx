@@ -511,6 +511,7 @@ export function HomePage({
   navigateToHistory,
   activeTab = 'overview',
   serviceName = 'My Project',
+  serviceId,
   projectSlug,
   projectMeta,
   projectSummary,
@@ -521,6 +522,7 @@ export function HomePage({
   navigateToHistory: (filter: string) => void;
   activeTab?: string;
   serviceName?: string;
+  serviceId?: string | null;
   projectSlug?: string;
   projectMeta?: ProjectMeta | null;
   projectSummary?: ProjectSummary | null;
@@ -588,7 +590,7 @@ export function HomePage({
 
             {/* FILES */}
             <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col rounded-[2.5rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm px-8 py-7">
-              <FileList />
+              <FileList serviceId={serviceId} />
             </div>
 
             {/* 이력 */}

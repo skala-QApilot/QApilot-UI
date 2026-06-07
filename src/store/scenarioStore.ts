@@ -121,8 +121,8 @@ export function toUiVersion(v: versionsApi.ScenarioVersion): UiScenarioVersion {
     id: v.versionId,
     label: v.label,
     date: (v.createdAt || '').slice(0, 10),
-    // hasChange 는 Spring 직접 필드 아님 — 향후 description 패턴으로 derive 가능
-    hasChange: Boolean(v.description && v.description.trim()),
+    // DB에서 가져온 버전은 항상 사용자가 확정한 마일스톤 → hasChange=false
+    hasChange: false,
     isFavorite: Boolean(v.isFavorite),
     changeDesc: v.description,
   };
@@ -227,11 +227,12 @@ export const useScenarioStore = create<ScenarioState>()((set, get) => ({
   loadAll: async (serviceId) => {
     set({ loadState: 'loading', error: null });
     try {
+      // 각 API를 독립 실행 — 하나 실패해도 나머지는 정상 로드
       const [scenarios, versions, changeRequests, groups] = await Promise.all([
-        scenariosApi.listScenarios(serviceId),
-        versionsApi.listScenarioVersions(serviceId),
-        changeRequestsApi.listChangeRequests(serviceId),
-        groupsApi.listScenarioGroups(serviceId),
+        scenariosApi.listScenarios(serviceId).catch(() => [] as scenariosApi.Scenario[]),
+        versionsApi.listScenarioVersions(serviceId).catch(() => [] as versionsApi.ScenarioVersion[]),
+        changeRequestsApi.listChangeRequests(serviceId).catch(() => [] as changeRequestsApi.ChangeRequest[]),
+        groupsApi.listScenarioGroups(serviceId).catch(() => [] as groupsApi.ScenarioGroup[]),
       ]);
       // 시나리오 nested test_cases 를 testCasesByTs 캐시에 풀어둠 (펼침 시 즉시 표시).
       const testCasesByTs: Record<string, scenariosApi.TestCase[]> = {};

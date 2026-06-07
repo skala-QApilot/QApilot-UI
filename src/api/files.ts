@@ -29,3 +29,12 @@ export async function uploadFile(serviceId: string, file: File): Promise<DomainF
   });
   return res.data.file;
 }
+
+export async function addFileVersion(serviceId: string, fileId: string, file: File): Promise<DomainFile> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await api.post<{ file: DomainFile }>(`${basePath(serviceId)}/${encodeURIComponent(fileId)}/versions`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data.file;
+}

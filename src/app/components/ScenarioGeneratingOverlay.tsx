@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import loadingGif from '../../assets/loading.gif';
 
 export interface OverlayStep {
@@ -28,7 +28,7 @@ interface Props {
 }
 
 export default function ScenarioGeneratingOverlay({ onComplete, steps, progress }: Props) {
-  const STEPS = steps ?? SCENARIO_STEPS;
+  const STEPS = useMemo(() => steps ?? SCENARIO_STEPS, [steps]);
   const controlled = progress != null;
   const [stepIdx, setStepIdx] = useState(0);
   const [displayPct, setDisplayPct] = useState(0);
@@ -62,7 +62,7 @@ export default function ScenarioGeneratingOverlay({ onComplete, steps, progress 
     if (stepIdx >= STEPS.length) return;
     const t = setTimeout(() => setStepIdx(s => s + 1), STEPS[stepIdx].duration);
     return () => clearTimeout(t);
-  }, [stepIdx, controlled]);
+  }, [stepIdx, STEPS, controlled]);
 
   // 타이머 기반 자동 완료 — controlled 모드에서는 부모(trace 폴링)가 닫는다.
   useEffect(() => {

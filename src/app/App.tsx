@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { FileList } from './components/common/FileList';
 import AgentTracePanel from './components/AgentTracePanel';
-import { ScenarioManagerPanel } from './components/ScenarioManagerPanel';
 import { ScenarioChatbar } from './components/ScenarioChatbar';
 import { LinkedFilesModal } from './components/LinkedFilesModal';
 import { RetestNavModal } from './components/RetestNavModal';
@@ -32,7 +31,7 @@ import { useNotificationStore } from '../store/notificationStore';
 import { useRtmStore } from '../store/rtmStore';
 // loadVersions 는 service 진입 useEffect 에서 useRtmStore.getState().loadVersions(...) 로 호출.
 import { useFileStore } from '../store/fileStore';
-import { startScenarioGeneration, startCodeGeneration } from '../api/agent';
+import { startScenarioGeneration, startCodeGeneration, startCodeChangeDetection } from '../api/agent';
 import { uploadFile } from '../api/files';
 import { createScenarioGroup } from '../api/scenarioGroups';
 import { createScenarioVersion, deleteScenarioVersion, restoreScenarioVersion } from '../api/scenarioVersions';
@@ -47,6 +46,96 @@ import { useAuthStore } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { useScenarioState } from './hooks/useScenarioState';
 const qapilotAgent = new URL('../assets/qapilot-agent.png', import.meta.url).href;
+
+type CodeGenDelta = {
+  scenarioIds: string[];
+  deletedTcIds: string[];
+  incremental: boolean;
+};
+
+function normalizeForCodegenDiff(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeForCodegenDiff);
+  if (value && typeof value === 'object') {
+    const source = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) {
+      if (['last_run_at', 'last_run_status', 'has_pending_changes', 'status'].includes(key)) continue;
+      out[key] = normalizeForCodegenDiff(source[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+function testCaseIds(snapshot: Array<Record<string, unknown>>): Set<string> {
+  const ids = new Set<string>();
+  for (const ts of snapshot) {
+    const testCases = Array.isArray(ts.test_cases) ? ts.test_cases : [];
+    for (const tc of testCases) {
+      if (tc && typeof tc === 'object') {
+        const tcId = String((tc as Record<string, unknown>).tc_id || '');
+        if (tcId) ids.add(tcId);
+      }
+    }
+  }
+  return ids;
+}
+
+function buildCurrentScenarioSnapshot(
+  scenarios: ReturnType<typeof toUiScenario>[],
+  testCasesByTs: Record<string, ReturnType<typeof toUiTestCase>[]>,
+): Array<Record<string, unknown>> {
+  return scenarios.map((scenario) => ({
+    ts_id: scenario.id,
+    name: scenario.name,
+    test_cases: (testCasesByTs[scenario.id] || []).map((tc) => ({
+      tc_id: tc.id,
+      name: tc.name,
+      given: tc.given,
+      when: tc.when,
+      then: tc.then,
+      tags: tc.tags || [],
+      values: (tc.values || []).map((value) => ({
+        field: value.field || value.id,
+        value: value.value,
+        type: value.type,
+        purpose: value.purpose,
+      })),
+    })),
+  }));
+}
+
+function computeCodeGenDelta(
+  previousSnapshot: Array<Record<string, unknown>> | null | undefined,
+  currentSnapshot: Array<Record<string, unknown>>,
+): CodeGenDelta | null {
+  if (!previousSnapshot || previousSnapshot.length === 0) return null;
+
+  const previousByTs = new Map(previousSnapshot.map((ts) => [String(ts.ts_id || ''), ts]));
+  const currentByTs = new Map(currentSnapshot.map((ts) => [String(ts.ts_id || ''), ts]));
+  const scenarioIds: string[] = [];
+
+  for (const [tsId, current] of currentByTs) {
+    if (!tsId) continue;
+    const previous = previousByTs.get(tsId);
+    if (!previous) {
+      scenarioIds.push(tsId);
+      continue;
+    }
+    const prevJson = JSON.stringify(normalizeForCodegenDiff(previous));
+    const currJson = JSON.stringify(normalizeForCodegenDiff(current));
+    if (prevJson !== currJson) scenarioIds.push(tsId);
+  }
+
+  const currentTcIds = testCaseIds(currentSnapshot);
+  const deletedTcIds = [...testCaseIds(previousSnapshot)].filter((tcId) => !currentTcIds.has(tcId));
+
+  return {
+    scenarioIds,
+    deletedTcIds,
+    incremental: true,
+  };
+}
 
 // 예약 최상위 경로(프로젝트 slug가 아닌 라우트)
 const RESERVED_TOP_SEGMENTS = new Set(['login', 'services', 'setup']);
@@ -193,13 +282,12 @@ export default function App() {
 
   // ── RTM state ────────────────────────────────────────────────────────────
 
-  // scenario manager panel
-  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  // chatbot state
   const [aiMessages, setAiMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([
     { role: 'assistant', text: '테스트할 기능을 자연어로 설명해 주세요. 시나리오와 테스트 케이스를 자동으로 생성/수정해 드립니다.' },
   ]);
   const [aiInput, setAiInput] = useState('');
-  const [aiContextPrefill, setAiContextPrefill] = useState('');
+  const chatSessionIdRef = useRef<string | null>(null);
 
   // test group management
   const [testDepth, setTestDepth] = useState<0 | 1>(0);
@@ -229,9 +317,6 @@ export default function App() {
   const [chatContextTag, setChatContextTag] = useState<string | null>(null);
   const [inlineDiffId, setInlineDiffId] = useState<string | null>(null);
   const [highlightedBotRow, setHighlightedBotRow] = useState<string | null>(null);
-  const codeChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fileChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [fileChangeDetected, setFileChangeDetected] = useState(false);
 
   // 테스트 페이지 (진행중 / 이력) — status 의 의미:
   //   running   = 파이프라인 진행 중
@@ -407,13 +492,6 @@ export default function App() {
   }, [currentPage]);
 
   useEffect(() => {
-    return () => {
-      if (codeChangeTimerRef.current) window.clearTimeout(codeChangeTimerRef.current);
-      if (fileChangeTimerRef.current) window.clearTimeout(fileChangeTimerRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
     if (currentPage !== '테스트') {
       setSelectedRunningForDetail(null);
       setSelectedExecutionId(null);
@@ -452,68 +530,36 @@ export default function App() {
     navigate(`/${currentSlug}/test`);
   };
 
-  const sendAiMessage = (text: string) => {
-    setAiMessages(prev => [...prev, { role: 'user', text }]);
-    setAiInput('');
-    setTimeout(() => {
-      setAiMessages(prev => [...prev, { role: 'assistant', text: `"${text}" 관련 시나리오를 분석하고 있습니다...` }]);
-    }, 500);
-    if (currentPage === '시나리오') {
-      setTimeout(() => {
-        setAiMessages(prev => [...prev, { role: 'assistant', text: '시나리오 초안을 생성했습니다. 사이드바에서 확인 후 승인해 주세요.' }]);
-        const newId = `TS${dynamicScenarios.length + 1}`;
-        const label = text.length > 20 ? text.slice(0, 20) + '...' : text;
-        setDynamicScenarios(prev => [...prev, {
-          id: newId, name: label, status: 'pending', testCases: 2, hasChanges: false, lastRunAt: null,
-        }]);
-        setDynamicAIItems(prev => ({ ...prev, [newId]: { reason: text.slice(0, 50), trigger: 'chatbot', timestamp: new Date().toISOString().slice(0, 16).replace('T', ' ') } }));
-        setDynamicTestCases(prev => ({
-          ...prev,
-          [newId]: [
-            { id: 'TC1', name: 'AI 기본 케이스', status: 'pending', values: [
-              { id: 'TV1', name: '정상 입력', field: 'input', value: '', type: 'string', purpose: 'normal', status: 'pending' },
-              { id: 'TV2', name: '경계값 입력', field: 'input', value: '', type: 'string', purpose: 'boundary', status: 'pending' },
-            ] },
-            { id: 'TC2', name: 'AI 엣지 케이스', status: 'pending', values: [
-              { id: 'TV1', name: '오류 입력', field: 'input', value: '', type: 'string', purpose: 'edge', status: 'pending' },
-            ] },
-          ],
-        }));
-        setExpandedTSForTC(prev => [...prev, newId]);
-      }, 1500);
-    }
-  };
-
-  const openAiWithContext = (context: string) => {
-    setAiContextPrefill(context);
-    setAiPanelOpen(true);
-    setScenarioQuickOpen(false);
-    setAiMessages(prev => [...prev,
-      { role: 'user', text: `[수정 요청] ${context}` },
-      { role: 'assistant', text: '해당 변경사항에 대한 시나리오를 수정하겠습니다. 구체적인 요구사항을 알려주세요.' },
-    ]);
-  };
 
   const onReviewConfirm = async () => {
     const stableVersions = scenarioVersions.filter(v => !v.hasChange);
-    const latestLabel = stableVersions[stableVersions.length - 1]?.label ?? 'v1.0';
+    // scenarioVersions는 Spring DESC 순 (최신이 index 0) → 첫 번째가 최신 라벨
+    const latestLabel = stableVersions[0]?.label ?? 'v1.0';
     const match = latestLabel.match(/^v(\d+)\.(\d+)$/);
     const [major, minor] = match ? [parseInt(match[1]), parseInt(match[2])] : [1, 0];
     let newLabel = `v${major}.${minor + 1}`;
-    const today = new Date();
-    const date = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    let saved = false;
 
     // 백엔드 박제 — 현재 시점 시나리오 N개를 통째로 scenario_versions row 로 저장.
     // UNIQUE(service_id, label) 충돌 시 minor 한 단계 더 올려 재시도 (자동 계산 미스 안전망).
     const token = useAuthStore.getState().accessToken;
-    if (selectedServiceId && token) {
+    const versionServiceId = scenarioGenPollingServiceId ?? selectedServiceId;
+    const storeVersionsBeforeSave = useScenarioStore.getState().versions;
+    const previousMilestone = storeVersionsBeforeSave[0];
+    const previousConfirmed = previousMilestone?.description === '검토 확인 시 자동 저장'
+      ? previousMilestone.scenariosSnapshot
+      : null;
+    const currentSnapshot = buildCurrentScenarioSnapshot(dynamicScenarios, dynamicTestCases);
+    const codeGenDelta = computeCodeGenDelta(previousConfirmed, currentSnapshot);
+    if (versionServiceId && token) {
       let attempt = 0;
       while (attempt < 3) {
         try {
-          await createScenarioVersion(selectedServiceId, {
+          await createScenarioVersion(versionServiceId, {
             label: newLabel,
             description: '검토 확인 시 자동 저장',
           });
+          saved = true;
           break;
         } catch (err: any) {
           // UNIQUE 충돌이면 라벨 +1 후 재시도, 그 외엔 중단.
@@ -529,53 +575,55 @@ export default function App() {
       }
     }
 
-    setScenarioVersions([
-      ...stableVersions,
-      { id: newLabel, label: newLabel, date, hasChange: false, isFavorite: false },
-    ]);
-    setSelectedScenarioVersion(newLabel);
     setAiItemActions({});
     setDynamicAIItems({});
+    setPendingCodeGenDelta(codeGenDelta);
+
+    if (saved && versionServiceId) {
+      // DB에 정상 저장된 경우 → DB에서 실제 데이터 재로드 (순서/날짜 일관성 보장)
+      await syncScenarioFromStore(versionServiceId);
+    }
+
     // 검토 완료 → 코드 생성 시작 여부 확인 모달.
     setCodeGenConfirmOpen(true);
   };
 
-  const triggerCodeChangeDetection = () => {
-    if (codeChangeTimerRef.current) window.clearTimeout(codeChangeTimerRef.current);
+  const triggerCodeChangeDetection = async () => {
+    const serviceId = scenarioGenPollingServiceId;
+    const token = useAuthStore.getState().accessToken;
+    if (!serviceId || !token) {
+      console.error('코드 변경 탐지 실패: 서비스 또는 인증 정보가 없습니다.');
+      return;
+    }
     setCodeChangeDetected(true);
-    codeChangeTimerRef.current = window.setTimeout(() => {
-      setDynamicAIItems(prev => ({
-        ...prev,
-        TS1: prev.TS1 ?? { reason: 'login.tsx 비밀번호 검증 로직 변경 감지', trigger: 'code', timestamp: '2026-04-27 10:23' },
-      }));
-      setExpandedTSForTC(prev => prev.includes('TS1') ? prev : [...prev, 'TS1']);
+    try {
+      setShowScenarioGenerating(true);
+      const resp = await startCodeChangeDetection(serviceId, token);
+      setScenarioGenTraceId(resp.trace_id);
+    } catch (err) {
+      console.error('code_change 파이프라인 트리거 실패', err);
+      setShowScenarioGenerating(false);
       setCodeChangeDetected(false);
-      codeChangeTimerRef.current = null;
-    }, 1800);
+    }
   };
 
-  const triggerFileChangeDetection = () => {
+  const triggerFileChangeDetection = async () => {
+    const serviceId = scenarioGenPollingServiceId;
+    const token = useAuthStore.getState().accessToken;
+    if (!serviceId || !token) {
+      console.error('수정 요청 실패: 서비스 또는 인증 정보가 없습니다.');
+      return;
+    }
     setShowLinkedFiles(false);
     navigate(`/${currentSlug}/scenarios`);
-    if (fileChangeTimerRef.current) window.clearTimeout(fileChangeTimerRef.current);
-    setFileChangeDetected(true);
-    fileChangeTimerRef.current = window.setTimeout(() => {
-      const unreflected = useFileStore.getState().getUiFiles().filter(f => !f.reflected);
-      unreflected.forEach(file => {
-        const targetId = 'TS2';
-        setDynamicAIItems(prev => ({
-          ...prev,
-          [targetId]: prev[targetId] ?? {
-            reason: `${file.name} ${file.version} 업데이트 내용 시나리오 반영 필요`,
-            trigger: 'file' as const,
-            timestamp: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          },
-        }));
-        setExpandedTSForTC(prev => prev.includes(targetId) ? prev : [...prev, targetId]);
-      });
-      setFileChangeDetected(false);
-      fileChangeTimerRef.current = null;
-    }, 1800);
+    try {
+      setShowScenarioGenerating(true);
+      const resp = await startScenarioGeneration(serviceId, { trigger: 'doc_update' }, token);
+      setScenarioGenTraceId(resp.trace_id);
+    } catch (err) {
+      console.error('doc_update 파이프라인 트리거 실패', err);
+      setShowScenarioGenerating(false);
+    }
   };
 
 
@@ -610,6 +658,8 @@ export default function App() {
     try {
       await useScenarioStore.getState().loadAll(serviceId);
       const s = useScenarioStore.getState();
+      console.log('[syncScenario] scenarios count:', s.scenarios.length, 'ids:', s.scenarios.map(sc => sc.ts_id));
+      console.log('[syncScenario] changeRequests:', s.changeRequests);
       setDynamicScenarios(s.scenarios.map(toUiScenario));
       const tcMap: Record<string, ReturnType<typeof toUiTestCase>[]> = {};
       for (const [tsId, list] of Object.entries(s.testCasesByTs)) {
@@ -618,25 +668,147 @@ export default function App() {
       setDynamicTestCases(tcMap);
       // UiAIItem (5 fields) → dynamicAIItem shape (3 fields, trigger narrowed)
       const uiAi = toUiAIItemsByScenario(s.changeRequests);
-      const aiMap: Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }> = {};
+      const aiMap: Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string; requestId?: string }> = {};
       for (const [tsId, item] of Object.entries(uiAi)) {
         const trigger: 'file' | 'chatbot' | 'code' =
           item.trigger === 'file' || item.trigger === 'chatbot' || item.trigger === 'code'
             ? item.trigger : 'chatbot';
-        aiMap[tsId] = { reason: item.reason, trigger, timestamp: item.timestamp };
+        aiMap[tsId] = { reason: item.reason, trigger, timestamp: item.timestamp, requestId: item.requestId };
       }
       setDynamicAIItems(aiMap);
-      setScenarioVersions(s.versions.map(toUiVersion));
+      // natural_lang으로 새 pending 요청이 생긴 ts_id는 aiItemActions에서 제거
+      // 이전 승인/거절 상태가 새 pending 요청을 가리는 문제 방지
+      if (Object.keys(aiMap).length > 0) {
+        setAiItemActions(prev => {
+          const next = { ...prev };
+          for (const tsId of Object.keys(aiMap)) {
+            delete next[tsId];
+          }
+          return next;
+        });
+      }
+      const uiVersions = s.versions.map(toUiVersion);
+      setScenarioVersions(uiVersions);
+      // Spring은 createdAt DESC(최신순) 반환 → 첫 번째가 최신 버전
+      if (uiVersions.length > 0) {
+        setSelectedScenarioVersion(uiVersions[0].id);
+      }
     } catch (err) {
       console.error('시나리오 reload 실패', err);
     }
-  }, [setDynamicScenarios, setDynamicTestCases, setDynamicAIItems, setScenarioVersions]);
+  }, [setDynamicScenarios, setDynamicTestCases, setDynamicAIItems, setScenarioVersions, setAiItemActions, setSelectedScenarioVersion]);
 
   // 페이지 진입/새로고침 시 자동 로드 — service 가 확정되면 1회.
   useEffect(() => {
     if (!scenarioGenPollingServiceId) return;
     syncScenarioFromStore(scenarioGenPollingServiceId);
+    useFileStore.getState().loadFiles(scenarioGenPollingServiceId).catch(err => console.error('파일 목록 로드 실패', err));
   }, [scenarioGenPollingServiceId, syncScenarioFromStore]);
+
+  // 버전 노드 클릭 → loadAll에서 이미 받아온 scenariosSnapshot을 store에서 직접 읽어 교체
+  const handleVersionSelect = useCallback((versionId: string) => {
+    setSelectedScenarioVersion(versionId);
+    const storeVersions = useScenarioStore.getState().versions;
+    const matched = storeVersions.find(v => v.versionId === versionId);
+    const snapshot = matched?.scenariosSnapshot;
+    if (!snapshot || snapshot.length === 0) return;
+    const snapScenarios = snapshot.map((ts: any) => toUiScenario(ts as any));
+    const snapTcMap: Record<string, ReturnType<typeof toUiTestCase>[]> = {};
+    for (const ts of snapshot as any[]) {
+      if (Array.isArray(ts.test_cases)) {
+        snapTcMap[String(ts.ts_id)] = ts.test_cases.map((tc: any) => toUiTestCase(tc));
+      }
+    }
+    setDynamicScenarios(snapScenarios);
+    setDynamicTestCases(snapTcMap);
+  }, [setDynamicScenarios, setDynamicTestCases]);
+
+
+
+  // 서비스 전환 시 챗봇 세션 초기화 — 이전 서비스 대화 이력·세션 ID 제거
+  useEffect(() => {
+    if (!scenarioGenPollingServiceId) return;
+    chatSessionIdRef.current = null;
+    setAiMessages([
+      { role: 'assistant', text: '테스트할 기능을 자연어로 설명해 주세요. 시나리오와 테스트 케이스를 자동으로 생성/수정해 드립니다.' },
+    ]);
+    setAiInput('');
+  }, [scenarioGenPollingServiceId]);
+
+  // ── 챗봇 오류 메시지 파싱 — 기술적 접두사 제거 ─────────────────────────────
+  const parseChatError = (raw: string): string => {
+    if (!raw) return '처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+    const cleaned = raw
+      .replace(/^\w*Error:\s*/i, '')      // "EntExecutionError: " 제거
+      .replace(/^\[[\w_\d]+\]\s*/i, '')   // "[AGENT_003] " 제거
+      .trim();
+    return cleaned || '처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+  };
+
+  // ── 챗봇 메시지 전송 — natural_lang 파이프라인 연결 ──────────────────────────
+  const sendAiMessage = useCallback(async (text: string) => {
+    setAiMessages(prev => [...prev, { role: 'user', text }]);
+    setAiInput('');
+
+    const serviceId = scenarioGenPollingServiceId;
+    const token = useAuthStore.getState().accessToken;
+    if (!serviceId || !token) {
+      setAiMessages(prev => [...prev, { role: 'assistant', text: '서비스가 선택되지 않았습니다. 서비스를 먼저 선택해 주세요.' }]);
+      return;
+    }
+
+    setAiMessages(prev => [...prev, { role: 'assistant', text: '분석 중입니다...' }]);
+
+    try {
+      const resp = await startScenarioGeneration(serviceId, {
+        trigger: 'natural_lang',
+        user_input: text,
+        session_id: chatSessionIdRef.current ?? undefined,
+      }, token);
+
+      if (resp.session_id) chatSessionIdRef.current = resp.session_id;
+
+      const poll = async () => {
+        const { getTrace } = await import('../api/trace');
+        for (let i = 0; i < 90; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const trace = await getTrace(serviceId, resp.trace_id, token);
+          if (trace.status === 'completed') {
+            const summary = (trace.result_summary ?? {}) as Record<string, unknown>;
+            const qs = (summary.query_status as string) ?? 'sufficient';
+            const feedback = (summary.query_feedback as string) ?? '';
+            if (qs === 'sufficient') {
+              const changeSummary = summary.change_summary as string[] | null;
+              const successText = changeSummary && changeSummary.length > 0
+                ? `업데이트가 완료됐습니다.\n\n변경 내용\n${changeSummary.map(s => `• ${s.replace(/\*\*/g, '')}`).join('\n')}`
+                : '시나리오 생성/수정이 완료됐습니다.';
+              setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: successText }]);
+              syncScenarioFromStore(serviceId);
+            } else {
+              setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: feedback || '요청을 처리할 수 없습니다.' }]);
+            }
+            return;
+          }
+          if (trace.status === 'aborted') {
+            setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: parseChatError(trace.error ?? '') }]);
+            return;
+          }
+        }
+        setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: '응답 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.' }]);
+      };
+      poll();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      setAiMessages(prev => [...prev.slice(0, -1), { role: 'assistant', text: parseChatError(msg) }]);
+    }
+  }, [scenarioGenPollingServiceId, syncScenarioFromStore]);
+
+  const openAiWithContext = useCallback((context: string) => {
+    setAiMessages(prev => [...prev,
+      { role: 'user', text: `[수정 요청] ${context}` },
+      { role: 'assistant', text: '해당 변경사항에 대한 시나리오를 수정하겠습니다. 구체적인 요구사항을 알려주세요.' },
+    ]);
+  }, []);
 
   // service UUID 가 확정되면 backend 에서 test runs 이력 복원 + testStore 로드.
   // 새로고침 후에도 실행중/완료된 테스트 목록을 그대로 표시한다.
@@ -703,13 +875,15 @@ export default function App() {
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
       setScenarioGenProgress(null);
+      setCodeChangeDetected(false);
     } else if (scenarioGenPolling.status === 'aborted' || scenarioGenPolling.status === 'error') {
       console.error('시나리오 생성 실패', scenarioGenPolling.error);
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
       setScenarioGenProgress(null);
+      setCodeChangeDetected(false);
     }
-  }, [scenarioGenPolling.status, scenarioGenPolling.error, scenarioGenTraceId, scenarioGenPollingServiceId, syncScenarioFromStore]);
+  }, [scenarioGenPolling.status, scenarioGenPolling.error, scenarioGenTraceId, scenarioGenPollingServiceId, syncScenarioFromStore, setCodeChangeDetected]);
 
   // SSE 이벤트 처리 — progress 는 바 구동, terminal status 는 overlay 닫기(폴링과 이중 안전망).
   useEffect(() => {
@@ -735,6 +909,7 @@ export default function App() {
   const [codeGenConfirmOpen, setCodeGenConfirmOpen] = useState(false);
   const [showCodeGenerating, setShowCodeGenerating] = useState(false);
   const [codeGenTraceId, setCodeGenTraceId] = useState<string | null>(null);
+  const [pendingCodeGenDelta, setPendingCodeGenDelta] = useState<CodeGenDelta | null>(null);
   const codeGenPolling = useTracePolling(scenarioGenPollingServiceId, codeGenTraceId);
 
   // 코드 생성 실시간 진행률 — 시나리오 생성과 동일 메커니즘.
@@ -754,11 +929,13 @@ export default function App() {
       setShowCodeGenerating(false);
       setCodeGenTraceId(null);
       setCodeGenProgress(null);
+      setPendingCodeGenDelta(null);
     } else if (codeGenPolling.status === 'aborted' || codeGenPolling.status === 'error') {
       console.error('코드 생성 실패', codeGenPolling.error);
       setShowCodeGenerating(false);
       setCodeGenTraceId(null);
       setCodeGenProgress(null);
+      setPendingCodeGenDelta(null);
     }
   }, [codeGenPolling.status, codeGenPolling.error, codeGenTraceId, scenarioGenPollingServiceId, syncScenarioFromStore]);
 
@@ -794,10 +971,48 @@ export default function App() {
       // {percent:0} seed → 처음부터 controlled 모드 (타이머 자동완료 비활성).
       setCodeGenProgress({ percent: 0, message: '생성을 준비하는 중...' });
       setShowCodeGenerating(true);
-      const resp = await startCodeGeneration(scenarioGenPollingServiceId, null, token);
+      const payload = pendingCodeGenDelta
+        ? {
+            scenario_ids: pendingCodeGenDelta.scenarioIds,
+            deleted_tc_ids: pendingCodeGenDelta.deletedTcIds,
+            incremental: pendingCodeGenDelta.incremental,
+          }
+        : null;
+      let resp;
+      try {
+        resp = await startCodeGeneration(scenarioGenPollingServiceId, payload, token);
+      } catch (err) {
+        if (payload && err instanceof ApiError && err.status === 500) {
+          console.warn('증분 코드 생성 payload 실패, 구버전 payload로 재시도합니다.', err);
+          try {
+            resp = await startCodeGeneration(
+              scenarioGenPollingServiceId,
+              { scenario_ids: pendingCodeGenDelta?.scenarioIds ?? [] },
+              token,
+            );
+          } catch (fallbackErr) {
+            if (fallbackErr instanceof ApiError && fallbackErr.status === 500) {
+              console.warn('구버전 payload도 실패, 전체 코드 생성 방식으로 재시도합니다.', fallbackErr);
+              resp = await startCodeGeneration(scenarioGenPollingServiceId, null, token);
+            } else {
+              throw fallbackErr;
+            }
+          }
+        } else {
+          throw err;
+        }
+      }
       setCodeGenTraceId(resp.trace_id);
     } catch (err) {
-      console.error('코드 생성 트리거 실패', err);
+      if (err instanceof ApiError) {
+        console.error('코드 생성 트리거 실패', {
+          code: err.code,
+          status: err.status,
+          message: err.message,
+        });
+      } else {
+        console.error('코드 생성 트리거 실패', err);
+      }
       setShowCodeGenerating(false);
     }
   };
@@ -961,12 +1176,34 @@ export default function App() {
     const token = useAuthStore.getState().accessToken;
     if (!token || !scenarioGenPollingServiceId) return;
     try {
-      const { restoredCount } = await restoreScenarioVersion(scenarioGenPollingServiceId, versionId);
-      console.log('복원 완료', { versionId, restoredCount });
+      // 1. 시나리오 복원 (Spring) + snapshotCreatedAt 획득
+      const { restoredCount, snapshotCreatedAt } = await restoreScenarioVersion(
+        scenarioGenPollingServiceId, versionId
+      );
+      console.log('시나리오 복원 완료', { versionId, restoredCount });
+
+      // 2. 해당 시점의 생성 코드 복원 (FastAPI)
+      if (snapshotCreatedAt) {
+        const storeState = useProjectStore.getState();
+        const service = storeState.services.find(s => s.id === selectedServiceId);
+        const qapilotDir = (service as any)?.qapilotDir ?? '';
+        try {
+          await fetch(`/api/agent/scenarios/restore-code`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ service_id: scenarioGenPollingServiceId, snapshot_time: snapshotCreatedAt, qapilot_dir: qapilotDir }),
+          });
+        } catch (codeErr) {
+          console.warn('코드 복원 실패 (시나리오는 복원됨)', codeErr);
+        }
+      }
+
+      // 3. UI 갱신
+      await syncScenarioFromStore(scenarioGenPollingServiceId);
     } catch (err) {
       console.error('버전 복원 실패', err);
     }
-  }, [scenarioGenPollingServiceId]);
+  }, [scenarioGenPollingServiceId, selectedServiceId, syncScenarioFromStore]);
 
   const handleServiceSelect = (service: Service) => {
     setSelectedServiceId(service.id);
@@ -1276,6 +1513,7 @@ export default function App() {
                 navigateToHistory={navigateToHistory}
                 activeTab={homeTab}
                 serviceName={selectedService?.name}
+                serviceId={scenarioGenPollingServiceId ?? selectedServiceId}
                 projectSlug={projectMeta?.project_slug || projectSlug || undefined}
                 projectMeta={projectMeta}
                 projectSummary={projectSummary}
@@ -1297,6 +1535,8 @@ export default function App() {
             )}
             {currentPage === '시나리오' && (
               <ScenarioPage
+                serviceId={scenarioGenPollingServiceId ?? selectedServiceId}
+                onRejectedSync={() => scenarioGenPollingServiceId && syncScenarioFromStore(scenarioGenPollingServiceId)}
                 selectedScenario={selectedScenario}
                 setSelectedScenario={setSelectedScenario}
                 scenarioPageTab={scenarioPageTab}
@@ -1306,7 +1546,7 @@ export default function App() {
                 scenarioChangeFilter={scenarioChangeFilter}
                 setScenarioChangeFilter={setScenarioChangeFilter}
                 selectedScenarioVersion={selectedScenarioVersion}
-                setSelectedScenarioVersion={setSelectedScenarioVersion}
+                setSelectedScenarioVersion={handleVersionSelect}
                 scenarioVersions={scenarioVersions}
                 onReviewConfirm={onReviewConfirm}
                 favoriteVersionIds={favoriteVersionIds}
@@ -1328,7 +1568,6 @@ export default function App() {
                 setAiItemActions={setAiItemActions}
                 showDeferredAIItems={showDeferredAIItems}
                 setShowDeferredAIItems={setShowDeferredAIItems}
-                codeChangeDetected={codeChangeDetected}
                 dynamicScenarios={dynamicScenarios}
                 setDynamicScenarios={setDynamicScenarios}
                 dynamicAIItems={dynamicAIItems}
@@ -1353,7 +1592,6 @@ export default function App() {
                 someSelected={someSelected}
                 openAiWithContext={openAiWithContext}
                 triggerCodeChangeDetection={triggerCodeChangeDetection}
-                ScenarioManagerPanel={ScenarioManagerPanel}
                 setCurrentPage={setCurrentPage}
                 setTestDepth={setTestDepth}
                 highlightedBotRow={highlightedBotRow}
@@ -1446,7 +1684,7 @@ export default function App() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowLinkedFiles(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
             <div className="px-8 pt-7 pb-5">
-              <FileList />
+              <FileList serviceId={scenarioGenPollingServiceId ?? selectedServiceId} />
             </div>
             <div className="px-6 pb-5 flex items-center gap-3">
               <button onClick={() => setShowLinkedFiles(false)}
@@ -1511,24 +1749,13 @@ export default function App() {
       )}
 
 
-      {/* ── Scenario Manager Panel ── */}
-      {currentPage === '시나리오' && (
-        <ScenarioManagerPanel
-          aiPanelOpen={aiPanelOpen}
-          setAiPanelOpen={setAiPanelOpen}
-          aiMessages={aiMessages}
-          aiInput={aiInput}
-          setAiInput={setAiInput}
-          aiContextPrefill={aiContextPrefill}
-          sendAiMessage={sendAiMessage}
-        />
-      )}
 
       {/* ── Modals ── */}
       <LinkedFilesModal
         open={showLinkedFiles}
         onClose={() => setShowLinkedFiles(false)}
         onRequestChange={triggerFileChangeDetection}
+        serviceId={scenarioGenPollingServiceId ?? selectedServiceId}
       />
 
       <RetestNavModal

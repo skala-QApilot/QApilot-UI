@@ -4,14 +4,16 @@ export interface AgentStartResponse {
   trace_id: string;
   run_id: string;
   status: string;
+  session_id?: string;
 }
 
-export type ScenarioTrigger = 'init' | 'natural_lang' | 'doc_update';
+export type ScenarioTrigger = 'init' | 'natural_lang' | 'doc_update' | 'code_change';
 export type RunFilter = 'all' | 'failed' | 'affected';
 
 export interface ScenarioGenerationPayload {
   trigger: ScenarioTrigger;
   user_input?: string;
+  session_id?: string;
   scenario_ids?: string[];
   filter?: RunFilter;
   tags?: string[];
@@ -19,6 +21,8 @@ export interface ScenarioGenerationPayload {
 
 export interface CodeGenerationPayload {
   scenario_ids?: string[];
+  deleted_tc_ids?: string[];
+  incremental?: boolean;
 }
 
 export interface TestRunPayload {
