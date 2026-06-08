@@ -699,10 +699,14 @@ onVersionRollback,
                   <div key={ver.id} className="relative flex flex-col items-center" style={{ zIndex: 10, overflow: 'visible' }}
                     onMouseEnter={() => handleVersionEnter(ver.id)}
                     onMouseLeave={handleVersionLeave}>
-                    <button onClick={() => setSelectedScenarioVersion(ver.id)} className="relative flex items-center justify-center">
+                    <button onClick={() => setSelectedScenarioVersion(ver.id)} className="relative flex items-center justify-center p-2"
+                      onMouseEnter={() => handleVersionEnter(ver.id)}
+                      onMouseLeave={handleVersionLeave}>
                       <div className={`w-5 h-5 rounded-full border-2 transition-all ${
-                        isSelected ? 'bg-[#EAE8F9] border-[#3615CF] shadow-md shadow-[#3615CF]/20' : 'bg-white border-[#d1d5db] hover:border-[#3615CF]'
-                      }`} />
+                        isSelected ? 'bg-[#EAE8F9] border-[#3615CF] shadow-md shadow-[#3615CF]/20' : 'bg-white border-[#d1d5db]'
+                      }`} 
+                      style={hoveredVersionId === ver.id ? { backgroundColor: 'rgba(54, 21, 207, 0.5)', borderColor: '#3615CF' } : {}}
+                      />
                       {isFav && <Star className="absolute -right-3 -top-1 w-3 h-3 text-yellow-400 fill-yellow-400" />}
                     </button>
                     {ver.label && (
