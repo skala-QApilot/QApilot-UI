@@ -1027,7 +1027,7 @@ onVersionRollback,
                     const changedTcIds = aiInfo?.changedTcIds;
                     const deletedTcIds = aiInfo?.deletedTcIds;
                     // 삭제 대기 TC: _pending_delete 플래그 또는 deletedTcIds 목록으로 판별
-                    const tcIsPendingDelete = isAIItem && (tc.pendingDelete || (deletedTcIds?.includes(tc.id) ?? false));
+                    const tcIsPendingDelete = isAIItem && (((tc as any).pendingDelete) || (deletedTcIds?.includes(tc.id) ?? false));
                     const tcIsAIItem = isAIItem && !isDeleteTsItem && !isDeleteTcItem && !tcIsPendingDelete && (!changedTcIds || changedTcIds.includes(tc.id));
                     const tcIsReviewItem = tcIsAIItem || isOrphanedItem || tcIsPendingDelete;
                     const tcBadgeColor = (isOrphanedItem || tcIsPendingDelete) ? 'bg-[#fef2f2] text-[#dc2626]' : tcIsAIItem ? 'bg-[#fffbeb] text-[#d97706]' : 'bg-[#3615CF]/8 text-[#3615CF]';
