@@ -16,3 +16,7 @@ export async function getProject(projectSlug: string): Promise<ProjectDashboardR
   );
   return res.data;
 }
+
+export async function deleteService(serviceId: string): Promise<void> {
+  await api.delete(`/api/services/${encodeURIComponent(serviceId)}`);
+}
