@@ -249,6 +249,7 @@ export default function App() {
     setServices((prev) => {
       const fromStore = storeServices.map((s) => ({
         id: s.id,
+        serviceId: s.serviceId,  // 추가
         name: s.name,
         isNew: s.isNew ?? false,
         createdAt: s.createdAt,
@@ -1286,6 +1287,10 @@ export default function App() {
     navigate(`/${service.id}`);
   };
 
+  const handleDeleteService = (serviceId: string) => {
+    setServices(prev => prev.filter(s => s.serviceId !== serviceId));
+  };
+
   /**
    * ServiceSetupPage "테스트 대시보드 생성하기" 클릭 시 Spring `POST /api/services`
    * 호출하여 실제 서비스 등록 + GitHub 정보 영속화 후 services 목록에 push.
@@ -1321,6 +1326,7 @@ export default function App() {
       // App.tsx 로컬 services 배열에도 mirror (DashHomePage 가 props 로 받음)
       const mirror: Service = {
         id: created.id,
+        serviceId: created.serviceId,  // 추가
         name: created.name,
         isNew: created.isNew ?? false,
         createdAt: created.createdAt,
@@ -1491,6 +1497,7 @@ export default function App() {
           services={services}
           onServiceSelect={handleServiceSelect}
           onAddNew={() => navigate('/setup')}
+          onDeleteService={handleDeleteService}
         />
       ) : currentPage === 'SETUP' ? (
         <ServiceSetupPage onGenerateScenarios={handleSetupComplete} />
