@@ -13,6 +13,10 @@ export interface ChangeRequest {
   updatedAt?: string;
   reviewedAt?: string | null;
   reviewer?: string | null;
+  /** 변경이 집중된 하위 대상 id (예: target_tc_id) — TS 전체가 아닌 특정 TC만 강조하고 싶을 때 사용 */
+  targetId?: string | null;
+  /** jsonb 직렬화 문자열. 예: '{"changed_tc_ids": ["TC-02"]}' — JSON.parse 후 사용 */
+  content?: string | null;
 }
 
 export interface UpdateChangeRequestPayload {

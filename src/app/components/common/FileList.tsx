@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Folder, Plus, Upload } from 'lucide-react';
 import { useFileStore } from '../../../store/fileStore';
 import { addFileVersion, uploadFile } from '../../../api/files';
@@ -19,6 +19,14 @@ export const FileList = ({ showNewButton = true, serviceId }: FileListProps) => 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const targetFileIdRef = useRef<string | null>(null);
+
+  // 파일 목록은 시나리오 생성 파이프라인(doc_update 등) 완료 시점에 갱신되지만,
+  // 그 타이밍을 놓치는 경우(폴링 race, 다른 트리거 경로 등)에도 "반영 여부" 배지가
+  // 항상 최신 상태를 보여주도록, 팝업이 열려 이 컴포넌트가 마운트될 때마다 재조회한다.
+  useEffect(() => {
+    if (!serviceId) return;
+    useFileStore.getState().loadFiles(serviceId).catch((err) => console.error('파일 목록 로드 실패', err));
+  }, [serviceId]);
 
   const triggerUpload = (targetFileId: string | null = null) => {
     if (!serviceId || uploading) return;

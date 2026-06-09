@@ -35,6 +35,8 @@ export interface UiTestCase {
   when?: string;
   then?: string;
   tags?: string[];
+  /** 코드 변경 감지로 삭제 대기 중인 TC — 빨간 스타일로 표시 후 사용자 검토. */
+  pendingDelete?: boolean;
 }
 
 export interface UiScenario {
@@ -58,12 +60,63 @@ export interface UiScenarioVersion {
   changeDesc?: string;
 }
 
+/**
+ * "수정중" 초안 노드를 가리키는 selectedScenarioVersion sentinel 값.
+ * 실제 버전 row 가 없는 진행 중인 변경(직접 수정 / AI 변경 검토 대기)을 선택했을 때 사용 —
+ * 검토 시 화면에 보이는 콘텐츠(=현재 라이브 데이터)와 선택된 버전 표시를 일치시켜,
+ * "이전 확정 버전"을 비교 기준선으로 자연스럽게 인지하도록 한다.
+ */
+export const DRAFT_VERSION_ID = '__draft__';
+
 export interface UiAIItem {
   reason: string;
   trigger: 'file' | 'chatbot' | 'code' | string;
   timestamp: string;
   requestId: string;
   status: changeRequestsApi.ChangeRequestStatus;
+  /** 변경이 집중된 TC id — 있으면 TS 전체가 아닌 해당 TC(및 그 TV)만 강조해야 함 */
+  targetTcId?: string | null;
+  /** 실질적으로 변경/추가된 TC id 목록 — TS 단위가 아닌 TC 단위로 "AI 생성" 강조 범위를 좁히는 데 사용 */
+  changedTcIds?: string[];
+  /** 삭제 대기 중인 TC id 목록 — code_change로 제거된 엔드포인트의 TC, 빨간 스타일로 표시 */
+  deletedTcIds?: string[];
+  /** 챗봇이 요청한 TS 전체 삭제 — true면 승인 시 TS soft-delete 처리 */
+  deleteTs?: boolean;
+}
+
+/**
+ * change_requests.content(jsonb 직렬화 문자열)에서 changed_tc_ids 목록을 안전하게 추출.
+ * 파싱 실패/형식 불일치 시 undefined — 호출측에서 기존 TS 단위 강조로 폴백한다.
+ */
+function parseChangedTcIds(content: string | null | undefined): string[] | undefined {
+  if (!content) return undefined;
+  try {
+    const parsed = JSON.parse(content);
+    const ids = parsed?.changed_tc_ids;
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseDeletedTcIds(content: string | null | undefined): string[] | undefined {
+  if (!content) return undefined;
+  try {
+    const parsed = JSON.parse(content);
+    const ids = parsed?.deleted_tc_ids;
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseDeleteTs(content: string | null | undefined): boolean {
+  if (!content) return false;
+  try {
+    return Boolean(JSON.parse(content)?.delete_ts);
+  } catch {
+    return false;
+  }
 }
 
 export interface UiScenarioGroup {
@@ -113,6 +166,7 @@ export function toUiTestCase(tc: scenariosApi.TestCase): UiTestCase {
     when: tc.when,
     then: tc.then,
     tags: tc.tags,
+    pendingDelete: tc._pending_delete ?? false,
   };
 }
 
@@ -162,6 +216,10 @@ export function toUiAIItemsByScenario(
       timestamp: req.createdAt,
       requestId: req.requestId,
       status: req.status,
+      targetTcId: req.targetId,
+      changedTcIds: parseChangedTcIds(req.content),
+      deletedTcIds: parseDeletedTcIds(req.content),
+      deleteTs: parseDeleteTs(req.content),
     };
   }
   return result;

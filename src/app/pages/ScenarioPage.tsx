@@ -1,11 +1,11 @@
 import React from 'react';
-import { Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, Play, Plus, RotateCcw, Sparkles, Star, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, Play, Plus, RotateCcw, Sparkles, Star, Trash2, X } from 'lucide-react';
 import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
 import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
 import { SearchBar } from '../components/common/SearchBar';
 import { mockTSFlows } from '../data/mockData';
 import { useRtmStore } from '../../store/rtmStore';
-import { useScenarioStore, toUiGroup } from '../../store/scenarioStore';
+import { useScenarioStore, toUiGroup, DRAFT_VERSION_ID } from '../../store/scenarioStore';
 import type { UiScenario, UiTestCase } from '../../store/scenarioStore';
 
 type TestCaseMap = Record<string, UiTestCase[]>;
@@ -76,6 +76,7 @@ openAiWithContext,
 triggerCodeChangeDetection,
 scenarioVersions,
 onReviewConfirm,
+codeGenReviewStartTick,
 setCurrentPage,
 setTestDepth,
 selectedScenarioGroupId,
@@ -173,7 +174,7 @@ onVersionRollback,
     values: Array<{ id: string; name: string; field?: string; value?: string; type?: string; purpose?: string }>;
   }>> = dynamicTestCases as any;
   const _aiItemActions: Record<string, string> = aiItemActions as Record<string, string>;
-  const _dynamicAIItems: Record<string, { reason: string; trigger: string; timestamp: string }> = dynamicAIItems as any;
+  const _dynamicAIItems: Record<string, { reason: string; trigger: string; timestamp: string; targetTcId?: string | null; changedTcIds?: string[]; deletedTcIds?: string[]; deleteTs?: boolean }> = dynamicAIItems as any;
 
   // RTM 매핑 — getter 가 매 호출마다 새 배열을 만들기 때문에 selector 안에서 직접 호출 금지.
   const rtmVersionsForMap = useRtmStore((s) => s.versions);
@@ -264,12 +265,15 @@ onVersionRollback,
 
   const resolveAIItem = (itemId: string, status: 'approved' | 'rejected' | 'deferred') => {
     const requestId = (dynamicAIItems as Record<string, { requestId?: string }>)[itemId]?.requestId;
+    const deletedTcIds = (dynamicAIItems as any)[itemId]?.deletedTcIds;
+    const isDeleteTcApproval = status === 'approved' && (deletedTcIds?.length ?? 0) > 0;
     setAiItemActions((prev: Record<string, string>) => ({ ...prev, [itemId]: status }));
     if (serviceId && requestId) {
       useScenarioStore.getState().resolveChangeRequest(serviceId, requestId, status)
         .then(() => {
-          // 거절 시 Spring이 이전 버전으로 롤백 → App.tsx syncScenarioFromStore로 완전 갱신
-          if (status === 'rejected') {
+          // 거절 시 Spring이 이전 버전으로 롤백, TC 삭제 확정 시 Spring이 TC 제거
+          // → 둘 다 App.tsx syncScenarioFromStore로 완전 갱신
+          if (status === 'rejected' || isDeleteTcApproval) {
             onRejectedSync?.();
           }
         })
@@ -312,23 +316,27 @@ onVersionRollback,
     }
   }, [hasPendingAIReview, hasUserConfirmedVersion, draftKey]);
 
-  const latestConfirmedVersionId = React.useMemo(
-    () => (scenarioVersions as any[])?.find(v => !v.hasChange)?.id ?? null,
-    [scenarioVersions]
-  );
-
   const selectedVersion = React.useMemo(
     () => (scenarioVersions as any[])?.find(v => v.id === selectedScenarioVersion) ?? null,
     [scenarioVersions, selectedScenarioVersion]
   );
 
+  // 직접 수정(hasDraftEdit) 뿐 아니라 챗봇/파일 업데이트/코드 변경 감지로 생긴
+  // AI 수정 시나리오가 검토 대기 중(hasPendingAIReview)인 경우도 "수정중" 상태로 본다.
+  const isDraftState = hasDraftEdit || hasPendingAIReview;
   const isSelectedConfirmedVersion = Boolean(selectedVersion && !selectedVersion.hasChange);
-  const isSelectedDraftHead = hasDraftEdit && selectedScenarioVersion === latestConfirmedVersionId;
-  const canUseConfirmedVersionActions = showReviewActions || (isSelectedConfirmedVersion && !isSelectedDraftHead);
-  const shouldShowDraftNode = !showReviewActions && hasUserConfirmedVersion && hasDraftEdit;
+  const isSelectedDraftHead = isDraftState && selectedScenarioVersion === DRAFT_VERSION_ID;
+  // v1.0(초기 자동 생성)만 있고 사용자가 "검토 확인"을 한 번도 누른 적 없으면, 다른 버전과
+  // 달리 v1.0은 최초 1회 검토 확인 → 테스트 코드 생성 절차를 거쳐야 한다 — 인위적인 "수정중"
+  // 노드를 만들지 않고, v1.0 노드를 선택한 상태 그대로 "검토 확인" 버튼을 노출한다.
+  const canUseConfirmedVersionActions = showReviewActions
+    || (isSelectedConfirmedVersion && !isSelectedDraftHead && hasUserConfirmedVersion);
+  // v1.0(초기 자동 생성)만 있는 상태에서도 AI 수정 검토 대기/직접 수정이 있으면
+  // "수정중" 노드를 띄워야 하므로 hasUserConfirmedVersion 여부와 무관하게 판단한다.
+  const shouldShowDraftNode = !showReviewActions && isDraftState;
   const reviewBlocked = isSelectedDraftHead && (hasPendingAIReview || isGeneratingCode);
   const reviewButtonLabel = isSelectedDraftHead && isGeneratingCode
-    ? '코드 생성중...'
+    ? '시나리오 저장 중...'
     : isSelectedDraftHead && hasPendingAIReview
       ? `검토 확인 (${pendingAIReviewCount})`
       : '검토 확인';
@@ -497,13 +505,13 @@ onVersionRollback,
       req_id: tc.req_id,
     }));
 
-  // 직접 수정/삭제 발생 시 draft 상태로 전환 (검토 확인 필요 표시)
+  // 직접 수정/삭제·AI 항목 승인-거절-보류 발생 시 draft 상태로 전환 (검토 확인 필요 표시)
+  // v1.0(초기 자동 생성)만 있어 hasUserConfirmedVersion이 false인 상태에서도
+  // 동일하게 draft로 전환해야 승인/거절/보류 후 "검토 확인" 버튼이 유지된다.
   const markDirectEdit = () => {
-    if (hasUserConfirmedVersion) {
-      setShowReviewActions(false);
-      setHasDraftEdit(true);
-      if (draftKey) localStorage.setItem(draftKey, 'true');
-    }
+    setShowReviewActions(false);
+    setHasDraftEdit(true);
+    if (draftKey) localStorage.setItem(draftKey, 'true');
   };
 
   // 검토 확인 완료 시 draft 상태 해제
@@ -511,6 +519,19 @@ onVersionRollback,
     setHasDraftEdit(false);
     if (draftKey) localStorage.removeItem(draftKey);
   };
+
+  // "검토 확인" 클릭은 버전 저장 + 코드 생성 확인 모달 노출까지만 진행하고,
+  // "수정중" → "확정" 전환(검토 확인 버튼 → E2E TEST 실행 버튼)은 사용자가 모달에서
+  // 실제로 "생성 시작"을 눌렀을 때만 확정한다. "취소"를 누르면 이 tick 이 바뀌지 않으므로
+  // 화면은 "검토 확인" 버튼이 보이는 상태 그대로 유지된다.
+  const prevCodeGenReviewStartTick = React.useRef(codeGenReviewStartTick);
+  React.useEffect(() => {
+    if (codeGenReviewStartTick !== undefined && codeGenReviewStartTick !== prevCodeGenReviewStartTick.current) {
+      prevCodeGenReviewStartTick.current = codeGenReviewStartTick;
+      setShowReviewActions(true);
+      clearDraftMark();
+    }
+  }, [codeGenReviewStartTick]);
 
   // ── TC 상세(given/when/then/tags) 저장 ─────────────────────────
   const startTcDetailEdit = (tsId: string, tcId: string, tc: any) => {
@@ -644,11 +665,14 @@ onVersionRollback,
         <ScenarioGeneratingOverlay
           onComplete={() => setShowCodeGeneratingOverlay?.(false)}
           progress={codeGenProgress}
+          // 백엔드 코드 생성 파이프라인의 실제 4단계(load_scenarios_for_codegen →
+          // action_mapping → code_generate → save_codes)와 1:1로 맞춘 안내문 —
+          // 실시간 진행률(progress 이벤트)이 끊겼을 때만 노출되는 fallback.
           steps={[
-            { message: '시나리오를 분석하는 중...', duration: 2000 },
-            { message: '액션 매핑을 작성하는 중...', duration: 2400 },
-            { message: 'Playwright 테스트 코드를 생성하는 중...', duration: 2800 },
-            { message: '검증 로직을 추가하는 중...', duration: 2000 },
+            { message: '시나리오를 불러오는 중...', duration: 1300 },
+            { message: '화면 요소와 테스트 동작을 연결하는 중...', duration: 2600 },
+            { message: '테스트 코드를 작성하는 중...', duration: 4800 },
+            { message: '코드를 저장하는 중...', duration: 900 },
             { message: '코드 생성이 완료됐어요!', duration: 1200 },
           ]}
         />
@@ -664,17 +688,19 @@ onVersionRollback,
               <div className="relative flex flex-col items-center gap-5">
                 <div className="absolute top-[10px] bottom-[10px] left-1/2 -translate-x-1/2 w-px bg-[#e5e7eb]" style={{ zIndex: 0 }} />
 
-                {/* 점선 draft 노드 — 확정 버전 이후 미확인 변경사항이 있을 때 최상단 표시 */}
+                {/* 점선 draft 노드 — 확정 버전 이후 미확인 변경사항이 있을 때 최상단 표시.
+                    클릭하면 라이브(=현재 변경 반영) 콘텐츠를 선택해, 검토 시 "이전 확정
+                    버전"을 비교 기준선으로 자연스럽게 인지하며 볼 수 있다. */}
                 {shouldShowDraftNode && (
                   <div className="relative flex flex-col items-center" style={{ zIndex: 10, overflow: 'visible' }}>
-                    <div className="relative flex items-center justify-center">
+                    <button onClick={() => setSelectedScenarioVersion(DRAFT_VERSION_ID)} className="relative flex items-center justify-center">
                       <svg width={20} height={20} style={{ overflow: 'visible' }}>
                         <circle cx={10} cy={10} r={8}
-                          fill="white"
+                          fill={isSelectedDraftHead ? '#EAE8F9' : 'white'}
                           stroke="#3615CF" strokeWidth={1.5} strokeDasharray="4 2.5" />
                       </svg>
-                    </div>
-                    <span className="text-[8px] text-[#9ca3af] mt-0.5">수정중</span>
+                    </button>
+                    <span className={`text-[8px] mt-0.5 ${isSelectedDraftHead ? 'text-[#3615CF] font-medium' : 'text-[#9ca3af]'}`}>수정중</span>
                   </div>
                 )}
 
@@ -809,7 +835,7 @@ onVersionRollback,
           </div>
 
           {/* Tree body */}
-          <div className="flex-1 overflow-y-auto py-1">
+          <div className="flex-1 overflow-y-auto pt-1 pb-24">
             {/* 보류 항목 */}
             {showDeferredAIItems && deferredAIIds.length > 0 && (
               <div className="mx-2 mb-2 rounded-lg border border-[#fcd34d] bg-[#fffbeb]/60">
@@ -852,7 +878,14 @@ onVersionRollback,
               const isTSEditing = editingDetailItem?.type === 'ts' && editingDetailItem.key === tsEditKey;
 
               const aiInfo = _dynamicAIItems[scenario.id];
-              const isAIItem = !!aiInfo && _aiItemActions[scenario.id] !== 'approved' && _aiItemActions[scenario.id] !== 'rejected';
+              // AI 변경 검토 표시는 "수정중(draft)"를 보고 있을 때만 의미가 있다 — change_request는
+              // ts_id 기준 전역 상태라, 가드 없이는 v1.0 등 과거 확정 버전 스냅샷에도 같은 ts_id의
+              // 미해결 AI 변경이 그대로 노출되어 "확정된 과거 버전인데 AI 수정 중"으로 보이는 문제가 있다.
+              const isOrphanedItem = isSelectedDraftHead && aiInfo?.trigger === 'orphaned' && _aiItemActions[scenario.id] !== 'approved' && _aiItemActions[scenario.id] !== 'rejected';
+              const isAIItem = isSelectedDraftHead && !!aiInfo && aiInfo.trigger !== 'orphaned' && _aiItemActions[scenario.id] !== 'approved' && _aiItemActions[scenario.id] !== 'rejected';
+              const isDeleteTsItem = isAIItem && !!aiInfo?.deleteTs;
+              const isDeleteTcItem = isAIItem && !isDeleteTsItem && (aiInfo?.deletedTcIds?.length ?? 0) > 0;
+              const isReviewItem = isAIItem || isOrphanedItem;
               const isDeferredItem = _aiItemActions[scenario.id] === 'deferred';
 
               // 거절: AI 태그만 제거, 시나리오 자체는 목록에 유지
@@ -860,35 +893,41 @@ onVersionRollback,
 
               const triggerLabel = aiInfo?.trigger === 'chatbot' ? '챗봇 질의' : aiInfo?.trigger === 'file' ? '파일 업데이트' : '코드 변경 감지';
 
-              const tsBadge = isAIItem ? 'bg-[#fef3c7] text-[#b45309]' : 'bg-[#3615CF]/10 text-[#3615CF]';
-              const tcBadge = isAIItem ? 'bg-[#fffbeb] text-[#d97706]' : 'bg-[#3615CF]/8 text-[#3615CF]';
+              const isRedItem = isOrphanedItem || isDeleteTsItem || isDeleteTcItem;
+              const tsBadge = isRedItem ? 'bg-[#fee2e2] text-[#b91c1c]' : isAIItem ? 'bg-[#fef3c7] text-[#b45309]' : 'bg-[#3615CF]/10 text-[#3615CF]';
+              const reviewRowBg = isRedItem ? 'bg-[#fef2f2]' : isAIItem ? 'bg-[#fffbeb]' : '';
+              const reviewBorder = isRedItem ? 'border-[#fecaca]' : isAIItem ? 'border-[#fde68a]' : 'border-[#f0f0f0]/60';
+              const reviewIconColor = isRedItem ? 'text-[#dc2626]' : 'text-[#f59e0b]';
+              const reviewTitleColor = isRedItem ? 'text-[#991b1b]' : 'text-[#92400e]';
+              const reviewTextColor = isRedItem ? 'text-[#dc2626]' : 'text-[#d97706]';
 
               const tsRowContent = (
                 <>
                   {/* TS 행 */}
-                  <div className={`group flex items-center gap-1.5 px-2 py-2 ${isAIItem ? 'bg-[#fffbeb]' : 'hover:bg-gray-50'} border-b ${isAIItem ? 'border-[#fde68a]' : 'border-[#f0f0f0]/60'} ${
-                    !isAIItem && selectedScenario === scenario.id ? 'bg-[#3615CF]/5 border-l-2 border-l-[#3615CF]' : ''
+                  <div className={`group flex items-center gap-1.5 px-2 py-2 ${isReviewItem ? reviewRowBg : 'hover:bg-gray-50'} border-b ${reviewBorder} ${
+                    !isReviewItem && selectedScenario === scenario.id ? 'bg-[#3615CF]/5 border-l-2 border-l-[#3615CF]' : ''
                   }`}>
-                    {isAIItem && <Sparkles className="w-3 h-3 text-[#d97706] flex-shrink-0" />}
+                    {(isOrphanedItem || isDeleteTsItem) && <AlertTriangle className="w-3 h-3 text-[#dc2626] flex-shrink-0" />}
+                    {isAIItem && !isDeleteTsItem && <Sparkles className="w-3 h-3 text-[#d97706] flex-shrink-0" />}
                     <input type="checkbox" checked={tsAllSel}
                       ref={el => { if (el) el.indeterminate = tsSomeSel && !tsAllSel; }}
                       onChange={() => toggleTSSelection(scenario.id)}
                       className="scenario-checkbox w-3.5 h-3.5 flex-shrink-0"
                       onClick={e => e.stopPropagation()} />
                     <button onClick={e => { e.stopPropagation(); setExpandedTSForTC((prev: string[]) => prev.includes(scenario.id) ? prev.filter((id: string) => id !== scenario.id) : [...prev, scenario.id]); }} className="flex-shrink-0">
-                      {isExpanded ? <ChevronDown className={`w-3.5 h-3.5 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3.5 h-3.5 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} />}
+                      {isExpanded ? <ChevronDown className={`w-3.5 h-3.5 ${isReviewItem ? reviewIconColor : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3.5 h-3.5 ${isReviewItem ? reviewIconColor : 'text-[#9ca3af]'}`} />}
                     </button>
                     <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isTSEditing) { setSelectedScenario(scenario.id); setDetailPanelRow({ level: 'TS', tsId: scenario.id }); } }}>
                       <div className="flex items-center gap-1">
                         <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tsBadge}`}>TS</span>
-                        <span className={`text-sm font-semibold ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{scenario.id}</span>
+                        <span className={`text-sm font-semibold ${isReviewItem ? reviewTitleColor : 'text-[#1a1a2e]'}`}>{scenario.id}</span>
                         {isTSEditing
                           ? sidebarEditInput('text-xs')
-                          : <span className={`text-xs truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{scenario.name}</span>}
+                          : <span className={`text-xs truncate ${isReviewItem ? reviewTextColor : 'text-[#6b7280]'}`}>{scenario.name}</span>}
                       </div>
                     </div>
                     {/* TS 액션 아이콘 */}
-                    {!isAIItem && (
+                    {!isReviewItem && (
                       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
                         <button
                           onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'ts', key: tsEditKey, value: scenario.name }); }}
@@ -912,8 +951,8 @@ onVersionRollback,
                     )}
                   </div>
 
-                  {/* AI 항목 승인/보류/거절 */}
-                  {isAIItem && (
+                  {/* AI 항목 승인/보류/거절 — TC 삭제 요청은 별도 배너로 분리 */}
+                  {isAIItem && !isDeleteTsItem && !isDeleteTcItem && (
                     <div className="px-2.5 py-1.5 bg-[#fffbeb]/60 border-b border-[#fde68a] flex items-center gap-1.5">
                       <span className="text-[9px] text-[#d97706] flex-shrink-0">{triggerLabel}</span>
                       <span className="text-[9px] text-[#f59e0b] truncate flex-1">{aiInfo!.reason}</span>
@@ -928,22 +967,84 @@ onVersionRollback,
                     </div>
                   )}
 
+                  {/* TC 삭제 요청 — chatbot trigger + deleted_tc_ids */}
+                  {isDeleteTcItem && (
+                    <div className="px-2.5 py-1.5 bg-[#fef2f2]/60 border-b border-[#fecaca] flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 bg-[#fee2e2] text-[#b91c1c] text-[9px] font-semibold rounded flex-shrink-0 flex items-center gap-0.5">
+                        <AlertTriangle className="w-2.5 h-2.5" /> 삭제 요청
+                      </span>
+                      <span className="text-[9px] text-[#dc2626] flex-shrink-0">
+                        TC {aiInfo!.deletedTcIds!.length}개 삭제 대기
+                      </span>
+                      <span className="text-[9px] text-[#dc2626] truncate flex-1">{aiInfo!.reason}</span>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button onClick={() => resolveAIItem(scenario.id, 'approved')}
+                          className="px-2 py-0.5 bg-[#dc2626] text-white rounded text-[9px] font-medium hover:bg-[#b91c1c]">삭제 확정</button>
+                        <button onClick={() => resolveAIItem(scenario.id, 'rejected')}
+                          className="px-2 py-0.5 bg-white border border-red-200 text-red-500 rounded text-[9px] hover:bg-red-50">취소</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TS 삭제 요청 — chatbot trigger + delete_ts:true */}
+                  {isDeleteTsItem && (
+                    <div className="px-2.5 py-1.5 bg-[#fef2f2]/60 border-b border-[#fecaca] flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 bg-[#fee2e2] text-[#b91c1c] text-[9px] font-semibold rounded flex-shrink-0 flex items-center gap-0.5">
+                        <AlertTriangle className="w-2.5 h-2.5" /> 삭제 요청
+                      </span>
+                      <span className="text-[9px] text-[#dc2626] truncate flex-1">{aiInfo!.reason}</span>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button onClick={() => resolveAIItem(scenario.id, 'approved')}
+                          className="px-2 py-0.5 bg-[#dc2626] text-white rounded text-[9px] font-medium hover:bg-[#b91c1c]">삭제 확정</button>
+                        <button onClick={() => resolveAIItem(scenario.id, 'rejected')}
+                          className="px-2 py-0.5 bg-white border border-red-200 text-red-500 rounded text-[9px] hover:bg-red-50">취소</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 검토 대상 배지 — PRD에서 관련 요구사항이 사라진 시나리오 (orphaned).
+                      승인/보류/거절 등 change_request 액션과 의미가 맞지 않아(예: "거절"은
+                      Spring 측에서 이전 버전 롤백을 트리거함) 별도 액션 없이 표시만 한다. */}
+                  {isOrphanedItem && (
+                    <div className="px-2.5 py-1.5 bg-[#fef2f2]/60 border-b border-[#fecaca] flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 bg-[#fee2e2] text-[#b91c1c] text-[9px] font-semibold rounded flex-shrink-0 flex items-center gap-0.5">
+                        <AlertTriangle className="w-2.5 h-2.5" /> 검토 대상
+                      </span>
+                      <span className="text-[9px] text-[#dc2626] truncate flex-1">{aiInfo!.reason}</span>
+                    </div>
+                  )}
+
                   {/* TC 행 */}
                   {isExpanded && tcs.map(tc => {
                     const tcKey = `${scenario.id}_${tc.id}`;
                     const isTCExpanded = expandedTCMain.includes(tcKey);
                     const isTCEditing = editingDetailItem?.type === 'tc' && editingDetailItem.key === tcKey;
                     const frEntries = rtmMappings.filter(r => r.ts === scenario.id && r.tc === tc.id);
+                    // TC 단위 강조 범위 — change_request.content.changed_tc_ids 가 있으면
+                    // 실제로 변경/추가된 TC(및 그 TV)에만 "AI 생성" 표시를 좁힌다.
+                    // 정보가 없으면(신규 TS 생성 등 TS 전체가 새로 만들어진 경우) 기존처럼
+                    // TS 전체 강조로 폴백한다.
+                    const changedTcIds = aiInfo?.changedTcIds;
+                    const deletedTcIds = aiInfo?.deletedTcIds;
+                    // 삭제 대기 TC: _pending_delete 플래그 또는 deletedTcIds 목록으로 판별
+                    const tcIsPendingDelete = isAIItem && (((tc as any).pendingDelete) || (deletedTcIds?.includes(tc.id) ?? false));
+                    const tcIsAIItem = isAIItem && !isDeleteTsItem && !isDeleteTcItem && !tcIsPendingDelete && (!changedTcIds || changedTcIds.includes(tc.id));
+                    const tcIsReviewItem = tcIsAIItem || isOrphanedItem || tcIsPendingDelete;
+                    const tcBadgeColor = (isOrphanedItem || tcIsPendingDelete) ? 'bg-[#fef2f2] text-[#dc2626]' : tcIsAIItem ? 'bg-[#fffbeb] text-[#d97706]' : 'bg-[#3615CF]/8 text-[#3615CF]';
+                    const tcRowBg = (isOrphanedItem || tcIsPendingDelete) ? 'bg-[#fef2f2]/50 border-[#fecaca]/50' : tcIsAIItem ? 'bg-[#fffbeb]/50 border-[#fde68a]/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#3615CF]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`;
+                    const tcIconColor = (isOrphanedItem || tcIsPendingDelete) ? 'text-[#dc2626]' : tcIsAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]';
+                    const tcTitleColor = (isOrphanedItem || tcIsPendingDelete) ? 'text-[#991b1b]' : tcIsAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]';
+                    const tcTextColor = (isOrphanedItem || tcIsPendingDelete) ? 'text-[#dc2626]' : tcIsAIItem ? 'text-[#d97706]' : 'text-[#6b7280]';
                     return (
                       <div key={tc.id}>
-                        <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${isAIItem ? 'bg-[#fffbeb]/50 border-[#fde68a]/50' : `${highlightedBotRow === `tc-${tcKey}` ? 'bg-[#3615CF]/10' : 'bg-[#F9FAFB]'} border-[#f0f0f0]/40`} hover:bg-opacity-80`}>
+                        <div className={`group flex items-center gap-1.5 pl-7 pr-2 py-1.5 border-b ${tcRowBg} hover:bg-opacity-80`}>
                           <input type="checkbox" checked={_selectedTCIds.includes(tcKey)}
                             onChange={() => toggleTCSelection(scenario.id, tc.id)}
                             className="scenario-checkbox w-3 h-3 flex-shrink-0"
                             onClick={e => e.stopPropagation()} />
                           <button onClick={e => { e.stopPropagation(); setExpandedTCMain((prev: string[]) => prev.includes(tcKey) ? prev.filter((id: string) => id !== tcKey) : [...prev, tcKey]); }} className="flex-shrink-0">
                             {tc.values.length > 0
-                              ? (isTCExpanded ? <ChevronDown className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3 h-3 ${isAIItem ? 'text-[#f59e0b]' : 'text-[#9ca3af]'}`} />)
+                              ? (isTCExpanded ? <ChevronDown className={`w-3 h-3 ${tcIsReviewItem ? tcIconColor : 'text-[#9ca3af]'}`} /> : <ChevronRight className={`w-3 h-3 ${tcIsReviewItem ? tcIconColor : 'text-[#9ca3af]'}`} />)
                               : <span className="w-3" />}
                           </button>
                           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => {
@@ -952,11 +1053,11 @@ onVersionRollback,
                             toggleTcDetail(tcKey);
                           }}>
                             <div className="flex items-center gap-1 flex-wrap">
-                              <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tcBadge}`}>TC</span>
-                              <span className={`text-xs font-medium flex-shrink-0 ${isAIItem ? 'text-[#92400e]' : 'text-[#1a1a2e]'}`}>{tc.id}</span>
+                              <span className={`px-1 py-0.5 text-[9px] rounded font-bold ${tcBadgeColor}`}>TC</span>
+                              <span className={`text-xs font-medium flex-shrink-0 ${tcIsReviewItem ? tcTitleColor : 'text-[#1a1a2e]'}`}>{tc.id}</span>
                               {isTCEditing
                                 ? sidebarEditInput('text-xs')
-                                : <span className={`text-xs truncate ${isAIItem ? 'text-[#d97706]' : 'text-[#6b7280]'}`}>{tc.name}</span>}
+                                : <span className={`text-xs truncate ${tcIsReviewItem ? tcTextColor : 'text-[#6b7280]'}`}>{tc.name}</span>}
                               {!isTCEditing && tc.tags && tc.tags.length > 0 && tc.tags.map((tag: string) => (
                                 <span key={tag} className="px-1.5 py-0.5 bg-[#EAE8F9]/65 text-[#3615CF]/85 text-[9px] rounded-full font-medium flex-shrink-0">{tag}</span>
                               ))}
@@ -972,7 +1073,7 @@ onVersionRollback,
                             </div>
                           </div>
                           {/* TC 액션 아이콘 */}
-                          {!isAIItem && (
+                          {!tcIsReviewItem && (
                             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
                               <button
                                 onClick={e => { e.stopPropagation(); setEditingDetailItem({ type: 'tc', key: tcKey, value: tc.name }); }}
@@ -1068,12 +1169,13 @@ onVersionRollback,
 
                           return (
                             <div key={tv.id}
-                              className={`border-b ${isAIItem ? 'border-[#fde68a]/30' : 'border-[#f0f0f0]/30'}`}>
+                              className={`border-b ${isOrphanedItem ? 'border-[#fecaca]/30' : tcIsAIItem ? 'border-[#fde68a]/30' : 'border-[#f0f0f0]/30'}`}>
 
                               {/* ── TV 헤더 ── */}
                               <div
                                 className={`group flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer transition-colors ${
-                                  isAIItem ? 'bg-[#fffbeb]/40 hover:bg-[#fffbeb]/40'
+                                  isOrphanedItem ? 'bg-[#fef2f2]/40 hover:bg-[#fef2f2]/40'
+                                  : tcIsAIItem ? 'bg-[#fffbeb]/40 hover:bg-[#fffbeb]/40'
                                   : 'bg-white hover:bg-slate-50'
                                 }`}
                                 style={{ paddingLeft: '3.25rem' }}
@@ -1090,7 +1192,7 @@ onVersionRollback,
 
                                 {/* TV ID 배지 */}
                                 <span className={`px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 ${
-                                  isAIItem ? 'bg-[#fef3c7] text-[#d97706]' : 'bg-slate-100 text-slate-500'
+                                  isOrphanedItem ? 'bg-[#fee2e2] text-[#dc2626]' : tcIsAIItem ? 'bg-[#fef3c7] text-[#d97706]' : 'bg-slate-100 text-slate-500'
                                 }`}>{tv.id}</span>
 
                                 {/* field: value 미리보기 (없으면 name) */}
@@ -1107,7 +1209,7 @@ onVersionRollback,
                                 {isOpen ? <ChevronDown className="w-3 h-3 text-slate-400 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-slate-300 flex-shrink-0" />}
 
                                 {/* 액션 (호버 시 표시) */}
-                                {!isAIItem && (
+                                {!tcIsReviewItem && (
                                   <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity" onClick={e => e.stopPropagation()}>
                                     <button onClick={() => handleTVCopy(tvKey, tv)}
                                       title={isCopied ? '복사됨' : '복사'}
@@ -1227,7 +1329,14 @@ onVersionRollback,
                 </div>
                 {!canUseConfirmedVersionActions ? (
                   <button
-                    onClick={() => { if (!reviewBlocked) { onReviewConfirm?.(); setShowReviewActions(true); clearDraftMark(); } }}
+                    onClick={() => {
+                      if (reviewBlocked) return;
+                      // 버전 저장 + 코드 생성 확인 모달 노출까지만 트리거 — "수정중" → "확정"
+                      // 전환은 사용자가 모달에서 "생성 시작"을 눌렀을 때(codeGenReviewStartTick)
+                      // 비로소 일어난다. 여기서 즉시 전환하면 "취소"를 눌러도 버튼이
+                      // "E2E TEST 실행"으로 바뀐 채 되돌아오지 않는 문제가 생긴다.
+                      onReviewConfirm?.();
+                    }}
                     disabled={reviewBlocked}
                     className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
                       reviewBlocked
