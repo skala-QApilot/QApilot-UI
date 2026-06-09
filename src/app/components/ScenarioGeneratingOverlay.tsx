@@ -6,12 +6,16 @@ export interface OverlayStep {
   duration: number;
 }
 
+// 백엔드 시나리오 생성 파이프라인의 실제 6단계(doc_import → codebase_scan →
+// domain_knowledge → requirement_extract → scenario_generate → save_scenarios)와
+// 1:1로 맞춘 안내문 — 실시간 진행률(progress 이벤트)이 끊겼을 때만 노출되는 fallback.
 const SCENARIO_STEPS: OverlayStep[] = [
-  { message: 'PRD/정책 문서를 읽는 중...', duration: 2200 },
-  { message: '요구사항을 분석하는 중...', duration: 2400 },
-  { message: '시나리오를 생성하는 중...', duration: 2600 },
-  { message: '실행 시퀀스로 변환하는 중...', duration: 1800 },
-  { message: 'Playwright 코드를 작성하는 중...', duration: 2200 },
+  { message: '기획/정책 문서를 읽는 중...', duration: 1300 },
+  { message: '프로젝트 코드를 살펴보는 중...', duration: 1800 },
+  { message: '서비스 관련 지식을 정리하는 중...', duration: 1500 },
+  { message: '요구사항을 정리하는 중...', duration: 2200 },
+  { message: '테스트 시나리오를 만드는 중...', duration: 4500 },
+  { message: '시나리오를 저장하는 중...', duration: 900 },
   { message: '시나리오 생성이 완료됐어요!', duration: 1200 },
 ];
 

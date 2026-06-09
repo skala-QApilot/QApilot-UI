@@ -34,13 +34,13 @@ import { useFileStore } from '../store/fileStore';
 import { startScenarioGeneration, startCodeGeneration, startCodeChangeDetection } from '../api/agent';
 import { uploadFile } from '../api/files';
 import { createScenarioGroup } from '../api/scenarioGroups';
-import { createScenarioVersion, deleteScenarioVersion, restoreScenarioVersion } from '../api/scenarioVersions';
+import { createScenarioVersion, updateScenarioVersion, deleteScenarioVersion, restoreScenarioVersion } from '../api/scenarioVersions';
 import { startRun, listAllRuns, resumeRun } from '../api/runs';
 import { useTestStore } from '../store/testStore';
 import { CodeGenConfirmModal } from './components/CodeGenConfirmModal';
 import { useTracePolling } from '../hooks/useTracePolling';
 import { useRunStream } from '../hooks/useRunStream';
-import { useScenarioStore, toUiScenario, toUiTestCase, toUiVersion, toUiAIItemsByScenario } from '../store/scenarioStore';
+import { useScenarioStore, toUiScenario, toUiTestCase, toUiVersion, toUiAIItemsByScenario, DRAFT_VERSION_ID } from '../store/scenarioStore';
 import { ApiError, onAuthExpired } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { ProtectedRoute } from '../components/ProtectedRoute';
@@ -532,16 +532,6 @@ export default function App() {
 
 
   const onReviewConfirm = async () => {
-    const stableVersions = scenarioVersions.filter(v => !v.hasChange);
-    // scenarioVersions는 Spring DESC 순 (최신이 index 0) → 첫 번째가 최신 라벨
-    const latestLabel = stableVersions[0]?.label ?? 'v1.0';
-    const match = latestLabel.match(/^v(\d+)\.(\d+)$/);
-    const [major, minor] = match ? [parseInt(match[1]), parseInt(match[2])] : [1, 0];
-    let newLabel = `v${major}.${minor + 1}`;
-    let saved = false;
-
-    // 백엔드 박제 — 현재 시점 시나리오 N개를 통째로 scenario_versions row 로 저장.
-    // UNIQUE(service_id, label) 충돌 시 minor 한 단계 더 올려 재시도 (자동 계산 미스 안전망).
     const token = useAuthStore.getState().accessToken;
     const versionServiceId = scenarioGenPollingServiceId ?? selectedServiceId;
     const storeVersionsBeforeSave = useScenarioStore.getState().versions;
@@ -551,26 +541,51 @@ export default function App() {
       : null;
     const currentSnapshot = buildCurrentScenarioSnapshot(dynamicScenarios, dynamicTestCases);
     const codeGenDelta = computeCodeGenDelta(previousConfirmed, currentSnapshot);
+    const hasConfirmedVersion = storeVersionsBeforeSave.some(v => v.description === '검토 확인 시 자동 저장');
+    let saved = false;
+
     if (versionServiceId && token) {
-      let attempt = 0;
-      while (attempt < 3) {
+      if (previousMilestone && !hasConfirmedVersion) {
+        // v1.0(초기 자동 생성)에 대한 최초 1회 검토 확인 — 지금 보고 있는 시나리오가 곧
+        // v1.0 자체이므로 새 버전(v1.1)으로 분기하지 않고, v1.0을 사용자 확정 기준선으로
+        // 그대로 전환한다 ("검토 확인을 눌렀더니 버전이 갈라졌다"는 혼란 방지).
         try {
-          await createScenarioVersion(versionServiceId, {
-            label: newLabel,
+          await updateScenarioVersion(versionServiceId, previousMilestone.versionId, {
             description: '검토 확인 시 자동 저장',
           });
           saved = true;
-          break;
-        } catch (err: any) {
-          // UNIQUE 충돌이면 라벨 +1 후 재시도, 그 외엔 중단.
-          const status = err?.response?.status;
-          if (status === 409 || status === 500) {
-            attempt += 1;
-            newLabel = `v${major}.${minor + 1 + attempt}`;
-            continue;
+        } catch (err) {
+          console.error('v1.0 검토 확인 전환 실패', err);
+        }
+      } else {
+        const stableVersions = scenarioVersions.filter(v => !v.hasChange);
+        // scenarioVersions는 Spring DESC 순 (최신이 index 0) → 첫 번째가 최신 라벨
+        const latestLabel = stableVersions[0]?.label ?? 'v1.0';
+        const match = latestLabel.match(/^v(\d+)\.(\d+)$/);
+        const [major, minor] = match ? [parseInt(match[1]), parseInt(match[2])] : [1, 0];
+        let newLabel = `v${major}.${minor + 1}`;
+        // 백엔드 박제 — 현재 시점 시나리오 N개를 통째로 scenario_versions row 로 저장.
+        // UNIQUE(service_id, label) 충돌 시 minor 한 단계 더 올려 재시도 (자동 계산 미스 안전망).
+        let attempt = 0;
+        while (attempt < 3) {
+          try {
+            await createScenarioVersion(versionServiceId, {
+              label: newLabel,
+              description: '검토 확인 시 자동 저장',
+            });
+            saved = true;
+            break;
+          } catch (err: any) {
+            // UNIQUE 충돌이면 라벨 +1 후 재시도, 그 외엔 중단.
+            const status = err?.response?.status;
+            if (status === 409 || status === 500) {
+              attempt += 1;
+              newLabel = `v${major}.${minor + 1 + attempt}`;
+              continue;
+            }
+            console.error('버전 저장 실패', err);
+            break;
           }
-          console.error('버전 저장 실패', err);
-          break;
         }
       }
     }
@@ -597,12 +612,17 @@ export default function App() {
     }
     setCodeChangeDetected(true);
     try {
+      // {percent:0} 로 seed → 오버레이가 처음부터 controlled 모드로 시작한다(타이머 fallback
+      // 노출 구간 없이 바로 실시간 진행률로 전환). code_change는 doc_import를 건너뛰고
+      // codebase_scan(증분 스캔)부터 실제 작업이 시작되므로, 그에 맞는 안내문으로 seed한다.
+      setScenarioGenProgress({ percent: 0, message: '변경된 코드를 확인하는 중...' });
       setShowScenarioGenerating(true);
       const resp = await startCodeChangeDetection(serviceId, token);
       setScenarioGenTraceId(resp.trace_id);
     } catch (err) {
       console.error('code_change 파이프라인 트리거 실패', err);
       setShowScenarioGenerating(false);
+      setScenarioGenProgress(null);
       setCodeChangeDetected(false);
     }
   };
@@ -617,12 +637,17 @@ export default function App() {
     setShowLinkedFiles(false);
     navigate(`/${currentSlug}/scenarios`);
     try {
+      // {percent:0} 로 seed → 오버레이가 처음부터 controlled 모드로 시작한다(타이머 fallback
+      // 노출 구간 없이 바로 실시간 진행률로 전환). doc_update의 첫 실제 단계는 doc_import이므로
+      // _LABELS["doc_import"]와 동일한 문구로 맞춘다.
+      setScenarioGenProgress({ percent: 0, message: '기획/정책 문서를 읽는 중...' });
       setShowScenarioGenerating(true);
       const resp = await startScenarioGeneration(serviceId, { trigger: 'doc_update' }, token);
       setScenarioGenTraceId(resp.trace_id);
     } catch (err) {
       console.error('doc_update 파이프라인 트리거 실패', err);
       setShowScenarioGenerating(false);
+      setScenarioGenProgress(null);
     }
   };
 
@@ -666,14 +691,23 @@ export default function App() {
         tcMap[tsId] = list.map(toUiTestCase);
       }
       setDynamicTestCases(tcMap);
-      // UiAIItem (5 fields) → dynamicAIItem shape (3 fields, trigger narrowed)
+      // UiAIItem → dynamicAIItem shape (trigger narrowed) — TC 단위 강조 범위(targetTcId/changedTcIds) 포함
       const uiAi = toUiAIItemsByScenario(s.changeRequests);
-      const aiMap: Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string; requestId?: string }> = {};
+      const aiMap: Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string; requestId?: string; targetTcId?: string | null; changedTcIds?: string[]; deletedTcIds?: string[]; deleteTs?: boolean }> = {};
       for (const [tsId, item] of Object.entries(uiAi)) {
         const trigger: 'file' | 'chatbot' | 'code' =
           item.trigger === 'file' || item.trigger === 'chatbot' || item.trigger === 'code'
             ? item.trigger : 'chatbot';
-        aiMap[tsId] = { reason: item.reason, trigger, timestamp: item.timestamp, requestId: item.requestId };
+        aiMap[tsId] = {
+          reason: item.reason,
+          trigger,
+          timestamp: item.timestamp,
+          requestId: item.requestId,
+          targetTcId: item.targetTcId,
+          changedTcIds: item.changedTcIds,
+          deletedTcIds: item.deletedTcIds,
+          deleteTs: item.deleteTs,
+        };
       }
       setDynamicAIItems(aiMap);
       // natural_lang으로 새 pending 요청이 생긴 ts_id는 aiItemActions에서 제거
@@ -689,9 +723,14 @@ export default function App() {
       }
       const uiVersions = s.versions.map(toUiVersion);
       setScenarioVersions(uiVersions);
-      // Spring은 createdAt DESC(최신순) 반환 → 첫 번째가 최신 버전
+      // 검토 대기 중인 AI 변경(또는 직접 수정 draft)이 있으면 "수정중" 초안을 기본 선택해
+      // 화면에 보이는 라이브 콘텐츠와 선택된 버전 표시를 일치시킨다 — 그래야 "이전 확정
+      // 버전"(uiVersions[0])을 비교 기준선으로 자연스럽게 인지하며 검토할 수 있다.
+      // Spring은 createdAt DESC(최신순) 반환 → 첫 번째가 최신 확정 버전.
       if (uiVersions.length > 0) {
-        setSelectedScenarioVersion(uiVersions[0].id);
+        const hasDraftEditMark = localStorage.getItem(`draft_edit_${serviceId}`) === 'true';
+        const hasPendingDraft = Object.keys(aiMap).length > 0 || hasDraftEditMark;
+        setSelectedScenarioVersion(hasPendingDraft ? DRAFT_VERSION_ID : uiVersions[0].id);
       }
     } catch (err) {
       console.error('시나리오 reload 실패', err);
@@ -708,6 +747,18 @@ export default function App() {
   // 버전 노드 클릭 → loadAll에서 이미 받아온 scenariosSnapshot을 store에서 직접 읽어 교체
   const handleVersionSelect = useCallback((versionId: string) => {
     setSelectedScenarioVersion(versionId);
+    if (versionId === DRAFT_VERSION_ID) {
+      // "수정중" 초안 선택 — 스냅샷이 아닌 store의 현재 라이브 데이터(AI/직접 수정 반영분
+      // 포함)를 그대로 보여준다 (다른 확정 버전을 보다가 돌아온 경우를 위해 복원).
+      const live = useScenarioStore.getState();
+      setDynamicScenarios(live.scenarios.map(toUiScenario));
+      const liveTcMap: Record<string, ReturnType<typeof toUiTestCase>[]> = {};
+      for (const [tsId, list] of Object.entries(live.testCasesByTs)) {
+        liveTcMap[tsId] = list.map(toUiTestCase);
+      }
+      setDynamicTestCases(liveTcMap);
+      return;
+    }
     const storeVersions = useScenarioStore.getState().versions;
     const matched = storeVersions.find(v => v.versionId === versionId);
     const snapshot = matched?.scenariosSnapshot;
@@ -730,7 +781,7 @@ export default function App() {
     if (!scenarioGenPollingServiceId) return;
     chatSessionIdRef.current = null;
     setAiMessages([
-      { role: 'assistant', text: '테스트할 기능을 자연어로 설명해 주세요. 시나리오와 테스트 케이스를 자동으로 생성/수정해 드립니다.' },
+      { role: 'assistant', text: '테스트할 기능을 자연어로 설명해 주세요.  \n시나리오와 테스트 케이스를 자동으로 생성/수정해 드립니다.' },
     ]);
     setAiInput('');
   }, [scenarioGenPollingServiceId]);
@@ -871,6 +922,11 @@ export default function App() {
         useRtmStore.getState().loadVersions(scenarioGenPollingServiceId).catch((err) => {
           console.error('생성 완료 후 RTM loadVersions 실패', err);
         });
+        // doc_update 완료 시점에 백엔드가 domain_documents.reflected 를 갱신하므로
+        // 파일 목록도 다시 불러와야 "미반영" 배지가 "시나리오 반영됨"으로 갱신된다.
+        useFileStore.getState().loadFiles(scenarioGenPollingServiceId).catch((err) => {
+          console.error('생성 완료 후 파일 목록 loadFiles 실패', err);
+        });
       }
       setShowScenarioGenerating(false);
       setScenarioGenTraceId(null);
@@ -901,12 +957,17 @@ export default function App() {
         setShowScenarioGenerating(false);
         setScenarioGenTraceId(null);
         setScenarioGenProgress(null);
+        setCodeChangeDetected(false);
       }
     }
-  }, [scenarioGenStream.lastEvent, scenarioGenPollingServiceId, syncScenarioFromStore]);
+  }, [scenarioGenStream.lastEvent, scenarioGenPollingServiceId, syncScenarioFromStore, setCodeChangeDetected]);
 
   // ── Layer 1B: 코드 생성 (검토 확인 → 모달 → 트리거) ─────────────────────────
   const [codeGenConfirmOpen, setCodeGenConfirmOpen] = useState(false);
+  // "검토 확인" 클릭 시점이 아니라 "생성 시작"이 실제로 눌렸을 때만 증가 —
+  // ScenarioPage 가 이 신호를 받아야 비로소 "검토 확인" → "E2E TEST 실행" 버튼 전환을 확정한다.
+  // (취소를 누르면 이 값이 변하지 않으므로 "검토 확인" 버튼이 그대로 유지된다.)
+  const [codeGenReviewStartTick, setCodeGenReviewStartTick] = useState(0);
   const [showCodeGenerating, setShowCodeGenerating] = useState(false);
   const [codeGenTraceId, setCodeGenTraceId] = useState<string | null>(null);
   const [pendingCodeGenDelta, setPendingCodeGenDelta] = useState<CodeGenDelta | null>(null);
@@ -926,10 +987,14 @@ export default function App() {
       if (scenarioGenPollingServiceId) {
         syncScenarioFromStore(scenarioGenPollingServiceId);
       }
-      setShowCodeGenerating(false);
-      setCodeGenTraceId(null);
-      setCodeGenProgress(null);
-      setPendingCodeGenDelta(null);
+      // 완료 시 즉시 닫으면 bar가 중간%에서 멈춘 채 종료되어 혼란 — 100%로 올린 뒤 800ms 후 닫는다.
+      setCodeGenProgress({ percent: 100, message: '완료!' });
+      setTimeout(() => {
+        setShowCodeGenerating(false);
+        setCodeGenTraceId(null);
+        setCodeGenProgress(null);
+        setPendingCodeGenDelta(null);
+      }, 800);
     } else if (codeGenPolling.status === 'aborted' || codeGenPolling.status === 'error') {
       console.error('코드 생성 실패', codeGenPolling.error);
       setShowCodeGenerating(false);
@@ -950,7 +1015,15 @@ export default function App() {
       }
     } else if (ev.type === 'status') {
       const st = String(ev.data.status ?? '').toLowerCase();
-      if (st === 'completed' || st === 'succeeded' || st === 'aborted' || st === 'error') {
+      if (st === 'completed' || st === 'succeeded') {
+        if (scenarioGenPollingServiceId) syncScenarioFromStore(scenarioGenPollingServiceId);
+        setCodeGenProgress({ percent: 100, message: '완료!' });
+        setTimeout(() => {
+          setShowCodeGenerating(false);
+          setCodeGenTraceId(null);
+          setCodeGenProgress(null);
+        }, 800);
+      } else if (st === 'aborted' || st === 'error') {
         if (scenarioGenPollingServiceId) syncScenarioFromStore(scenarioGenPollingServiceId);
         setShowCodeGenerating(false);
         setCodeGenTraceId(null);
@@ -969,8 +1042,11 @@ export default function App() {
     }
     try {
       // {percent:0} seed → 처음부터 controlled 모드 (타이머 자동완료 비활성).
-      setCodeGenProgress({ percent: 0, message: '생성을 준비하는 중...' });
+      setCodeGenProgress({ percent: 0, message: '테스트 코드 생성을 준비하는 중...' });
       setShowCodeGenerating(true);
+      // 사용자가 "생성 시작"을 확정한 시점 — ScenarioPage 의 검토-확인 버튼을
+      // "E2E TEST 실행"으로 전환해도 되는 신호를 보낸다 ("취소" 시에는 호출되지 않음).
+      setCodeGenReviewStartTick((t) => t + 1);
       const payload = pendingCodeGenDelta
         ? {
             scenario_ids: pendingCodeGenDelta.scenarioIds,
@@ -1264,13 +1340,18 @@ export default function App() {
           console.error('도메인 파일 업로드 실패', file.name, err);
         }
       }
+      // 서비스 선택 직후 발동한 loadFiles(line ~705/855)는 이 업로드 루프보다 먼저 끝나
+      // 빈 목록을 캐시해버린다 — 업로드 완료 후 다시 불러와 Files 팝업이 비어 보이지 않게 한다.
+      if (payload.files.length > 0) {
+        useFileStore.getState().loadFiles(created.serviceId).catch(err => console.error('파일 목록 재로드 실패', err));
+      }
 
       // 시나리오 생성 자동 트리거 — agent API 는 service_id (UUID) 기반.
       try {
         // {percent:0} 로 seed → 오버레이가 처음부터 controlled 모드(타이머 자동완료 비활성).
         // 실제 바는 SSE progress 이벤트가, 닫기는 완료 status/폴링이 구동한다.
         // 첫 단계 doc_import 는 문서 임베딩/색인(bge-m3) 단계라 수십 초 소요 → 메시지로 명시.
-        setScenarioGenProgress({ percent: 0, message: '문서를 임베딩하는 중...' });
+        setScenarioGenProgress({ percent: 0, message: '기획/정책 문서를 읽는 중...' });
         setShowScenarioGenerating(true);
         const resp = await startScenarioGeneration(created.serviceId, { trigger: 'init' }, token);
         setScenarioGenTraceId(resp.trace_id);
@@ -1549,6 +1630,7 @@ export default function App() {
                 setSelectedScenarioVersion={handleVersionSelect}
                 scenarioVersions={scenarioVersions}
                 onReviewConfirm={onReviewConfirm}
+                codeGenReviewStartTick={codeGenReviewStartTick}
                 favoriteVersionIds={favoriteVersionIds}
                 setFavoriteVersionIds={setFavoriteVersionIds}
                 hoveredVersionId={hoveredVersionId}

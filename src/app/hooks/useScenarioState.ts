@@ -30,7 +30,7 @@ export function useScenarioState() {
   const [showDeferredAIItems, setShowDeferredAIItems] = useState(false);
   const [codeChangeDetected, setCodeChangeDetected] = useState(false);
   const [dynamicScenarios, setDynamicScenarios] = useState<UiScenario[]>([]);
-  const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string }>>({});
+  const [dynamicAIItems, setDynamicAIItems] = useState<Record<string, { reason: string; trigger: 'file' | 'chatbot' | 'code'; timestamp: string; targetTcId?: string | null; changedTcIds?: string[]; deletedTcIds?: string[]; deleteTs?: boolean }>>({});
   const [dynamicTestCases, setDynamicTestCases] = useState<TestCaseMap>({});
   const [loadingItemKey, setLoadingItemKey] = useState<string | null>(null);
   const [editingDetailItem, setEditingDetailItem] = useState<{ type: 'ts' | 'tc'; key: string; value: string } | null>(null);

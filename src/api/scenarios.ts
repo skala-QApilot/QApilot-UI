@@ -23,6 +23,8 @@ export interface TestCase {
   /** Spring enrichment — 최근 실행 결과. 미실행 시 null. */
   last_run_status?: 'passed' | 'failed' | string | null;
   last_run_at?: string | null;
+  /** 코드 변경 감지로 삭제 대기 중인 TC — 빨간 스타일로 표시 후 사용자 검토. */
+  _pending_delete?: boolean;
 }
 
 export interface Scenario {

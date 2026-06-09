@@ -1,4 +1,4 @@
-import { MutableRefObject } from 'react';
+import { MutableRefObject, useEffect, useRef } from 'react';
 import { ChevronDown, History, Plus, Send, X } from 'lucide-react';
 
 interface ScenarioChatbarProps {
@@ -40,6 +40,36 @@ export function ScenarioChatbar({
   setHighlightedBotRow,
   sendAiMessage,
 }: ScenarioChatbarProps) {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatPanelRef = useRef<HTMLDivElement>(null);
+  const chatPillRef = useRef<HTMLDivElement>(null);
+  const chatHistoryRef = useRef<HTMLDivElement>(null);
+
+  // 새 메세지가 추가되면 채팅창을 최신 메세지 쪽으로 자동 스크롤
+  useEffect(() => {
+    if (chatPanelExpanded) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [aiMessages, chatPanelExpanded]);
+
+  // 챗봇 영역(메세지 창/히스토리/하단 바) 밖을 클릭하면 메세지 창만 닫고 하단 바는 유지
+  useEffect(() => {
+    if (!chatPanelExpanded) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        chatPanelRef.current?.contains(target) ||
+        chatPillRef.current?.contains(target) ||
+        chatHistoryRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setChatPanelExpanded(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [chatPanelExpanded, setChatPanelExpanded]);
+
   return (
     <>
       {/* Hover-trigger zone at the bottom of the content area */}
@@ -66,6 +96,7 @@ export function ScenarioChatbar({
       {/* Chat history panel */}
       {chatbarActive && chatHistoryPanelOpen && (
         <div
+          ref={chatHistoryRef}
           className="fixed z-50 bg-white rounded-2xl shadow-2xl border border-[#f0f0f0] overflow-hidden flex flex-col"
           style={{ bottom: '5.2rem', left: 'calc(3.5rem + 4.5rem)', width: '280px', maxHeight: '300px' }}
         >
@@ -95,6 +126,7 @@ export function ScenarioChatbar({
       {/* Chat conversation panel */}
       {chatbarActive && chatPanelExpanded && (
         <div
+          ref={chatPanelRef}
           className="fixed z-50 flex justify-center"
           style={{ bottom: '5.2rem', left: '3.5rem', right: 0 }}
         >
@@ -142,6 +174,7 @@ export function ScenarioChatbar({
                   )}
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
           </div>
         </div>
@@ -149,6 +182,7 @@ export function ScenarioChatbar({
 
       {/* Chatbar pill */}
       <div
+        ref={chatPillRef}
         className="fixed z-50 flex justify-center transition-all duration-300"
         style={{
           left: '3.5rem', right: 0, bottom: '1rem',
