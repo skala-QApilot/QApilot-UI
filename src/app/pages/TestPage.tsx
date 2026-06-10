@@ -113,17 +113,12 @@ export const TestPage = ({
                     />
                   </div>
                   {run.status === 'aborted' && (
-                    <>
-                      <span className="px-1.5 py-0.5 bg-[#fde68a]/40 text-[#b45309] text-[10px] font-bold rounded-full flex-shrink-0">
-                        ⏸ 중단됨
-                      </span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onResumeRun?.(run.id, run.name); }}
-                        className="px-2 py-1 bg-primary-blue text-white text-[10px] font-medium rounded hover:opacity-90 flex-shrink-0"
-                      >
-                        이어서 실행
-                      </button>
-                    </>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onResumeRun?.(run.id, run.name); }}
+                      className="px-2 py-1 bg-primary-blue text-white text-[10px] font-medium rounded hover:opacity-90 flex-shrink-0"
+                    >
+                      이어서 실행
+                    </button>
                   )}
                 </div>
                 );
