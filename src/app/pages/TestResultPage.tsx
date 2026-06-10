@@ -4,7 +4,10 @@ import { CheckCircle, ChevronLeft, Download, Eye, RotateCcw, XCircle } from 'luc
 import { SubHeader } from '../components/common/SubHeader';
 import { useTestStore } from '../../store/testStore';
 import { listDefects, type Defect } from '../../api/defects';
-import { getTcResult, tcScreenshotUrl, type UiResult } from '../../api/artifacts';
+import {
+  getTcResult, listTcResults, getApiResult, getActionMapping, tcScreenshotUrl,
+  type UiResult, type ApiResult, type ActionMapping,
+} from '../../api/artifacts';
 
 type HistoryDetailTab = 'FAIL' | 'PASS';
 
@@ -56,6 +59,12 @@ function defectToDetailError(d: Defect): DetailError {
   };
 }
 
+/** action 코드 → 한글 라벨 (스텝 표 표시용). */
+const ACTION_LABEL: Record<string, string> = {
+  navigate: '이동', fill: '입력', click: '클릭', assert: '검증', reload: '새로고침',
+  wait: '대기', select: '선택', check: '체크', press: '키입력', hover: '호버',
+};
+
 export const TestResultPage = ({
   selectedExecutionId,
   setSelectedExecutionId,
@@ -92,12 +101,38 @@ export const TestResultPage = ({
     return () => { cancelled = true; };
   }, [serviceUuid, selectedExecutionId]);
 
-  // 선택된 FAIL TC 의 ui_result.json (= tc_results.payload) — fail step 의 실제 error 메시지 + step_no
-  // 표시용. 빈 값이면 placeholder.
+  // 선택된 TC 의 결과들 — ui_result(스텝/스크린샷), api_result(실제 호출), action_mapping(동작→API).
   const [activeUiResult, setActiveUiResult] = useState<UiResult | null>(null);
+  const [activeApiResult, setActiveApiResult] = useState<ApiResult | null>(null);
+  const [activeActionMapping, setActiveActionMapping] = useState<ActionMapping | null>(null);
 
-  // PASS 탭 — 별도 PR 에서 tc_results API 로 채울 예정. 현재는 빈 배열.
-  const passCases: Array<{ id: string; scenario: string; testCase: string; tcName: string; runtimeLog: string }> = [];
+  // PASS 탭 — tc_results 직접조회로 채운다 (kind='ui' && status='passed').
+  const [passCases, setPassCases] = useState<
+    Array<{ id: string; scenario: string; testCase: string; tcName: string; runtimeLog: string }>
+  >([]);
+
+  useEffect(() => {
+    if (!serviceUuid || !selectedExecutionId) {
+      setPassCases([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const items = await listTcResults(serviceUuid, selectedExecutionId);
+      if (cancelled) return;
+      const passes = items
+        .filter(it => it.kind === 'ui' && it.status === 'passed')
+        .map(it => ({
+          id: it.tc_id,                                  // 전체 tc_id (예: TS-001-TC-05) — 선택/조회 키
+          scenario: it.ts_id,
+          testCase: it.tc_id.includes('-TC-') ? `TC-${it.tc_id.split('-TC-')[1]}` : it.tc_id,
+          tcName: '',
+          runtimeLog: '',
+        }));
+      setPassCases(passes);
+    })();
+    return () => { cancelled = true; };
+  }, [serviceUuid, selectedExecutionId]);
 
   const failsByTS = detailErrors.reduce((acc, err) => {
     if (!acc[err.scenario]) acc[err.scenario] = [];
@@ -156,32 +191,57 @@ export const TestResultPage = ({
     ? (detailErrors.find(e => e.id === selectedFailTC) ?? detailErrors[0] ?? null)
     : null;
 
-  // activeError 변하면 그 TC 의 ui_result.json 을 가져옴. fail step 의 error 메시지 + 스크린샷 step_no
-  // 모두 그 안에 있음.
+  const activePass = historyDetailTab === 'PASS'
+    ? (passCases.find(p => p.id === selectedFailTC) ?? null)
+    : null;
+
+  // 활성 TC(fail 또는 pass)의 결과 3종 로드 — ui_result / api_result / action_mapping.
   useEffect(() => {
-    if (!serviceUuid || !selectedExecutionId || !activeError) {
+    const tsId = activeError?.scenario ?? activePass?.scenario ?? null;
+    // fail 은 defect 의 축약 testCase 를 full tc_id 로 복원, pass 는 id 가 이미 full tc_id.
+    const tcId = activeError
+      ? `${activeError.scenario}-${activeError.testCase}`
+      : (activePass?.id ?? null);
+    if (!serviceUuid || !selectedExecutionId || !tsId || !tcId) {
       setActiveUiResult(null);
+      setActiveApiResult(null);
+      setActiveActionMapping(null);
       return;
     }
     let cancelled = false;
     (async () => {
-      const ui = await getTcResult(serviceUuid, selectedExecutionId, activeError.scenario,
-        `${activeError.scenario}-${activeError.testCase}`);
-      if (!cancelled) setActiveUiResult(ui);
+      const [ui, apiRes, am] = await Promise.all([
+        getTcResult(serviceUuid, selectedExecutionId, tsId, tcId),
+        getApiResult(serviceUuid, selectedExecutionId, tsId, tcId),
+        getActionMapping(serviceUuid, selectedExecutionId, tcId),
+      ]);
+      if (cancelled) return;
+      setActiveUiResult(ui);
+      setActiveApiResult(apiRes);
+      setActiveActionMapping(am);
     })();
     return () => { cancelled = true; };
-  }, [serviceUuid, selectedExecutionId, activeError]);
+  }, [serviceUuid, selectedExecutionId, activeError, activePass]);
 
-  // 첫 fail step 의 step_no + error — Runtime 에러 로그 영역과 UI 캡처 step 선택에 사용.
+  // FAIL — 첫 fail step 의 step_no + error (Runtime 에러 로그 + UI 캡처 step).
   const failStep = activeUiResult?.steps?.find(s => s.status === 'fail') ?? null;
   const liveErrorLog = failStep?.error ?? activeError?.errorLog ?? '';
-  const screenshotSrc = (activeError && serviceUuid && selectedExecutionId && failStep)
-    ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeError.scenario,
-                       `${activeError.scenario}-${activeError.testCase}`, failStep.step_no)
-    : null;
 
-  const activePass = historyDetailTab === 'PASS'
-    ? (passCases.find(p => p.id === selectedFailTC) ?? null)
+  // PASS — 스텝 요약을 runtime 로그로, 스크린샷이 있는 step 을 캡처로 사용.
+  const passShotStep = activeUiResult?.steps?.find(s => s.screenshot_path) ?? null;
+  const passRuntimeLog = activeUiResult?.steps?.length
+    ? activeUiResult.steps.map(s => `${s.step_no}. ${s.action} → ${s.status}`).join('\n')
+    : '모든 검증 항목을 통과했습니다.';
+
+  // 우측 UI 캡처 — fail 은 fail step, pass 는 스크린샷 보유 step.
+  const screenshotSrc = (serviceUuid && selectedExecutionId)
+    ? (activeError && failStep
+        ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeError.scenario,
+                          `${activeError.scenario}-${activeError.testCase}`, failStep.step_no)
+        : (activePass && passShotStep
+            ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activePass.scenario,
+                              activePass.id, passShotStep.step_no)
+            : null))
     : null;
 
   const formatDuration = (duration: string) => duration;
@@ -395,9 +455,81 @@ export const TestResultPage = ({
                   <span className="font-semibold text-[#1a1a2e]">{activePass.scenario} › {activePass.testCase}</span>
                   <span className="px-2 py-0.5 text-xs rounded font-medium bg-green-100 text-status-pass">PASS</span>
                 </div>
+
+                {/* ① 테스트 스텝 — 어떤 동작이 어떤 API 를 호출하는지 (action_mapping) */}
                 <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
-                  <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">테스트 결과</div>
-                  <div className="text-sm font-medium text-status-pass">모든 검증 항목 통과</div>
+                  <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-3">① 테스트 스텝 (동작 → 호출 API)</div>
+                  {activeActionMapping?.steps?.length ? (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-[10px] text-[#9ca3af] uppercase">
+                          <th className="text-left font-semibold pb-1.5 w-8">#</th>
+                          <th className="text-left font-semibold pb-1.5 w-16">동작</th>
+                          <th className="text-left font-semibold pb-1.5">대상</th>
+                          <th className="text-left font-semibold pb-1.5">값</th>
+                          <th className="text-left font-semibold pb-1.5">호출 API</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeActionMapping.steps.map(s => (
+                          <tr key={s.step_no} className="border-t border-[#f5f5f5]">
+                            <td className="py-1.5 text-[#9ca3af]">{s.step_no}</td>
+                            <td className="py-1.5 text-[#1a1a2e] font-medium">{ACTION_LABEL[s.action] ?? s.action}</td>
+                            <td className="py-1.5 text-[#6b7280] truncate max-w-[120px]">{s.target_name || s.target_kind || '—'}</td>
+                            <td className="py-1.5 text-[#6b7280] truncate max-w-[120px]">{s.value ?? '—'}</td>
+                            <td className="py-1.5">
+                              {s.api_endpoint
+                                ? <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#3615CF]/10 text-[#3615CF]">{s.api_endpoint}</span>
+                                : <span className="text-[#d1d5db]">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="text-sm text-[#9ca3af]">스텝 정보가 없습니다.</div>
+                  )}
+                </div>
+
+                {/* ② 실제 API 호출 (api_result) */}
+                <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
+                  <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-3">② 실제 API 호출</div>
+                  {activeApiResult?.calls?.length ? (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-[10px] text-[#9ca3af] uppercase">
+                          <th className="text-left font-semibold pb-1.5 w-14">METHOD</th>
+                          <th className="text-left font-semibold pb-1.5">URL</th>
+                          <th className="text-left font-semibold pb-1.5 w-14">상태</th>
+                          <th className="text-right font-semibold pb-1.5 w-16">지연</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeApiResult.calls.map((c, i) => {
+                          const ok = (c.status_code ?? 0) >= 200 && (c.status_code ?? 0) < 400;
+                          return (
+                            <tr key={i} className="border-t border-[#f5f5f5]">
+                              <td className="py-1.5 font-mono text-[10px] text-[#1a1a2e]">{c.method}</td>
+                              <td className="py-1.5 text-[#6b7280] font-mono text-[10px] truncate max-w-[200px]">{c.url}</td>
+                              <td className={`py-1.5 font-semibold ${ok ? 'text-status-pass' : 'text-status-fail'}`}>{c.status_code ?? '—'}</td>
+                              <td className="py-1.5 text-right text-[#9ca3af]">{c.latency_ms != null ? `${c.latency_ms}ms` : '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="text-sm text-[#9ca3af]">기록된 API 호출이 없습니다.</div>
+                  )}
+                </div>
+
+                {/* ③ 검증 결과 요약 */}
+                <div className="bg-green-50 rounded-lg border border-green-200 p-4 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-status-pass flex-shrink-0" />
+                  <span className="text-sm font-medium text-status-pass">
+                    {(activeUiResult?.steps?.filter(s => s.status === 'pass').length ?? 0)}/{activeUiResult?.steps?.length ?? 0} 스텝 통과
+                    {' · '}API 오류 {activeApiResult?.error_calls ?? 0}건 → 정상
+                  </span>
                 </div>
               </div>
             ) : (
@@ -434,7 +566,7 @@ export const TestResultPage = ({
                   i === 0 ? 'text-status-fail font-semibold' : 'text-[#9ca3af]'
                 }`}>{line}</div>
               ))}
-              {historyDetailTab === 'PASS' && activePass && activePass.runtimeLog.split('\n').map((line, i) => (
+              {historyDetailTab === 'PASS' && activePass && passRuntimeLog.split('\n').map((line, i) => (
                 <div key={i} className="font-mono text-[10px] leading-5 text-status-pass">{line}</div>
               ))}
               {historyDetailTab === 'PASS' && !activePass && (
