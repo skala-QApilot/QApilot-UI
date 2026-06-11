@@ -79,8 +79,13 @@ export const useTestStore = create<TestState>()((set, get) => ({
   ...initialState,
 
   loadResults: async (serviceId) => {
-    const { results, total } = await resultsApi.listResults(serviceId, { limit: 50 });
-    set({ results, statistics: { total, passed: get().statistics?.passed ?? 0, failed: 0, passRate: null } });
+    // 통계를 클라이언트에서 조립하지 않는다 — 이전 구현은 failed:0 하드코딩 +
+    // stale passed 재사용으로 실패가 항상 0 으로 표시됐다. 서버 통계를 함께 갱신.
+    const [{ results }, statistics] = await Promise.all([
+      resultsApi.listResults(serviceId, { limit: 50 }),
+      resultsApi.getStatistics(serviceId),
+    ]);
+    set({ results, statistics });
   },
 
   loadStatistics: async (serviceId) => {
