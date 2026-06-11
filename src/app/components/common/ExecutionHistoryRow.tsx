@@ -28,6 +28,7 @@ export const ExecutionHistoryRow = ({ exec, onClick, loading = false }: Executio
   const passPct = total > 0 ? (exec.pass / total) * 100 : 0;
   const failPct = total > 0 ? (exec.fail / total) * 100 : 0;
   const skipPct = total > 0 ? (skipped / total) * 100 : 0;
+  const unverifiedPct = total > 0 ? (unverified / total) * 100 : 0;
 
   return (
     <button
@@ -69,6 +70,7 @@ export const ExecutionHistoryRow = ({ exec, onClick, loading = false }: Executio
                 <div style={{ width: `${passPct}%`, background: 'var(--status-pass)' }} />
                 <div style={{ width: `${failPct}%`, background: 'var(--status-fail)' }} />
                 <div style={{ width: `${skipPct}%`, background: '#d4a017' }} />
+                <div style={{ width: `${unverifiedPct}%`, background: '#7c8db5' }} />
               </>
           }
         </div>

@@ -120,8 +120,15 @@ export const TestResultPage = ({
     (async () => {
       const items = await listTcResults(serviceUuid, selectedExecutionId);
       if (cancelled) return;
+      // verdict 는 cross_check kind (UI/API/DB 정합 + 의도 판정) — ui kind 단독은
+      // "의도 도달 구제" 케이스를 누락한다. cc row 없는 옛 run 은 ui fallback.
+      // skip 보호: ui 가 검증 안 한 TC 의 cc pass 는 통과로 치지 않는다 (서버 동일 규칙).
+      const uiStatus = new Map(items.filter(it => it.kind === 'ui').map(it => [it.tc_id, it.status]));
+      const hasCc = items.some(it => it.kind === 'cross_check');
+      const verdictKind = hasCc ? 'cross_check' : 'ui';
       const passes = items
-        .filter(it => it.kind === 'ui' && it.status === 'passed')
+        .filter(it => it.kind === verdictKind && it.status === 'passed'
+          && !(verdictKind === 'cross_check' && uiStatus.get(it.tc_id) === 'skipped'))
         .map(it => ({
           id: it.tc_id,                                  // 전체 tc_id (예: TS-001-TC-05) — 선택/조회 키
           scenario: it.ts_id,
