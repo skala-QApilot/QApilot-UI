@@ -50,7 +50,15 @@ function defectToDetailError(d: Defect): DetailError {
     scenario: d.ts_id,
     testCase,
     tcName: '',  // TODO: scenarios 의 test_cases 에서 join
-    errorCode: d.category,
+    errorCode: ({
+      PRODUCT_DEFECT_CANDIDATE: '제품 결함 후보',
+      TEST_DEFECT_MAPPING: '테스트 결함 (매핑)',
+      TEST_DEFECT_UNVERIFIABLE: '검증 표현력 한계',
+      ENV_TIMEOUT: '환경/사전조건 (타임아웃)',
+      ENV_UNVERIFIED: '검증 환경 부재',
+      UI_ERROR: 'UI 오류', API_ERROR: 'API 오류', DATA_MISMATCH: '데이터 불일치',
+      INFRA: '인프라', DOMAIN_RULE: '도메인 규칙',
+    } as Record<string, string>)[d.category] ?? d.category,
     summary: d.root_cause_top1 ?? '',
     solutions: d.root_cause_top1 || d.solution_guide
       ? [{ cause: d.root_cause_top1 ?? '', solution: d.solution_guide ?? '' }]
@@ -118,12 +126,15 @@ export const TestResultPage = ({
   const [unverifiedCases, setUnverifiedCases] = useState<
     Array<{ id: string; scenario: string; testCase: string; tcName: string; runtimeLog: string }>
   >([]);
+  // verdict 기준 failed tc_id — FAIL 탭이 defects 전체가 아닌 진짜 F 만 나열하도록
+  const [failedVerdictIds, setFailedVerdictIds] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     if (!serviceUuid || !selectedExecutionId) {
       setPassCases([]);
       setSkipCases([]);
       setUnverifiedCases([]);
+      setFailedVerdictIds(null);
       return;
     }
     let cancelled = false;
@@ -168,11 +179,19 @@ export const TestResultPage = ({
           runtimeLog: '',
         }));
       setUnverifiedCases(unverifieds);
+      setFailedVerdictIds(new Set(
+        items.filter(it => it.kind === verdictKind && it.status === 'failed').map(it => it.tc_id)
+      ));
     })();
     return () => { cancelled = true; };
   }, [serviceUuid, selectedExecutionId]);
 
-  const failsByTS = detailErrors.reduce((acc, err) => {
+  // FAIL 탭 = verdict(failed) 인 TC 의 defect 만 — ENV/TEST/UNVERIFIABLE 분류
+  // defect 는 S/U 탭 영역이라 여기 나열하면 F 카운트와 불일치 (run d054cbe6 실증).
+  const verdictFails = failedVerdictIds === null
+    ? detailErrors
+    : detailErrors.filter(err => failedVerdictIds.has(`${err.scenario}-${err.testCase}`));
+  const failsByTS = verdictFails.reduce((acc, err) => {
     if (!acc[err.scenario]) acc[err.scenario] = [];
     acc[err.scenario].push(err);
     return acc;
@@ -238,7 +257,7 @@ export const TestResultPage = ({
   }
 
   const activeError = historyDetailTab === 'FAIL'
-    ? (detailErrors.find(e => e.id === selectedFailTC) ?? detailErrors[0] ?? null)
+    ? (verdictFails.find(e => e.id === selectedFailTC) ?? verdictFails[0] ?? null)
     : null;
 
   const activePass = historyDetailTab === 'PASS'
@@ -395,7 +414,7 @@ export const TestResultPage = ({
                   <span className="ml-auto text-xs text-status-fail">FAIL {errors.length}</span>
                 </div>
                 {errors.map(err => {
-                  const isActive = (selectedFailTC ?? detailErrors[0]?.id) === err.id;
+                  const isActive = (selectedFailTC ?? verdictFails[0]?.id) === err.id;
                   const isChecked = retestCheckedIds.has(err.id);
                   return (
                     <div
@@ -540,7 +559,7 @@ export const TestResultPage = ({
                 <span className="font-semibold text-[#1a1a2e]">{activeError.scenario} › {activeError.testCase}</span>
               </div>
               <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
-                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">① 에러 코드</div>
+                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">① 결함 분류</div>
                 <span className="inline-block px-3 py-1 bg-red-50 text-red-700 text-sm rounded border border-red-200 font-medium">
                   {activeError.errorCode}
                 </span>
