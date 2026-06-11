@@ -9,7 +9,7 @@ import {
   type UiResult, type ApiResult, type ActionMapping,
 } from '../../api/artifacts';
 
-type HistoryDetailTab = 'FAIL' | 'PASS' | 'SKIP';
+type HistoryDetailTab = 'FAIL' | 'PASS' | 'SKIP' | 'UNVERIFIED';
 
 interface TestResultPageProps {
   selectedExecutionId: string | null;
@@ -114,11 +114,16 @@ export const TestResultPage = ({
   const [skipCases, setSkipCases] = useState<
     Array<{ id: string; scenario: string; testCase: string; tcName: string; runtimeLog: string }>
   >([]);
+  // U 탭 — 판정 보류 (cross_check 'unverified': 검증축 부재/입력결손/분석실패)
+  const [unverifiedCases, setUnverifiedCases] = useState<
+    Array<{ id: string; scenario: string; testCase: string; tcName: string; runtimeLog: string }>
+  >([]);
 
   useEffect(() => {
     if (!serviceUuid || !selectedExecutionId) {
       setPassCases([]);
       setSkipCases([]);
+      setUnverifiedCases([]);
       return;
     }
     let cancelled = false;
@@ -152,6 +157,17 @@ export const TestResultPage = ({
           runtimeLog: '',
         }));
       setSkipCases(skips);
+      const skippedIds = new Set(skips.map(x => x.id));
+      const unverifieds = items
+        .filter(it => it.kind === 'cross_check' && it.status === 'unverified' && !skippedIds.has(it.tc_id))
+        .map(it => ({
+          id: it.tc_id,
+          scenario: it.ts_id,
+          testCase: it.tc_id.includes('-TC-') ? `TC-${it.tc_id.split('-TC-')[1]}` : it.tc_id,
+          tcName: '',
+          runtimeLog: '',
+        }));
+      setUnverifiedCases(unverifieds);
     })();
     return () => { cancelled = true; };
   }, [serviceUuid, selectedExecutionId]);
@@ -173,6 +189,12 @@ export const TestResultPage = ({
     acc[p.scenario].push(p);
     return acc;
   }, {} as Record<string, typeof skipCases>);
+
+  const unverifiedByTS = unverifiedCases.reduce((acc, p) => {
+    if (!acc[p.scenario]) acc[p.scenario] = [];
+    acc[p.scenario].push(p);
+    return acc;
+  }, {} as Record<string, typeof unverifiedCases>);
 
   if (!selectedExecutionId) return null;
 
@@ -227,13 +249,17 @@ export const TestResultPage = ({
     ? (skipCases.find(p => p.id === selectedFailTC) ?? null)
     : null;
 
+  const activeUnverified = historyDetailTab === 'UNVERIFIED'
+    ? (unverifiedCases.find(p => p.id === selectedFailTC) ?? null)
+    : null;
+
   // 활성 TC(fail 또는 pass)의 결과 3종 로드 — ui_result / api_result / action_mapping.
   useEffect(() => {
-    const tsId = activeError?.scenario ?? activePass?.scenario ?? activeSkip?.scenario ?? null;
+    const tsId = activeError?.scenario ?? activePass?.scenario ?? activeSkip?.scenario ?? activeUnverified?.scenario ?? null;
     // fail 은 defect 의 축약 testCase 를 full tc_id 로 복원, pass 는 id 가 이미 full tc_id.
     const tcId = activeError
       ? `${activeError.scenario}-${activeError.testCase}`
-      : (activePass?.id ?? activeSkip?.id ?? null);
+      : (activePass?.id ?? activeSkip?.id ?? activeUnverified?.id ?? null);
     if (!serviceUuid || !selectedExecutionId || !tsId || !tcId) {
       setActiveUiResult(null);
       setActiveApiResult(null);
@@ -323,6 +349,7 @@ export const TestResultPage = ({
               { id: 'FAIL' as const, label: 'FAIL', count: exec.fail, color: 'text-status-fail' },
               { id: 'PASS' as const, label: 'PASS', count: exec.pass, color: 'text-status-pass' },
               { id: 'SKIP' as const, label: 'S', count: exec.skipped ?? skipCases.length, color: 'text-[#d4a017]' },
+              { id: 'UNVERIFIED' as const, label: 'U', count: exec.unverified ?? unverifiedCases.length, color: 'text-[#7c8db5]' },
             ] as const).map(tab => (
               <button
                 key={tab.id}
@@ -336,12 +363,14 @@ export const TestResultPage = ({
                   historyDetailTab === tab.id
                     ? (tab.id === 'FAIL' ? 'bg-status-fail/15 text-status-fail'
                        : tab.id === 'PASS' ? 'bg-status-pass/15 text-status-pass'
-                       : 'bg-[#d4a017]/15 text-[#d4a017]')
+                       : tab.id === 'SKIP' ? 'bg-[#d4a017]/15 text-[#d4a017]'
+                       : 'bg-[#7c8db5]/15 text-[#7c8db5]')
                     : 'bg-gray-100 text-[#9ca3af]'
                 }`}>{tab.count}</span>
                 {historyDetailTab === tab.id && (
                   <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${
-                    tab.id === 'FAIL' ? 'bg-status-fail' : tab.id === 'PASS' ? 'bg-status-pass' : 'bg-[#d4a017]'
+                    tab.id === 'FAIL' ? 'bg-status-fail' : tab.id === 'PASS' ? 'bg-status-pass'
+                    : tab.id === 'SKIP' ? 'bg-[#d4a017]' : 'bg-[#7c8db5]'
                   }`} />
                 )}
               </button>
@@ -432,6 +461,35 @@ export const TestResultPage = ({
               </div>
             ))}
 
+
+            {historyDetailTab === 'UNVERIFIED' && Object.entries(unverifiedByTS).map(([tsId, us]) => (
+              <div key={tsId}>
+                <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
+                  <MinusCircle className="w-3.5 h-3.5 text-[#7c8db5] flex-shrink-0" />
+                  <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  <span className="ml-auto text-xs text-[#7c8db5]">U {us.length}</span>
+                </div>
+                {us.map(p => {
+                  const isActive = selectedFailTC === p.id;
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => setSelectedFailTC(p.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors border-b border-[#f0f0f0] cursor-pointer ${
+                        isActive ? 'bg-gradient-to-r from-[#7c8db5]/10 to-[#7c8db5]/5 border-l-2 border-l-[#7c8db5]' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <MinusCircle className="w-3.5 h-3.5 text-[#7c8db5] flex-shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-[#1a1a2e] truncate">{p.testCase}</div>
+                        <div className="text-[10px] text-[#9ca3af] truncate">판정 보류 — 검증축 부재/입력결손</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+
             {historyDetailTab === 'SKIP' && Object.entries(skipByTS).map(([tsId, skips]) => (
               <div key={tsId}>
                 <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
@@ -511,6 +569,52 @@ export const TestResultPage = ({
                 </div>
               </div>
             </div>
+          )}
+          {historyDetailTab === 'UNVERIFIED' && (
+            activeUnverified ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <MinusCircle className="w-5 h-5 text-[#7c8db5]" />
+                  <span className="font-semibold text-[#1a1a2e]">{activeUnverified.scenario} › {activeUnverified.testCase}</span>
+                  <span className="px-2 py-0.5 text-xs rounded font-medium bg-[#7c8db5]/15 text-[#7c8db5]">판정 보류</span>
+                </div>
+                <div className="bg-white rounded-lg border border-[#7c8db5]/40 p-4">
+                  <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">판정 보류 사유</div>
+                  <div className="text-sm text-[#6b7280]">
+                    cross-check 가 pass/fail 을 단정할 실증이 부족한 케이스입니다 — API/DB 검증축 부재,
+                    입력 결손 실행, 또는 정합성 분석 실패. 아래 실행 스텝과 API 호출을 참고해 수동 판정하세요.
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
+                  <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-3">실행된 스텝</div>
+                  {activeUiResult?.steps?.length ? (
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {activeUiResult.steps.map((st: any) => (
+                          <tr key={st.step_no} className="border-t border-[#f5f5f5]">
+                            <td className="py-1.5 w-8 text-[#9ca3af]">{st.step_no}</td>
+                            <td className="py-1.5 w-24 text-[#1a1a2e] font-medium">{st.action}</td>
+                            <td className="py-1.5">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                st.status === 'pass' ? 'bg-status-pass/15 text-status-pass'
+                                : st.status === 'fail' ? 'bg-status-fail/15 text-status-fail'
+                                : 'bg-gray-100 text-[#9ca3af]'
+                              }`}>{st.status}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="text-sm text-[#9ca3af]">실행된 스텝이 없습니다.</div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-sm text-[#9ca3af]">
+                좌측에서 판정 보류 TC 를 선택하세요.
+              </div>
+            )
           )}
           {historyDetailTab === 'SKIP' && (
             activeSkip ? (

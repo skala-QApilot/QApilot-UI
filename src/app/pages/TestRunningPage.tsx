@@ -102,7 +102,7 @@ const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
 };
 
 type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'pending' | 'running' | 'aborted' | 'completed' };
-type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED';
+type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED' | 'SKIPPED';
 
 interface TestRunningPageProps {
   runningTests: RunningTest[];
@@ -241,13 +241,15 @@ export const TestRunningPage = ({
 
   // 현재 run progress 에서 tc_id → 실시간 pass/fail 맵.
   // scenarioStore 의 last_run_status(이전 실행 결과)를 덮어써서 X / ✓ 가 즉시 반영되도록.
-  const liveStatusMap = React.useMemo<Record<string, 'passed' | 'failed'>>(() => {
+  const liveStatusMap = React.useMemo<Record<string, 'passed' | 'failed' | 'skipped'>>(() => {
     if (!runProgress?.items?.length) return {};
-    const map: Record<string, 'passed' | 'failed'> = {};
+    const map: Record<string, 'passed' | 'failed' | 'skipped'> = {};
     for (const item of runProgress.items) {
       const uiStatus = (item.ui as any)?.status ?? (item.ui as any)?.tc_status;
       if (uiStatus === 'pass') { map[item.tc_id] = 'passed'; continue; }
       if (uiStatus === 'fail') { map[item.tc_id] = 'failed'; continue; }
+      // 'skip' = 검증 미완 (자동화 불가 step 보유) — passed 로 둔갑 금지
+      if (uiStatus === 'skip') { map[item.tc_id] = 'skipped'; continue; }
       if (item.ui) {
         const steps: any[] = (item.ui as any)?.steps ?? [];
         const hasFail = steps.some((s: any) => s.status === 'fail');
@@ -431,6 +433,7 @@ export const TestRunningPage = ({
   const allTCs    = scenarios.flatMap(s => (testCasesMap[s.id] || []).map(tc => ({ sId: s.id, tc })));
   const passedTCs = allTCs.filter(({ tc }) => { const s = liveStatusMap[tc.id] ?? tc.status; return s === 'passed' || s === 'completed'; });
   const failedTCs = allTCs.filter(({ tc }) => (liveStatusMap[tc.id] ?? tc.status) === 'failed');
+  const skippedTCs = allTCs.filter(({ tc }) => (liveStatusMap[tc.id] ?? tc.status) === 'skipped');
 
   // empty state
   if (!selectedRun) {
@@ -492,6 +495,7 @@ export const TestRunningPage = ({
                 { key: 'TOTAL',    label: 'TOTAL' },
                 { key: 'PASS',     label: 'PASS', count: passedTCs.length, color: 'text-status-pass', badge: 'bg-status-pass/15 text-status-pass', underline: 'bg-status-pass' },
                 { key: 'FILTERED', label: 'FAIL', count: failedTCs.length, color: 'text-status-fail', badge: 'bg-status-fail/15 text-status-fail', underline: 'bg-status-fail' },
+                { key: 'SKIPPED',  label: 'S',    count: skippedTCs.length, color: 'text-[#d4a017]', badge: 'bg-[#d4a017]/15 text-[#d4a017]', underline: 'bg-[#d4a017]' },
               ].map(tab => {
                 const active = scenarioSidebarTab === tab.key;
                 return (
@@ -526,6 +530,8 @@ export const TestRunningPage = ({
                   ? allTcs.filter(tc => { const s = liveStatusMap[tc.id] ?? tc.status; return s === 'passed' || s === 'completed'; })
                   : scenarioSidebarTab === 'FILTERED'
                   ? allTcs.filter(tc => (liveStatusMap[tc.id] ?? tc.status) === 'failed')
+                  : scenarioSidebarTab === 'SKIPPED'
+                  ? allTcs.filter(tc => (liveStatusMap[tc.id] ?? tc.status) === 'skipped')
                   : allTcs;
                 // TS 단위 live 상태 — TC live 결과에서 derive.
                 const liveTsStatus = (() => {
