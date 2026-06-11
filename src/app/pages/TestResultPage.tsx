@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { CheckCircle, ChevronLeft, Download, Eye, RotateCcw, XCircle } from 'lucide-react';
+import { CheckCircle, ChevronLeft, Download, Eye, RotateCcw, XCircle, MinusCircle } from 'lucide-react';
 import { SubHeader } from '../components/common/SubHeader';
 import { useTestStore } from '../../store/testStore';
 import { listDefects, type Defect } from '../../api/defects';
@@ -9,7 +9,7 @@ import {
   type UiResult, type ApiResult, type ActionMapping,
 } from '../../api/artifacts';
 
-type HistoryDetailTab = 'FAIL' | 'PASS';
+type HistoryDetailTab = 'FAIL' | 'PASS' | 'SKIP';
 
 interface TestResultPageProps {
   selectedExecutionId: string | null;
@@ -110,10 +110,15 @@ export const TestResultPage = ({
   const [passCases, setPassCases] = useState<
     Array<{ id: string; scenario: string; testCase: string; tcName: string; runtimeLog: string }>
   >([]);
+  // S 탭 — 검증 미완 (ui kind 'skipped': 자동화 불가 step 보유 등, 수동 검토 대상)
+  const [skipCases, setSkipCases] = useState<
+    Array<{ id: string; scenario: string; testCase: string; tcName: string; runtimeLog: string }>
+  >([]);
 
   useEffect(() => {
     if (!serviceUuid || !selectedExecutionId) {
       setPassCases([]);
+      setSkipCases([]);
       return;
     }
     let cancelled = false;
@@ -137,6 +142,16 @@ export const TestResultPage = ({
           runtimeLog: '',
         }));
       setPassCases(passes);
+      const skips = items
+        .filter(it => it.kind === 'ui' && it.status === 'skipped')
+        .map(it => ({
+          id: it.tc_id,
+          scenario: it.ts_id,
+          testCase: it.tc_id.includes('-TC-') ? `TC-${it.tc_id.split('-TC-')[1]}` : it.tc_id,
+          tcName: '',
+          runtimeLog: '',
+        }));
+      setSkipCases(skips);
     })();
     return () => { cancelled = true; };
   }, [serviceUuid, selectedExecutionId]);
@@ -152,6 +167,12 @@ export const TestResultPage = ({
     acc[p.scenario].push(p);
     return acc;
   }, {} as Record<string, typeof passCases>);
+
+  const skipByTS = skipCases.reduce((acc, p) => {
+    if (!acc[p.scenario]) acc[p.scenario] = [];
+    acc[p.scenario].push(p);
+    return acc;
+  }, {} as Record<string, typeof skipCases>);
 
   if (!selectedExecutionId) return null;
 
@@ -202,13 +223,17 @@ export const TestResultPage = ({
     ? (passCases.find(p => p.id === selectedFailTC) ?? null)
     : null;
 
+  const activeSkip = historyDetailTab === 'SKIP'
+    ? (skipCases.find(p => p.id === selectedFailTC) ?? null)
+    : null;
+
   // 활성 TC(fail 또는 pass)의 결과 3종 로드 — ui_result / api_result / action_mapping.
   useEffect(() => {
-    const tsId = activeError?.scenario ?? activePass?.scenario ?? null;
+    const tsId = activeError?.scenario ?? activePass?.scenario ?? activeSkip?.scenario ?? null;
     // fail 은 defect 의 축약 testCase 를 full tc_id 로 복원, pass 는 id 가 이미 full tc_id.
     const tcId = activeError
       ? `${activeError.scenario}-${activeError.testCase}`
-      : (activePass?.id ?? null);
+      : (activePass?.id ?? activeSkip?.id ?? null);
     if (!serviceUuid || !selectedExecutionId || !tsId || !tcId) {
       setActiveUiResult(null);
       setActiveApiResult(null);
@@ -297,6 +322,7 @@ export const TestResultPage = ({
             {([
               { id: 'FAIL' as const, label: 'FAIL', count: exec.fail, color: 'text-status-fail' },
               { id: 'PASS' as const, label: 'PASS', count: exec.pass, color: 'text-status-pass' },
+              { id: 'SKIP' as const, label: 'S', count: exec.skipped ?? skipCases.length, color: 'text-[#d4a017]' },
             ] as const).map(tab => (
               <button
                 key={tab.id}
@@ -308,11 +334,15 @@ export const TestResultPage = ({
                 {tab.label}
                 <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
                   historyDetailTab === tab.id
-                    ? (tab.id === 'FAIL' ? 'bg-status-fail/15 text-status-fail' : 'bg-status-pass/15 text-status-pass')
+                    ? (tab.id === 'FAIL' ? 'bg-status-fail/15 text-status-fail'
+                       : tab.id === 'PASS' ? 'bg-status-pass/15 text-status-pass'
+                       : 'bg-[#d4a017]/15 text-[#d4a017]')
                     : 'bg-gray-100 text-[#9ca3af]'
                 }`}>{tab.count}</span>
                 {historyDetailTab === tab.id && (
-                  <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${tab.id === 'FAIL' ? 'bg-status-fail' : 'bg-status-pass'}`} />
+                  <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${
+                    tab.id === 'FAIL' ? 'bg-status-fail' : tab.id === 'PASS' ? 'bg-status-pass' : 'bg-[#d4a017]'
+                  }`} />
                 )}
               </button>
             ))}
@@ -401,6 +431,34 @@ export const TestResultPage = ({
                 })}
               </div>
             ))}
+
+            {historyDetailTab === 'SKIP' && Object.entries(skipByTS).map(([tsId, skips]) => (
+              <div key={tsId}>
+                <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
+                  <MinusCircle className="w-3.5 h-3.5 text-[#d4a017] flex-shrink-0" />
+                  <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  <span className="ml-auto text-xs text-[#d4a017]">S {skips.length}</span>
+                </div>
+                {skips.map(p => {
+                  const isActive = selectedFailTC === p.id;
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => setSelectedFailTC(p.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors border-b border-[#f0f0f0] cursor-pointer ${
+                        isActive ? 'bg-gradient-to-r from-[#d4a017]/10 to-[#d4a017]/5 border-l-2 border-l-[#d4a017]' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <MinusCircle className="w-3.5 h-3.5 text-[#d4a017] flex-shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-[#1a1a2e] truncate">{p.testCase}</div>
+                        <div className="text-[10px] text-[#9ca3af] truncate">검증 미완 — 수동 검토</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
 
           {historyDetailTab === 'FAIL' && retestCheckedIds.size > 0 && (
@@ -453,6 +511,51 @@ export const TestResultPage = ({
                 </div>
               </div>
             </div>
+          )}
+          {historyDetailTab === 'SKIP' && (
+            activeSkip ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <MinusCircle className="w-5 h-5 text-[#d4a017]" />
+                  <span className="font-semibold text-[#1a1a2e]">{activeSkip.scenario} › {activeSkip.testCase}</span>
+                  <span className="px-2 py-0.5 text-xs rounded font-medium bg-[#d4a017]/15 text-[#d4a017]">검증 미완</span>
+                </div>
+                <div className="bg-white rounded-lg border border-[#d4a017]/40 p-4">
+                  <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">검증 미완 사유</div>
+                  <div className="text-sm text-[#6b7280] whitespace-pre-wrap">
+                    {activeUiResult?.error || '자동화 불가 step 보유 — 실행된 step 만으로는 검증이 완결되지 않아 수동 검토가 필요합니다.'}
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
+                  <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-3">실행된 스텝</div>
+                  {activeUiResult?.steps?.length ? (
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {activeUiResult.steps.map((st: any) => (
+                          <tr key={st.step_no} className="border-t border-[#f5f5f5]">
+                            <td className="py-1.5 w-8 text-[#9ca3af]">{st.step_no}</td>
+                            <td className="py-1.5 w-24 text-[#1a1a2e] font-medium">{st.action}</td>
+                            <td className="py-1.5">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                st.status === 'pass' ? 'bg-status-pass/15 text-status-pass'
+                                : st.status === 'fail' ? 'bg-status-fail/15 text-status-fail'
+                                : 'bg-gray-100 text-[#9ca3af]'
+                              }`}>{st.status}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="text-sm text-[#9ca3af]">실행된 스텝이 없습니다.</div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-sm text-[#9ca3af]">
+                좌측에서 검증 미완 TC 를 선택하세요.
+              </div>
+            )
           )}
           {historyDetailTab === 'PASS' && (
             activePass ? (
