@@ -13,6 +13,7 @@ export interface TestResult {
   pass_count: number;
   fail_count: number;
   skip_count?: number;  // 검증 미완 (자동화 불가 step 보유 — 미실행과 다름)
+  unverified_count?: number;  // cross_check 판정 보류 (API/DB 검증 부재)
   total_tc_count: number;
 }
 
