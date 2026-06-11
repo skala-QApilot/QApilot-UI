@@ -12,6 +12,7 @@ export interface UiExecutionRow {
   pass: number;
   fail: number;
   hitlPending: number;
+  skipped: number;        // 검증 미완 (S) — 실행됐지만 자동 검증 불가
   notRun: number;
   status: string;
 }
@@ -137,7 +138,8 @@ export const useTestStore = create<TestState>()((set, get) => ({
         pass: r.pass_count,
         fail: r.fail_count,
         hitlPending: 0, // 백엔드 별도 추적 X — 0 fallback
-        notRun: Math.max(0, r.total_tc_count - r.pass_count - r.fail_count),
+        skipped: r.skip_count ?? 0,
+        notRun: Math.max(0, r.total_tc_count - r.pass_count - r.fail_count - (r.skip_count ?? 0)),
         status: r.status,
       });
     }
