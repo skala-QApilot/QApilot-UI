@@ -40,12 +40,18 @@ export const PassRateChart = ({
     { dataKey: 'pass', stroke: 'var(--status-pass)', strokeWidth: 2.5, name: 'PASS' },
     { dataKey: 'total', stroke: '#9ca3af', strokeWidth: 2, name: '전체' },
     { dataKey: 'fail', stroke: 'var(--status-fail)', strokeWidth: 2, dashed: true, name: 'FAIL' },
+    // 판정 보류/검증 미완 — 가는 점선으로 표시 (PASS/FAIL 어디에도 안 보이면
+    // '전체' 와 합이 안 맞아 보인다). 0 인 날은 축에 붙어 시각 노이즈 없음.
+    { dataKey: 'unverified', stroke: '#7c8db5', strokeWidth: 1.5, dashed: true, name: 'UNVERIFIED' },
+    { dataKey: 'skipped', stroke: '#d4a017', strokeWidth: 1.5, dashed: true, name: 'SKIPPED' },
   ];
 
   const defaultLegend = [
     { color: 'var(--status-pass)', label: 'PASS', dashed: false },
     { color: '#9ca3af',             label: '전체', dashed: false },
     { color: 'var(--status-fail)',  label: 'FAIL', dashed: true },
+    { color: '#7c8db5',             label: 'UNVERIFIED', dashed: true },
+    { color: '#d4a017',             label: 'SKIPPED', dashed: true },
   ];
 
   const chartLines = lines || defaultLines;

@@ -368,6 +368,22 @@ export const TestResultPage = ({
             <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#3615CF]/10 text-[#3615CF]">#{exec.executionNumber}번째 실행</span>
             <span className="text-sm text-[#9ca3af]">{exec.startDate}</span>
             <span className="text-sm text-[#9ca3af]">{formatDuration(exec.duration)}</span>
+            {/* 유효 판정율 — run 상세에서만 강조 (홈/이력의 PASS율 과 다른 지표:
+                PASS율 = SUT 품질, 유효 판정율 = 시스템이 결론을 낸 비율) */}
+            {(() => {
+              const totalCount = (exec.pass ?? 0) + (exec.fail ?? 0)
+                + (exec.skipped ?? skipCases.length) + (exec.unverified ?? unverifiedCases.length);
+              const validCount = (exec.pass ?? 0) + defectFailCount;
+              const rate = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
+              return (
+                <span
+                  className="px-3 py-1 text-xs font-bold rounded-full bg-status-pass/10 text-status-pass border border-status-pass/20"
+                  title="유효 판정율 = (PASS + 결함 검출 FAIL) / 전체 — 시스템이 유의미한 결론을 낸 비율"
+                >
+                  유효 판정율 {rate}%
+                </span>
+              );
+            })()}
           </div>
         )}
         rightContent={(

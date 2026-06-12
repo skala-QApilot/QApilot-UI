@@ -22,6 +22,8 @@ export interface UiPassHistoryPoint {
   date: string;
   pass: number;
   fail: number;
+  unverified: number;
+  skipped: number;
   total: number;
 }
 
@@ -149,20 +151,27 @@ export const useTestStore = create<TestState>()((set, get) => ({
   },
 
   // PassRate 차트 — completed 만 집계. aborted 의 0/0 가 평균을 왜곡하지 않도록 제외.
+  // unverified/skipped 도 집계 — '판정 보류' 가 PASS/FAIL 어디에도 안 보이면
+  // 전체 수가 안 맞아 보인다 (UI 전수 점검 후속: '4 UNVERIFIED 표시 필요').
   getPassHistory: (days = 14) => {
-    const agg: Record<string, { pass: number; fail: number }> = {};
+    const agg: Record<string, { pass: number; fail: number; unverified: number; skipped: number }> = {};
     for (const r of get().results) {
       if (r.command !== 'test') continue;
       if (r.status !== 'completed') continue;
       const k = dayKey(r.completed_at || r.started_at);
       if (!k) continue;
-      if (!agg[k]) agg[k] = { pass: 0, fail: 0 };
+      if (!agg[k]) agg[k] = { pass: 0, fail: 0, unverified: 0, skipped: 0 };
       agg[k].pass += r.pass_count;
       agg[k].fail += r.fail_count;
+      agg[k].unverified += r.unverified_count ?? 0;
+      agg[k].skipped += r.skip_count ?? 0;
     }
     const sorted = Object.entries(agg)
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-days);
-    return sorted.map(([date, { pass, fail }]) => ({ date, pass, fail, total: pass + fail }));
+    return sorted.map(([date, { pass, fail, unverified, skipped }]) => ({
+      date, pass, fail, unverified, skipped,
+      total: pass + fail + unverified + skipped,
+    }));
   },
 }));
