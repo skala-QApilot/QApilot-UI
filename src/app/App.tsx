@@ -331,6 +331,8 @@ export default function App() {
   }>>([]);
   const [selectedRunningTestId, setSelectedRunningTestId] = useState<string | null>(null);
   const [retestCheckedIds, setRetestCheckedIds] = useState<Set<string>>(new Set());
+  // 재테스트 대상 TS — TestResultPage 가 체크된 defect 들의 ts_id 를 채움 (실제 run 트리거용)
+  const [retestTsIds, setRetestTsIds] = useState<string[]>([]);
   const [showRetestNavModal, setShowRetestNavModal] = useState(false);
 
   // 시나리오 그룹 선택 & 예약 설정
@@ -1371,21 +1373,17 @@ export default function App() {
   };
 
   const handleRetestConfirm = () => {
-    const newRun = {
-      id: `run-retest-${Date.now()}`,
-      name: `재테스트 시나리오 그룹 (${retestCheckedIds.size}건)`,
-      groupId: 'RETEST',
-      startTime: new Date().toISOString().slice(0, 16).replace('T', ' '),
-      status: 'running' as const,
-    };
-    setRunningTests(prev => [...prev, newRun]);
-    setSelectedRunningTestId(newRun.id);
-    setSelectedTestGroup(newRun.name);
-    setIsTestRunning(false);
+    // mock 잔재 수정: 가짜 run-retest-* 엔트리는 실제 trace 가 없어 폴링이
+    // 영원히 빈 응답 (agent: invalid uuid 경고 폭주) — 체크된 FAIL 의 TS 들로
+    // 실제 run 을 트리거한다 (handleStartRun 이 entry 생성 + trace 교체까지).
+    const tsIds = [...new Set(retestTsIds)];
     setRetestCheckedIds(new Set());
     setShowRetestNavModal(false);
-    setSelectedRunningForDetail(newRun.id);
-    navigate(`/${currentSlug}/test`);
+    void handleStartRun(
+      tsIds.length ? tsIds : undefined,
+      `재테스트 (${tsIds.length || '전체'} TS)`,
+      'RETEST',
+    );
   };
 
   // ── Auth / project load screens (fullscreen, bypass main layout) ──────────
@@ -1745,6 +1743,7 @@ export default function App() {
                   retestCheckedIds={retestCheckedIds}
                   setRetestCheckedIds={setRetestCheckedIds}
                   setShowRetestNavModal={setShowRetestNavModal}
+                  setRetestTsIds={setRetestTsIds}
                   serviceUuid={scenarioGenPollingServiceId}
                 />
               ) : (
@@ -1806,21 +1805,14 @@ export default function App() {
             <div className="flex gap-3">
               <button
                 onClick={() => {
-                  const newRun = {
-                    id: `run-retest-${Date.now()}`,
-                    name: `재테스트 시나리오 그룹 (${retestCheckedIds.size}건)`,
-                    groupId: 'RETEST',
-                    startTime: new Date().toISOString().slice(0, 16).replace('T', ' '),
-                    status: 'running' as const,
-                  };
-                  setRunningTests(prev => [...prev, newRun]);
-                  setSelectedRunningTestId(newRun.id);
-                  setSelectedTestGroup(newRun.name);
-                  setIsTestRunning(false);
+                  const tsIds = [...new Set(retestTsIds)];
                   setRetestCheckedIds(new Set());
                   setShowRetestNavModal(false);
-                  setCurrentPage('테스트');
-                  setSelectedRunningForDetail(newRun.id);
+                  void handleStartRun(
+                    tsIds.length ? tsIds : undefined,
+                    `재테스트 (${tsIds.length || '전체'} TS)`,
+                    'RETEST',
+                  );
                 }}
                 className="flex-1 px-4 py-2 bg-[#3615CF] text-white rounded-lg font-medium text-sm hover:shadow-md transition-shadow"
               >

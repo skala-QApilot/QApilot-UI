@@ -21,6 +21,8 @@ interface TestResultPageProps {
   retestCheckedIds: Set<string>;
   setRetestCheckedIds: Dispatch<SetStateAction<Set<string>>>;
   setShowRetestNavModal: Dispatch<SetStateAction<boolean>>;
+  /** 재테스트 대상 TS — 체크된 FAIL 의 ts_id 들 (App 이 실제 run 트리거에 사용). */
+  setRetestTsIds: Dispatch<SetStateAction<string[]>>;
   /** Spring 호출에 필요한 service UUID. selectedExecutionId 는 trace_id. */
   serviceUuid: string | null;
 }
@@ -90,6 +92,7 @@ export const TestResultPage = ({
   retestCheckedIds,
   setRetestCheckedIds,
   setShowRetestNavModal,
+  setRetestTsIds,
   serviceUuid,
 }: TestResultPageProps) => {
   // 실제 defects API → mockDetailErrors 형태로 변환.
@@ -524,7 +527,7 @@ export const TestResultPage = ({
                         <div className="text-[10px] text-[#9ca3af] truncate">{err.tcName}</div>
                       </div>
                       <button
-                        onClick={e => { e.stopPropagation(); setShowRetestNavModal(true); setRetestCheckedIds(new Set([err.id])); }}
+                        onClick={e => { e.stopPropagation(); setShowRetestNavModal(true); setRetestCheckedIds(new Set([err.id])); setRetestTsIds([err.scenario]); }}
                         title="재테스트 실행"
                         className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[#9ca3af] hover:text-status-fail hover:bg-status-fail/10 transition-colors"
                       >
@@ -625,7 +628,12 @@ export const TestResultPage = ({
           {historyDetailTab === 'FAIL' && retestCheckedIds.size > 0 && (
             <div className="px-4 pt-4 pb-6 border-t border-[#f0f0f0] flex-shrink-0">
               <button
-                onClick={() => setShowRetestNavModal(true)}
+                onClick={() => {
+                  setRetestTsIds([...new Set(
+                    verdictFails.filter(e => retestCheckedIds.has(e.id)).map(e => e.scenario),
+                  )]);
+                  setShowRetestNavModal(true);
+                }}
                 className="w-full px-3 py-2 bg-[#3615CF] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md hover:bg-[#3615CF]/90 transition-all"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
