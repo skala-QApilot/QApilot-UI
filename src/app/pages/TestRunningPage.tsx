@@ -102,7 +102,7 @@ const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
 };
 
 type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'pending' | 'running' | 'aborted' | 'completed' };
-type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED' | 'SKIPPED';
+type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED' | 'SKIPPED' | 'UNVERIFIED';
 
 interface TestRunningPageProps {
   runningTests: RunningTest[];
@@ -231,25 +231,41 @@ export const TestRunningPage = ({
 
   const liveLogs = React.useMemo(() => toRuntimeLogs(runProgress), [runProgress]);
 
-  // 현재 실행 중인 ts_id / tc_id — 마지막 로그 액션에서 추출.
-  const [currentTsId, currentTcId] = React.useMemo(() => {
-    if (selectedRun?.status !== 'running' || !liveLogs.length) return [null, null];
-    const lastLog = liveLogs[liveLogs.length - 1];
-    const parts = lastLog?.action?.split('/') ?? [];
-    return [parts[0] ?? null, parts[1]?.split(' ')[0] ?? null];
-  }, [selectedRun?.status, liveLogs]);
-
-  // 현재 run progress 에서 tc_id → 실시간 pass/fail 맵.
-  // scenarioStore 의 last_run_status(이전 실행 결과)를 덮어써서 X / ✓ 가 즉시 반영되도록.
-  const liveStatusMap = React.useMemo<Record<string, 'passed' | 'failed' | 'skipped'>>(() => {
+  // 현재 run progress 에서 tc_id → 실시간 상태 맵.
+  // 우선순위 3단 (run b3c98e44 전수 점검):
+  //  ① cross_check kind (최종 verdict — pass/fail/unverified) — items 에 이미 내려옴
+  //  ② api-mode (ui.verify_mode='api') 의 api.verdict — 브라우저 미수행 TC 의 즉시 판정
+  //  ③ ui kind status / step 휴리스틱 (기존)
+  // 기존엔 ③만 봐서 api-mode TC (전체의 ~89%) 가 영원히 '대기' 아이콘이었다.
+  const liveStatusMap = React.useMemo<Record<string, 'passed' | 'failed' | 'skipped' | 'unverified'>>(() => {
     if (!runProgress?.items?.length) return {};
-    const map: Record<string, 'passed' | 'failed' | 'skipped'> = {};
+    const map: Record<string, 'passed' | 'failed' | 'skipped' | 'unverified'> = {};
     for (const item of runProgress.items) {
-      const uiStatus = (item.ui as any)?.status ?? (item.ui as any)?.tc_status;
-      if (uiStatus === 'pass') { map[item.tc_id] = 'passed'; continue; }
-      if (uiStatus === 'fail') { map[item.tc_id] = 'failed'; continue; }
+      // ① cross_check verdict 최우선 — skip 보호 (cc 무신호 pass 가 skip 을 덮지 않음)
+      const cc = (item as any).cross_check;
+      const uiStatusRaw = (item.ui as any)?.status ?? (item.ui as any)?.tc_status;
+      if (cc) {
+        const mismatch = cc.has_mismatch === true;
+        const unverifiedFlags = cc.inputs_incomplete || cc.ui_skipped
+          || cc.db_unverified || cc.api_unverified || cc.error_code === 'CC_PARSE_FAIL';
+        const execVerdict = cc.api_exec_verdict;
+        if (execVerdict === 'pass') { map[item.tc_id] = 'passed'; continue; }
+        if (execVerdict === 'fail') { map[item.tc_id] = 'failed'; continue; }
+        if (mismatch) { map[item.tc_id] = 'failed'; continue; }
+        if (unverifiedFlags) { map[item.tc_id] = 'unverified'; continue; }
+        if (uiStatusRaw !== 'skip') { map[item.tc_id] = 'passed'; continue; }
+      }
+      // ② api-mode — exec verdict 가 최종 (cc 도착 전 실시간 표시)
+      if ((item.ui as any)?.verify_mode === 'api') {
+        const v = (item.api as any)?.verdict;
+        if (v === 'pass') { map[item.tc_id] = 'passed'; continue; }
+        if (v === 'fail') { map[item.tc_id] = 'failed'; continue; }
+      }
+      // ③ ui kind (기존 휴리스틱)
+      if (uiStatusRaw === 'pass') { map[item.tc_id] = 'passed'; continue; }
+      if (uiStatusRaw === 'fail') { map[item.tc_id] = 'failed'; continue; }
       // 'skip' = 검증 미완 (자동화 불가 step 보유) — passed 로 둔갑 금지
-      if (uiStatus === 'skip') { map[item.tc_id] = 'skipped'; continue; }
+      if (uiStatusRaw === 'skip') { map[item.tc_id] = 'skipped'; continue; }
       if (item.ui) {
         const steps: any[] = (item.ui as any)?.steps ?? [];
         const hasFail = steps.some((s: any) => s.status === 'fail');
@@ -259,6 +275,13 @@ export const TestRunningPage = ({
     }
     return map;
   }, [runProgress]);
+
+  // 결과 보유 TC 집합 — "현재 실행 중 TC" 판정용 (선언 순서상 allTCs 계산
+  // 이후에 사용; 아래 doneTcIds/currentTsId 참조).
+  const doneTcIds = React.useMemo(
+    () => new Set((runProgress?.items ?? []).map(it => it.tc_id)),
+    [runProgress],
+  );
 
   /**
    * AgentProgressStrip 의 단계별 상태를 runProgress + selectedRun 에서 derive.
@@ -280,9 +303,17 @@ export const TestRunningPage = ({
       if (done >= total) return 'complete';
       return 'running';
     }
-    // L3 stages: completed 시 일괄 complete, 그 외 inactive.
+    // Cross-check: items 의 cross_check payload 보유 수로 실측 — 실행 단계
+    // 종료 후 L3 진행 (수 분) 이 '멈춤' 으로 보이지 않게 (run b3c98e44 점검).
     if (selectedRun?.status === 'completed') return 'complete';
-    return 'inactive';
+    const ccDone = runProgress.items.filter(it => (it as any).cross_check).length;
+    if (stage === 'Cross-check') {
+      if (ccDone > 0) return ccDone >= total ? 'complete' : 'running';
+      // 실행 결과는 전부 모였는데 cc 미도착 — 분석 단계 진입 중
+      return has('ui') >= total && selectedRun?.status === 'running' ? 'running' : 'inactive';
+    }
+    // 원인 분석 / Report: cc 가 다 모인 뒤 running 으로 표시
+    return ccDone >= total && selectedRun?.status === 'running' ? 'running' : 'inactive';
   }, [runProgress, selectedRun?.status]);
 
   /**
@@ -345,18 +376,8 @@ export const TestRunningPage = ({
     return `${s}s`;
   };
 
-  // 현재 실행 중인 TS 자동 펼침
-  React.useEffect(() => {
-    if (!currentTsId) return;
-    setExpandedScenarios(prev => prev.includes(currentTsId) ? prev : [...prev, currentTsId]);
-  }, [currentTsId]);
-
-  // 현재 실행 중인 TC 가 보이도록 사이드바 자동 스크롤
-  React.useEffect(() => {
-    if (!currentTcId) return;
-    const el = scenarioListRef.current?.querySelector<HTMLElement>(`[data-tc-id="${currentTcId}"]`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [currentTcId]);
+  // (현재 TS 자동 펼침 / TC 자동 스크롤 effect 는 currentTsId/currentTcId
+  //  선언 이후로 이동 — 아래 allTCs 계산부 직후 참조)
 
   const formatDate  = (value: string) => value.split(' ')[0] ?? value;
   const formatClock = (value: string) => value.split(' ').slice(-1)[0] ?? value;
@@ -434,6 +455,33 @@ export const TestRunningPage = ({
   const passedTCs = allTCs.filter(({ tc }) => { const s = liveStatusMap[tc.id] ?? tc.status; return s === 'passed' || s === 'completed'; });
   const failedTCs = allTCs.filter(({ tc }) => (liveStatusMap[tc.id] ?? tc.status) === 'failed');
   const skippedTCs = allTCs.filter(({ tc }) => (liveStatusMap[tc.id] ?? tc.status) === 'skipped');
+  const unverifiedTCs = allTCs.filter(({ tc }) => liveStatusMap[tc.id] === 'unverified');
+
+  // 현재 실행 중 TC = "결과 미보유 첫 TC" (실행은 TS/TC 순번대로 진행).
+  // 기존 '마지막 로그 항목' 방식은 items 가 사전순 + api-mode TC 가 1초 미만에
+  // 지나가서, ui-mode 타임아웃 구간과 L3 분석 단계 (수 분) 동안 마지막
+  // ui-mode TC 에 고정돼 'TS-016 멈춤' 으로 보였다 (run b3c98e44 전수 점검).
+  const isRunningLive = selectedRun?.status === 'running';
+  const firstPending = isRunningLive && doneTcIds.size > 0
+    ? allTCs.find(({ tc }) => !doneTcIds.has(tc.id))
+    : undefined;
+  const currentTsId = firstPending?.sId ?? null;
+  const currentTcId = firstPending?.tc.id ?? null;
+  // 전 TC 결과 보유 + 아직 running = 실행 단계 종료, L3 (정합/원인 분석) 진행 중
+  const inAnalysisPhase = isRunningLive && doneTcIds.size > 0 && allTCs.length > 0 && !firstPending;
+
+  // 현재 실행 중인 TS 자동 펼침
+  React.useEffect(() => {
+    if (!currentTsId) return;
+    setExpandedScenarios(prev => prev.includes(currentTsId) ? prev : [...prev, currentTsId]);
+  }, [currentTsId]);
+
+  // 현재 실행 중인 TC 가 보이도록 사이드바 자동 스크롤
+  React.useEffect(() => {
+    if (!currentTcId) return;
+    const el = scenarioListRef.current?.querySelector<HTMLElement>(`[data-tc-id="${currentTcId}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [currentTcId]);
 
   // empty state
   if (!selectedRun) {
@@ -495,7 +543,8 @@ export const TestRunningPage = ({
                 { key: 'TOTAL',    label: 'TOTAL' },
                 { key: 'PASS',     label: 'PASS', count: passedTCs.length, color: 'text-status-pass', badge: 'bg-status-pass/15 text-status-pass', underline: 'bg-status-pass' },
                 { key: 'FILTERED', label: 'FAIL', count: failedTCs.length, color: 'text-status-fail', badge: 'bg-status-fail/15 text-status-fail', underline: 'bg-status-fail' },
-                { key: 'SKIPPED',  label: 'S',    count: skippedTCs.length, color: 'text-[#d4a017]', badge: 'bg-[#d4a017]/15 text-[#d4a017]', underline: 'bg-[#d4a017]' },
+                { key: 'SKIPPED',  label: 'SKIPPED', count: skippedTCs.length, color: 'text-[#d4a017]', badge: 'bg-[#d4a017]/15 text-[#d4a017]', underline: 'bg-[#d4a017]' },
+                { key: 'UNVERIFIED', label: 'UNVERIFIED', count: unverifiedTCs.length, color: 'text-[#7c8db5]', badge: 'bg-[#7c8db5]/15 text-[#7c8db5]', underline: 'bg-[#7c8db5]' },
               ].map(tab => {
                 const active = scenarioSidebarTab === tab.key;
                 return (
@@ -532,6 +581,8 @@ export const TestRunningPage = ({
                   ? allTcs.filter(tc => (liveStatusMap[tc.id] ?? tc.status) === 'failed')
                   : scenarioSidebarTab === 'SKIPPED'
                   ? allTcs.filter(tc => (liveStatusMap[tc.id] ?? tc.status) === 'skipped')
+                  : scenarioSidebarTab === 'UNVERIFIED'
+                  ? allTcs.filter(tc => liveStatusMap[tc.id] === 'unverified')
                   : allTcs;
                 // TS 단위 live 상태 — TC live 결과에서 derive.
                 const liveTsStatus = (() => {
@@ -723,6 +774,12 @@ export const TestRunningPage = ({
         <div className="flex-1 min-w-0 overflow-hidden bg-[#eef1f4] p-4">
           <div className="flex h-full min-h-0 flex-col gap-3">
             <AgentProgressStrip getNodeStatus={liveGetNodeStatus} />
+            {inAnalysisPhase && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#3615CF]/5 border border-[#3615CF]/15 text-xs text-[#3615CF] flex-shrink-0">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                전체 TC 실행 완료 — 정합성 검증(Cross-check)·원인 분석 단계 진행 중입니다. 결과가 곧 확정됩니다.
+              </div>
+            )}
             <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4">
               <TerminalFrame title="qapilot-preview - zsh" bodyClassName="aspect-video flex items-center justify-center p-0 overflow-hidden">
                 {screenshotUrl ? (

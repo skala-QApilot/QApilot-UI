@@ -309,26 +309,35 @@ export const TestResultPage = ({
       setActiveActionMapping(am);
     })();
     return () => { cancelled = true; };
-  }, [serviceUuid, selectedExecutionId, activeError, activePass]);
+    // activeSkip/activeUnverified 누락이 'SKIP/U 탭 클릭 시 상세 미로드' 의
+    // 근본 원인이었다 (UI 전수 점검) — deps 에 포함.
+  }, [serviceUuid, selectedExecutionId, activeError, activePass, activeSkip, activeUnverified]);
 
   // FAIL — 첫 fail step 의 step_no + error (Runtime 에러 로그 + UI 캡처 step).
   const failStep = activeUiResult?.steps?.find(s => s.status === 'fail') ?? null;
   const liveErrorLog = failStep?.error ?? activeError?.errorLog ?? '';
 
   // PASS — 스텝 요약을 runtime 로그로, 스크린샷이 있는 step 을 캡처로 사용.
-  const passShotStep = activeUiResult?.steps?.find(s => s.screenshot_path) ?? null;
   const passRuntimeLog = activeUiResult?.steps?.length
     ? activeUiResult.steps.map(s => `${s.step_no}. ${s.action} → ${s.status}`).join('\n')
     : '모든 검증 항목을 통과했습니다.';
 
-  // 우측 UI 캡처 — fail 은 fail step, pass 는 스크린샷 보유 step.
-  const screenshotSrc = (serviceUuid && selectedExecutionId)
+  // api-mode TC — 브라우저 미수행이라 스크린샷이 본질적으로 없음. 대신 API
+  // 검증 내역 (호출/응답/observe 사유) 을 우측 패널에 표시 (UI 전수 점검 F7/F8).
+  const isApiModeTc = (activeUiResult as any)?.verify_mode === 'api';
+  const activeAnyTc = activeError ?? activePass ?? activeSkip ?? activeUnverified;
+
+  // 우측 UI 캡처 — fail 은 fail step, 그 외 (pass/skip/unverified) 는 스크린샷
+  // 보유 step. api-mode 는 항상 null (placeholder 문구로 대체).
+  const anyShotStep = activeUiResult?.steps?.find(s => s.screenshot_path) ?? null;
+  const screenshotSrc = (serviceUuid && selectedExecutionId && !isApiModeTc && activeAnyTc)
     ? (activeError && failStep
         ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeError.scenario,
                           `${activeError.scenario}-${activeError.testCase}`, failStep.step_no)
-        : (activePass && passShotStep
-            ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activePass.scenario,
-                              activePass.id, passShotStep.step_no)
+        : (anyShotStep
+            ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario,
+                              activeError ? `${activeError.scenario}-${activeError.testCase}` : (activeAnyTc as any).id,
+                              anyShotStep.step_no)
             : null))
     : null;
 
@@ -374,7 +383,8 @@ export const TestResultPage = ({
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="w-64 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
-          <div className="px-4 border-b border-[#f0f0f0] flex items-center gap-0 flex-shrink-0">
+          {/* 4탭 풀스펠링이 w-64 를 넘칠 수 있어 wrap 허용 (UNVERIFIED 삐져나옴 수정) */}
+          <div className="px-2 border-b border-[#f0f0f0] flex items-center gap-0 flex-wrap flex-shrink-0">
             {([
               { id: 'FAIL' as const, label: 'FAIL', count: exec.fail, color: 'text-status-fail' },
               { id: 'PASS' as const, label: 'PASS', count: exec.pass, color: 'text-status-pass' },
@@ -816,11 +826,33 @@ export const TestResultPage = ({
 
         <div className="w-64 bg-white border-l border-[#f0f0f0] flex flex-col overflow-y-auto flex-shrink-0">
           <div className="p-4 border-b border-[#f0f0f0]">
-            <div className="text-xs font-semibold text-[#6b7280] mb-2 uppercase tracking-wide">UI 캡처</div>
+            <div className="text-xs font-semibold text-[#6b7280] mb-2 uppercase tracking-wide">
+              {isApiModeTc ? '검증 수단' : 'UI 캡처'}
+            </div>
             <div className="w-full h-36 bg-gray-100 rounded border border-[#f0f0f0] flex items-center justify-center overflow-hidden">
-              {screenshotSrc ? (
-                <img src={screenshotSrc} alt="에러 시점 캡처" className="w-full h-full object-contain"
-                     onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+              {isApiModeTc ? (
+                <div className="text-center text-[#6b7280] px-3">
+                  <div className="text-xs font-semibold text-[#3615CF] mb-1">API 직접 검증</div>
+                  <div className="text-[10px] leading-relaxed">
+                    이 TC 는 브라우저 없이 API 호출로 검증되어 화면 캡처가 없습니다.
+                    아래 API 검증 내역을 확인하세요.
+                  </div>
+                </div>
+              ) : screenshotSrc ? (
+                <img src={screenshotSrc} alt="검증 시점 캡처" className="w-full h-full object-contain"
+                     onError={(e) => {
+                       // 이미지를 숨기는 대신 placeholder 문구로 교체 (빈 영역 방지)
+                       const img = e.currentTarget as HTMLImageElement;
+                       img.style.display = 'none';
+                       const parent = img.parentElement;
+                       if (parent && !parent.querySelector('[data-shot-fallback]')) {
+                         const div = document.createElement('div');
+                         div.setAttribute('data-shot-fallback', '1');
+                         div.className = 'text-xs text-[#9ca3af] text-center px-2';
+                         div.textContent = '이 step 의 스크린샷이 저장되지 않았습니다';
+                         parent.appendChild(div);
+                       }
+                     }} />
               ) : (
                 <div className="text-center text-[#9ca3af]">
                   <Eye className="w-6 h-6 mx-auto mb-1 opacity-40" />
@@ -828,6 +860,27 @@ export const TestResultPage = ({
                 </div>
               )}
             </div>
+            {isApiModeTc && (
+              <div className="mt-2 rounded border border-[#f0f0f0] bg-white p-2 space-y-1.5">
+                {((activeApiResult as any)?.calls ?? []).slice(0, 2).map((c: any, i: number) => (
+                  <div key={i} className="text-[10px] font-mono">
+                    <span className="font-semibold text-[#3615CF]">{c.method}</span>{' '}
+                    <span className="text-[#6b7280] break-all">{String(c.url ?? '').replace(/^https?:\/\/[^/]+/, '')}</span>{' '}
+                    <span className={`font-bold ${Number(c.status_code) >= 400 ? 'text-status-fail' : 'text-status-pass'}`}>
+                      {c.status_code}
+                    </span>
+                  </div>
+                ))}
+                {((activeApiResult as any)?.observe_results ?? []).map((o: any, i: number) => (
+                  <div key={`o${i}`} className={`text-[10px] ${o.ok ? 'text-status-pass' : o.unresolved ? 'text-[#9ca3af]' : 'text-status-fail'}`}>
+                    {o.ok ? '✓' : o.unresolved ? '·' : '✗'} {o.reason}
+                  </div>
+                ))}
+                {(activeUiResult as any)?.summary && (
+                  <div className="text-[10px] text-[#6b7280] break-all">{(activeUiResult as any).summary}</div>
+                )}
+              </div>
+            )}
           </div>
           <div className="p-4 flex-1">
             <div className="text-xs font-semibold text-[#6b7280] mb-2 uppercase tracking-wide">
@@ -844,6 +897,22 @@ export const TestResultPage = ({
               ))}
               {historyDetailTab === 'PASS' && !activePass && (
                 <div className="text-[10px] text-[#6b7280]">항목을 선택하면 로그가 표시됩니다</div>
+              )}
+              {historyDetailTab === 'SKIP' && (
+                <div className="font-mono text-[10px] leading-5 text-[#d4a017] whitespace-pre-wrap">
+                  {activeSkip
+                    ? ((activeUiResult as any)?.error || (activeUiResult as any)?.summary
+                       || '자동화 불가 step 보유 — 수동 검토가 필요합니다.')
+                    : '항목을 선택하면 사유가 표시됩니다'}
+                </div>
+              )}
+              {historyDetailTab === 'UNVERIFIED' && (
+                <div className="font-mono text-[10px] leading-5 text-[#7c8db5] whitespace-pre-wrap">
+                  {activeUnverified
+                    ? ((activeUiResult as any)?.summary || (activeUiResult as any)?.error
+                       || '판정 보류 — 검증축 부재/입력 결손/분석 실패로 pass·fail 어느 쪽도 단정할 수 없습니다.')
+                    : '항목을 선택하면 사유가 표시됩니다'}
+                </div>
               )}
             </div>
           </div>
