@@ -328,17 +328,22 @@ export const TestResultPage = ({
   const activeAnyTc = activeError ?? activePass ?? activeSkip ?? activeUnverified;
 
   // 우측 UI 캡처 — fail 은 fail step, 그 외 (pass/skip/unverified) 는 스크린샷
-  // 보유 step. api-mode 는 항상 null (placeholder 문구로 대체).
+  // 보유 step. api-mode 는 참고 화면 캡처 (step_1.png, agent 가 부가 저장)
+  // 를 시도 — 구 run 엔 없을 수 있어 onError placeholder 로 폴백.
   const anyShotStep = activeUiResult?.steps?.find(s => s.screenshot_path) ?? null;
-  const screenshotSrc = (serviceUuid && selectedExecutionId && !isApiModeTc && activeAnyTc)
-    ? (activeError && failStep
-        ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeError.scenario,
-                          `${activeError.scenario}-${activeError.testCase}`, failStep.step_no)
-        : (anyShotStep
-            ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario,
-                              activeError ? `${activeError.scenario}-${activeError.testCase}` : (activeAnyTc as any).id,
-                              anyShotStep.step_no)
-            : null))
+  const activeFullTcId = activeError
+    ? `${activeError.scenario}-${activeError.testCase}`
+    : (activeAnyTc as any)?.id ?? null;
+  const screenshotSrc = (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId)
+    ? (isApiModeTc
+        ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, 1)
+        : (activeError && failStep
+            ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeError.scenario,
+                              activeFullTcId, failStep.step_no)
+            : (anyShotStep
+                ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario,
+                                  activeFullTcId, anyShotStep.step_no)
+                : null)))
     : null;
 
   const formatDuration = (duration: string) => duration;
@@ -843,15 +848,28 @@ export const TestResultPage = ({
         <div className="w-64 bg-white border-l border-[#f0f0f0] flex flex-col overflow-y-auto flex-shrink-0">
           <div className="p-4 border-b border-[#f0f0f0]">
             <div className="text-xs font-semibold text-[#6b7280] mb-2 uppercase tracking-wide">
-              {isApiModeTc ? '검증 수단' : 'UI 캡처'}
+              {isApiModeTc ? '참고 화면 (검증은 API)' : 'UI 캡처'}
             </div>
             <div className="w-full h-36 bg-gray-100 rounded border border-[#f0f0f0] flex items-center justify-center overflow-hidden">
-              {isApiModeTc ? (
+              {isApiModeTc && screenshotSrc ? (
+                <img src={screenshotSrc} alt="참고 화면 캡처" className="w-full h-full object-contain"
+                     onError={(e) => {
+                       const img = e.currentTarget as HTMLImageElement;
+                       img.style.display = 'none';
+                       const parent = img.parentElement;
+                       if (parent && !parent.querySelector('[data-shot-fallback]')) {
+                         const div = document.createElement('div');
+                         div.setAttribute('data-shot-fallback', '1');
+                         div.className = 'text-[10px] text-[#6b7280] text-center px-3 leading-relaxed';
+                         div.textContent = 'API 직접 검증 — 이 run 에는 참고 화면 캡처가 없습니다 (신규 run 부터 저장). 아래 API 검증 내역이 판정 근거입니다.';
+                         parent.appendChild(div);
+                       }
+                     }} />
+              ) : isApiModeTc ? (
                 <div className="text-center text-[#6b7280] px-3">
                   <div className="text-xs font-semibold text-[#3615CF] mb-1">API 직접 검증</div>
                   <div className="text-[10px] leading-relaxed">
-                    이 TC 는 브라우저 없이 API 호출로 검증되어 화면 캡처가 없습니다.
-                    아래 API 검증 내역을 확인하세요.
+                    이 TC 는 브라우저 없이 API 호출로 검증됩니다. 아래 API 검증 내역을 확인하세요.
                   </div>
                 </div>
               ) : screenshotSrc ? (
