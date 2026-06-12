@@ -283,38 +283,8 @@ export const TestRunningPage = ({
     [runProgress],
   );
 
-  /**
-   * AgentProgressStrip 의 단계별 상태를 runProgress + selectedRun 에서 derive.
-   * - UI/API/DB: TC 당 ui_result/api_result/db_result 가 디스크에 쓰이면 카운트.
-   *   전체 카운트 > 0 면 "running", 전 항목에 결과 있으면 "complete".
-   * - Cross-check / 원인 분석 / Report: 별도 endpoint 없어서 heuristic.
-   *   selectedRun.status === 'completed' 면 모두 complete.
-   *   그 외엔 inactive (실제 진행 표시는 향후 L3 API 도입 시 보강).
-   */
-  const liveGetNodeStatus = React.useCallback((stage: string): 'inactive' | 'running' | 'complete' => {
-    if (!runProgress || runProgress.items.length === 0) return 'inactive';
-    const total = runProgress.items.length;
-    const has = (kind: 'ui' | 'api' | 'db') => runProgress.items.filter(it => (it as any)[kind]).length;
-    if (stage === 'UI' || stage === 'API' || stage === 'DB') {
-      const kind = stage.toLowerCase() as 'ui' | 'api' | 'db';
-      const done = has(kind);
-      if (done === 0) return 'inactive';
-      if (done >= total && selectedRun?.status !== 'running') return 'complete';
-      if (done >= total) return 'complete';
-      return 'running';
-    }
-    // Cross-check: items 의 cross_check payload 보유 수로 실측 — 실행 단계
-    // 종료 후 L3 진행 (수 분) 이 '멈춤' 으로 보이지 않게 (run b3c98e44 점검).
-    if (selectedRun?.status === 'completed') return 'complete';
-    const ccDone = runProgress.items.filter(it => (it as any).cross_check).length;
-    if (stage === 'Cross-check') {
-      if (ccDone > 0) return ccDone >= total ? 'complete' : 'running';
-      // 실행 결과는 전부 모였는데 cc 미도착 — 분석 단계 진입 중
-      return has('ui') >= total && selectedRun?.status === 'running' ? 'running' : 'inactive';
-    }
-    // 원인 분석 / Report: cc 가 다 모인 뒤 running 으로 표시
-    return ccDone >= total && selectedRun?.status === 'running' ? 'running' : 'inactive';
-  }, [runProgress, selectedRun?.status]);
+  // (liveGetNodeStatus 는 전체 계획 TC 수 (allTCs) 가 필요해 allTCs 계산부
+  //  이후에 plain 함수로 정의 — useCallback 이 stale allTCs 를 캡처하지 않게)
 
   /**
    * 현재 selectedRun 을 다시 실행.
@@ -469,6 +439,34 @@ export const TestRunningPage = ({
   const currentTcId = firstPending?.tc.id ?? null;
   // 전 TC 결과 보유 + 아직 running = 실행 단계 종료, L3 (정합/원인 분석) 진행 중
   const inAnalysisPhase = isRunningLive && doneTcIds.size > 0 && allTCs.length > 0 && !firstPending;
+
+  /**
+   * AgentProgressStrip 단계별 상태 — 기준 분모는 '전체 계획 TC 수' (allTCs).
+   * 이전엔 '결과 보유 항목 수' 를 분모로 써서 결과가 1개만 쌓여도
+   * done==total → UI/API/DB 가 실행 초반부터 ✓ 로 보였다 (스크린샷 실증).
+   */
+  const liveGetNodeStatus = (stage: string): 'inactive' | 'running' | 'complete' => {
+    const items = runProgress?.items ?? [];
+    if (selectedRun?.status === 'completed') return 'complete';
+    if (!items.length) return 'inactive';
+    const total = allTCs.length || items.length;  // 계획 수 우선, 폴백으로 보유 수
+    const has = (kind: 'ui' | 'api' | 'db') =>
+      items.filter(it => (it as any)[kind]).length;
+    if (stage === 'UI' || stage === 'API' || stage === 'DB') {
+      const done = has(stage.toLowerCase() as 'ui' | 'api' | 'db');
+      if (done === 0) return 'inactive';
+      return done >= total ? 'complete' : 'running';
+    }
+    // Cross-check: items 의 cross_check payload 보유 수로 실측
+    const ccDone = items.filter(it => (it as any).cross_check).length;
+    if (stage === 'Cross-check') {
+      if (ccDone > 0) return ccDone >= total ? 'complete' : 'running';
+      // 실행 결과는 전부 모였는데 cc 미도착 — 분석 단계 진입 중
+      return has('ui') >= total && isRunningLive ? 'running' : 'inactive';
+    }
+    // 원인 분석 / Report: cc 가 다 모인 뒤 running 으로 표시
+    return ccDone >= total && isRunningLive ? 'running' : 'inactive';
+  };
 
   // 현재 실행 중인 TS 자동 펼침
   React.useEffect(() => {
