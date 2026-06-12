@@ -119,6 +119,8 @@ export const TestResultPage = ({
   // 선택된 TC 의 결과들 — ui_result(스텝/스크린샷), api_result(실제 호출), action_mapping(동작→API).
   const [activeUiResult, setActiveUiResult] = useState<UiResult | null>(null);
   const [activeApiResult, setActiveApiResult] = useState<ApiResult | null>(null);
+  // 스텝별 캡처 라이트박스 — 스텝 행 우측 카메라 버튼으로 열림
+  const [stepShot, setStepShot] = useState<{ src: string; label: string } | null>(null);
   const [activeActionMapping, setActiveActionMapping] = useState<ActionMapping | null>(null);
 
   // PASS 탭 — tc_results 직접조회로 채운다 (kind='ui' && status='passed').
@@ -334,6 +336,17 @@ export const TestResultPage = ({
   const activeFullTcId = activeError
     ? `${activeError.scenario}-${activeError.testCase}`
     : (activeAnyTc as any)?.id ?? null;
+
+  // 스텝별 캡처 URL — ui-mode 는 실행 캡처, api-mode 는 참고 화면 (agent 가
+  // navigate 만 수행해 스텝 시점 화면 저장). 없으면 라이트박스가 안내 표시.
+  const stepShotUrl = (stepNo: number): string | null =>
+    (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId)
+      ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, stepNo)
+      : null;
+  const openStepShot = (stepNo: number, action: string) => {
+    const src = stepShotUrl(stepNo);
+    if (src) setStepShot({ src, label: `step ${stepNo} · ${ACTION_LABEL[action] ?? action}${isApiModeTc ? ' (참고 화면 — 검증은 API)' : ''}` });
+  };
   const screenshotSrc = (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId)
     ? (isApiModeTc
         ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, 1)
@@ -691,6 +704,13 @@ export const TestResultPage = ({
                                 : 'bg-gray-100 text-[#9ca3af]'
                               }`}>{st.status}</span>
                             </td>
+                            <td className="py-1.5 w-10 text-right">
+                              <button type="button" onClick={() => openStepShot(st.step_no, st.action)}
+                                title="이 스텝의 캡처 보기"
+                                className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -736,6 +756,13 @@ export const TestResultPage = ({
                                 : 'bg-gray-100 text-[#9ca3af]'
                               }`}>{st.status}</span>
                             </td>
+                            <td className="py-1.5 w-10 text-right">
+                              <button type="button" onClick={() => openStepShot(st.step_no, st.action)}
+                                title="이 스텝의 캡처 보기"
+                                className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -772,6 +799,7 @@ export const TestResultPage = ({
                           <th className="text-left font-semibold pb-1.5">대상</th>
                           <th className="text-left font-semibold pb-1.5">값</th>
                           <th className="text-left font-semibold pb-1.5">호출 API</th>
+                          <th className="text-right font-semibold pb-1.5 w-10">캡처</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -785,6 +813,16 @@ export const TestResultPage = ({
                               {s.api_endpoint
                                 ? <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#3615CF]/10 text-[#3615CF]">{s.api_endpoint}</span>
                                 : <span className="text-[#d1d5db]">—</span>}
+                            </td>
+                            <td className="py-1.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => openStepShot(s.step_no, s.action)}
+                                title="이 스텝의 캡처 보기"
+                                className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -952,6 +990,48 @@ export const TestResultPage = ({
           </div>
         </div>
       </div>
+
+      {/* 스텝별 캡처 라이트박스 — 스텝 행 우측 버튼으로 열림.
+          api-mode 는 참고 화면 (navigate 시점만 실제 화면, 동작 미수행). */}
+      {stepShot && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-8"
+          onClick={() => setStepShot(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#f0f0f0]">
+              <span className="text-sm font-semibold text-[#1a1a2e]">{stepShot.label}</span>
+              <button
+                type="button"
+                onClick={() => setStepShot(null)}
+                className="text-[#9ca3af] hover:text-[#1a1a2e] text-lg leading-none px-1"
+              >×</button>
+            </div>
+            <div className="flex-1 min-h-[200px] bg-gray-50 flex items-center justify-center overflow-auto p-3">
+              <img
+                src={stepShot.src}
+                alt={stepShot.label}
+                className="max-w-full max-h-[70vh] object-contain rounded border border-[#e5e7eb]"
+                onError={(e) => {
+                  const img = e.currentTarget as HTMLImageElement;
+                  img.style.display = 'none';
+                  const parent = img.parentElement;
+                  if (parent && !parent.querySelector('[data-shot-fallback]')) {
+                    const div = document.createElement('div');
+                    div.setAttribute('data-shot-fallback', '1');
+                    div.className = 'text-sm text-[#9ca3af] text-center px-6 leading-relaxed';
+                    div.textContent = '이 스텝의 캡처가 저장되어 있지 않습니다. (구 run 이거나, api-mode 의 동작 미수행 스텝은 신규 run 부터 해당 시점 참고 화면이 저장됩니다)';
+                    parent.appendChild(div);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
