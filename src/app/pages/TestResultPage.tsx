@@ -31,10 +31,16 @@ interface DetailError {
   testCase: string;
   tcName: string;
   errorCode: string;
+  /** Layer 3 분류 원본 — PRODUCT_DEFECT_CANDIDATE = '결함 검출'(FAIL 이 정상),
+   *  그 외 TEST_*­/ENV_* = 테스트·환경 문제(FAIL 이 비정상). FAIL 세분 표시용. */
+  category: string;
   summary: string;
   solutions: Array<{ cause: string; solution: string }>;
   errorLog: string;
 }
+
+/** FAIL 이 '정상'(시스템이 제품 결함을 검출한 것)인 분류인지. */
+const isDefectDetection = (category: string) => category === 'PRODUCT_DEFECT_CANDIDATE';
 
 /**
  * defects 한 row → TestResultPage 가 기대하는 DetailError 모양으로 변환.
@@ -59,6 +65,7 @@ function defectToDetailError(d: Defect): DetailError {
       UI_ERROR: 'UI 오류', API_ERROR: 'API 오류', DATA_MISMATCH: '데이터 불일치',
       INFRA: '인프라', DOMAIN_RULE: '도메인 규칙',
     } as Record<string, string>)[d.category] ?? d.category,
+    category: d.category,
     summary: d.root_cause_top1 ?? '',
     solutions: d.root_cause_top1 || d.solution_guide
       ? [{ cause: d.root_cause_top1 ?? '', solution: d.solution_guide ?? '' }]
@@ -191,6 +198,10 @@ export const TestResultPage = ({
   const verdictFails = failedVerdictIds === null
     ? detailErrors
     : detailErrors.filter(err => failedVerdictIds.has(`${err.scenario}-${err.testCase}`));
+  // FAIL 세분 — 결함 검출(정상 FAIL: 시스템이 제품 결함을 잡은 것) vs
+  // 테스트·환경(비정상 FAIL: 테스트 자산/환경 문제). Layer 3 분류 기반.
+  const defectFailCount = verdictFails.filter(e => isDefectDetection(e.category)).length;
+  const abnormalFailCount = verdictFails.length - defectFailCount;
   const failsByTS = verdictFails.reduce((acc, err) => {
     if (!acc[err.scenario]) acc[err.scenario] = [];
     acc[err.scenario].push(err);
@@ -367,13 +378,13 @@ export const TestResultPage = ({
             {([
               { id: 'FAIL' as const, label: 'FAIL', count: exec.fail, color: 'text-status-fail' },
               { id: 'PASS' as const, label: 'PASS', count: exec.pass, color: 'text-status-pass' },
-              { id: 'SKIP' as const, label: 'S', count: exec.skipped ?? skipCases.length, color: 'text-[#d4a017]' },
-              { id: 'UNVERIFIED' as const, label: 'U', count: exec.unverified ?? unverifiedCases.length, color: 'text-[#7c8db5]' },
+              { id: 'SKIP' as const, label: 'SKIPPED', count: exec.skipped ?? skipCases.length, color: 'text-[#d4a017]' },
+              { id: 'UNVERIFIED' as const, label: 'UNVERIFIED', count: exec.unverified ?? unverifiedCases.length, color: 'text-[#7c8db5]' },
             ] as const).map(tab => (
               <button
                 key={tab.id}
                 onClick={() => { setHistoryDetailTab(tab.id); setSelectedFailTC(null); }}
-                className={`px-4 py-3 text-xs font-semibold relative flex items-center gap-1.5 transition-colors ${
+                className={`px-2 py-3 text-[11px] font-semibold relative flex items-center gap-1 transition-colors ${
                   historyDetailTab === tab.id ? tab.color : 'text-[#9ca3af] hover:text-[#6b7280]'
                 }`}
               >
@@ -395,6 +406,28 @@ export const TestResultPage = ({
               </button>
             ))}
           </div>
+
+          {/* 유효 판정율 — PASS + 결함검출 FAIL = 시스템이 유의미한 결론을 낸 비율.
+              FAIL 중 PRODUCT_DEFECT_CANDIDATE 는 제품 결함을 잡은 '정상 FAIL'. */}
+          {(() => {
+            const totalCount = (exec.pass ?? 0) + (exec.fail ?? 0)
+              + (exec.skipped ?? skipCases.length) + (exec.unverified ?? unverifiedCases.length);
+            const validCount = (exec.pass ?? 0) + defectFailCount;
+            const validRate = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
+            return (
+              <div className="px-4 py-2 border-b border-[#f0f0f0] bg-gray-50/60 flex-shrink-0">
+                <div className="flex items-center justify-between text-[10px] text-[#6b7280]">
+                  <span>유효 판정율 (PASS + 결함 검출)</span>
+                  <span className="font-bold text-[#1a1a2e]">{validRate}%</span>
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-[10px]">
+                  <span className="text-status-fail">결함 검출 {defectFailCount}</span>
+                  <span className="text-[#9ca3af]">·</span>
+                  <span className="text-[#d4a017]">테스트·환경 {abnormalFailCount}</span>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="flex-1 overflow-y-auto py-2">
             {historyDetailTab === 'FAIL' && Object.entries(failsByTS).map(([tsId, errors]) => (
@@ -436,7 +469,14 @@ export const TestResultPage = ({
                       />
                       <XCircle className="w-3.5 h-3.5 text-status-fail flex-shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium text-[#1a1a2e] truncate">{err.testCase}</div>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs font-medium text-[#1a1a2e] truncate">{err.testCase}</span>
+                          <span className={`px-1 py-px rounded text-[9px] font-semibold flex-shrink-0 ${
+                            isDefectDetection(err.category)
+                              ? 'bg-status-fail/10 text-status-fail'
+                              : 'bg-[#d4a017]/10 text-[#d4a017]'
+                          }`}>{isDefectDetection(err.category) ? '결함 검출' : '테스트·환경'}</span>
+                        </div>
                         <div className="text-[10px] text-[#9ca3af] truncate">{err.tcName}</div>
                       </div>
                       <button

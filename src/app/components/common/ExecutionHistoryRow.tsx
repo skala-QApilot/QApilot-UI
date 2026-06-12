@@ -55,10 +55,10 @@ export const ExecutionHistoryRow = ({ exec, onClick, loading = false }: Executio
             <span className="text-xs font-medium text-status-pass">{exec.pass}P</span>
             <span className="text-xs font-medium text-status-fail">{exec.fail}F</span>
             {skipped > 0 && (
-              <span className="text-xs font-medium text-[#d4a017]" title="검증 미완 (자동화 불가 — 수동 검토)">{skipped}S</span>
+              <span className="text-xs font-medium text-[#d4a017]" title="검증 미완 (자동화 불가 — 수동 검토)">{skipped} SKIPPED</span>
             )}
             {unverified > 0 && (
-              <span className="text-xs font-medium text-[#7c8db5]" title="판정 보류 (API/DB 검증축 부재)">{unverified}U</span>
+              <span className="text-xs font-medium text-[#7c8db5]" title="판정 보류 (API/DB 검증축 부재)">{unverified} UNVERIFIED</span>
             )}
             <span className="text-xs font-medium text-[#9ca3af]">{exec.notRun}N</span>
           </>
