@@ -422,10 +422,14 @@ export const TestRunningPage = ({
   );
 
   const allTCs    = scenarios.flatMap(s => (testCasesMap[s.id] || []).map(tc => ({ sId: s.id, tc })));
-  const passedTCs = allTCs.filter(({ tc }) => { const s = liveStatusMap[tc.id] ?? tc.status; return s === 'passed' || s === 'completed'; });
-  const failedTCs = allTCs.filter(({ tc }) => (liveStatusMap[tc.id] ?? tc.status) === 'failed');
-  const skippedTCs = allTCs.filter(({ tc }) => (liveStatusMap[tc.id] ?? tc.status) === 'skipped');
-  const unverifiedTCs = allTCs.filter(({ tc }) => liveStatusMap[tc.id] === 'unverified');
+  // 이 run 의 결과만 표시 — tc.status (scenarioStore 의 last_run_status =
+  // '이전 실행' 결과) 폴백은 아직 안 돈 TC/TS 에 과거의 X 를 미리 그린다
+  // (스크린샷 실증: 미진행 TS-007~010 이 전부 X). 결과 미보유 = pending.
+  const liveTcStatus = (tcId: string): string => liveStatusMap[tcId] ?? 'pending';
+  const passedTCs = allTCs.filter(({ tc }) => liveTcStatus(tc.id) === 'passed');
+  const failedTCs = allTCs.filter(({ tc }) => liveTcStatus(tc.id) === 'failed');
+  const skippedTCs = allTCs.filter(({ tc }) => liveTcStatus(tc.id) === 'skipped');
+  const unverifiedTCs = allTCs.filter(({ tc }) => liveTcStatus(tc.id) === 'unverified');
 
   // 현재 실행 중 TC = "결과 미보유 첫 TC" (실행은 TS/TC 순번대로 진행).
   // 기존 '마지막 로그 항목' 방식은 items 가 사전순 + api-mode TC 가 1초 미만에
@@ -574,21 +578,23 @@ export const TestRunningPage = ({
                 const isCurrentTs = selectedRun?.status === 'running' && currentTsId === scenario.id;
                 const allTcs = testCasesMap[scenario.id] || [];
                 const tcs = scenarioSidebarTab === 'PASS'
-                  ? allTcs.filter(tc => { const s = liveStatusMap[tc.id] ?? tc.status; return s === 'passed' || s === 'completed'; })
+                  ? allTcs.filter(tc => liveTcStatus(tc.id) === 'passed')
                   : scenarioSidebarTab === 'FILTERED'
-                  ? allTcs.filter(tc => (liveStatusMap[tc.id] ?? tc.status) === 'failed')
+                  ? allTcs.filter(tc => liveTcStatus(tc.id) === 'failed')
                   : scenarioSidebarTab === 'SKIPPED'
-                  ? allTcs.filter(tc => (liveStatusMap[tc.id] ?? tc.status) === 'skipped')
+                  ? allTcs.filter(tc => liveTcStatus(tc.id) === 'skipped')
                   : scenarioSidebarTab === 'UNVERIFIED'
-                  ? allTcs.filter(tc => liveStatusMap[tc.id] === 'unverified')
+                  ? allTcs.filter(tc => liveTcStatus(tc.id) === 'unverified')
                   : allTcs;
                 // TS 단위 live 상태 — TC live 결과에서 derive.
                 const liveTsStatus = (() => {
-                  if (!allTcs.length) return scenario.status;
-                  const statuses = allTcs.map(tc => liveStatusMap[tc.id] ?? tc.status);
+                  if (!allTcs.length) return 'pending';
+                  const statuses = allTcs.map(tc => liveTcStatus(tc.id));
+                  // 이 run 의 결과가 하나도 없으면 미진행 — 과거 결과로 칠하지 않는다
+                  if (statuses.every(s => s === 'pending')) return 'pending';
                   if (statuses.some(s => s === 'failed')) return 'failed';
-                  if (statuses.every(s => s === 'passed' || s === 'completed')) return 'passed';
-                  return scenario.status;
+                  if (statuses.every(s => s === 'passed')) return 'passed';
+                  return 'running';
                 })();
                 if (scenarioSidebarTab !== 'TOTAL' && tcs.length === 0) return null;
                 return (
@@ -660,7 +666,7 @@ export const TestRunningPage = ({
                             </div>
                             {isCurrentTc
                               ? <Loader2 className="w-3 h-3 text-[#3615CF] animate-spin flex-shrink-0" />
-                              : <StatusIcon status={liveStatusMap[tc.id] ?? tc.status} size="w-3 h-3" />}
+                              : <StatusIcon status={liveTcStatus(tc.id)} size="w-3 h-3" />}
                           </div>
 
                           {/* TV 행 */}
