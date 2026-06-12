@@ -22,6 +22,8 @@ export interface UiTestValue {
   value?: string;
   type?: string;
   purpose?: string;
+  /** 이 값의 근거 — 문서/코드 출처 또는 "근거 없음". */
+  evidence?: string;
   status: UiScenarioStatus;
 }
 
@@ -35,6 +37,12 @@ export interface UiTestCase {
   when?: string;
   then?: string;
   tags?: string[];
+  /** given/when/then 별 근거. */
+  evidence?: scenariosApi.TestCaseEvidence;
+  /** 이 TC 가 참조한 코드 위치. */
+  codebaseRef?: scenariosApi.CodebaseRef;
+  /** 이 TC 생성 prompt 에 실제로 들어간 schemas/selectors/patterns/db_snapshot. */
+  tvContext?: scenariosApi.TvContext;
   /** 코드 변경 감지로 삭제 대기 중인 TC — 빨간 스타일로 표시 후 사용자 검토. */
   pendingDelete?: boolean;
 }
@@ -49,6 +57,8 @@ export interface UiScenario {
   hasChanges: boolean;
   /** 최근 실행 시각 (ISO). */
   lastRunAt: string | null;
+  /** 이 TS 를 생성할 때 검색한 문서. */
+  docSearch?: scenariosApi.DocSearch;
 }
 
 export interface UiScenarioVersion {
@@ -140,6 +150,7 @@ export function toUiScenario(s: scenariosApi.Scenario): UiScenario {
     testCases: Array.isArray(s.test_cases) ? s.test_cases.length : 0,
     hasChanges: Boolean(s.has_pending_changes),
     lastRunAt: s.last_run_at ?? null,
+    docSearch: s.doc_search,
   };
 }
 
@@ -152,6 +163,7 @@ export function toUiTestValue(raw: scenariosApi.TestValue, idx: number): UiTestV
     value: raw.value,
     type: raw.type,
     purpose: raw.purpose,
+    evidence: raw.evidence,
     status: 'pending',
   };
 }
@@ -166,6 +178,9 @@ export function toUiTestCase(tc: scenariosApi.TestCase): UiTestCase {
     when: tc.when,
     then: tc.then,
     tags: tc.tags,
+    evidence: tc.evidence,
+    codebaseRef: tc.codebase_ref,
+    tvContext: tc.tv_context,
     pendingDelete: tc._pending_delete ?? false,
   };
 }

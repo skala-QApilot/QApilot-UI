@@ -67,9 +67,52 @@ export interface ActionStep {
   api_endpoint?: string | null;          // 이 스텝이 호출하도록 매핑된 API
 }
 
+export interface ActionMappingContextRouteRef {
+  path?: string | null;
+  component_file?: string | null;
+  component_name?: string | null;
+}
+
+export interface ActionMappingContextSelectorRouteRef {
+  route?: string | null;
+  input_count?: number;
+  button_count?: number;
+  output_count?: number;
+  dynamic_count?: number;
+}
+
+export interface ActionMappingContextSchemaRefs {
+  request_schemas?: string[];
+  response_schemas?: string[];
+  db_models?: string[];
+}
+
+export interface ActionMappingContextSourceRef {
+  file?: string | null;
+  line_start?: number | null;
+  line_end?: number | null;
+}
+
+export interface ActionMappingContextSourceCandidate {
+  file?: string | null;
+  line_start?: number | null;
+  line_end?: number | null;
+  reason?: string | null;
+}
+
+export interface ActionMappingContext {
+  route_refs?: ActionMappingContextRouteRef[];
+  selector_route_refs?: ActionMappingContextSelectorRouteRef[];
+  schema_refs?: ActionMappingContextSchemaRefs;
+  source_refs?: ActionMappingContextSourceRef[];
+  source_status?: string;
+  source_candidates?: ActionMappingContextSourceCandidate[];
+}
+
 export interface ActionMapping {
   tc_id?: string;
   steps: ActionStep[];
+  mapping_context?: ActionMappingContext;
 }
 
 export interface ApiCall {

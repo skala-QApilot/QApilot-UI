@@ -10,7 +10,7 @@ import type { UiScenario, UiTestCase } from '../../store/scenarioStore';
 
 type TestCaseMap = Record<string, UiTestCase[]>;
 import type { ChangeRequestStatus } from '../../api/scenarioChangeRequests';
-import { updateScenario, deleteScenario } from '../../api/scenarios';
+import { updateScenario, deleteScenario, getDocumentContent, getSourceContent } from '../../api/scenarios';
 
 interface ScenarioPageProps {
   [key: string]: any;
@@ -121,6 +121,91 @@ onVersionRollback,
   const [tvDetailEditDraft, setTvDetailEditDraft] = React.useState({ field: '', type: '', value: '', purpose: '' });
   const [tvCopied, setTvCopied] = React.useState<string | null>(null);
 
+  // 원문 보기 모달 (도메인 문서 / 코드 본문) state
+  const [contentModal, setContentModal] = React.useState<{
+    title: string; content: string; loading: boolean; error: string | null;
+  } | null>(null);
+
+  const openDocumentModal = async (filename: string) => {
+    setContentModal({ title: filename, content: '', loading: true, error: null });
+    try {
+      const content = await getDocumentContent(serviceId, filename);
+      setContentModal({ title: filename, content, loading: false, error: null });
+    } catch (e) {
+      setContentModal({ title: filename, content: '', loading: false, error: '문서를 불러오지 못했습니다.' });
+    }
+  };
+
+  const openSourceModal = async (file: string, commitSha: string | null, lineStart?: number | null, lineEnd?: number | null) => {
+    const title = lineStart != null && lineEnd != null ? `${file} (${lineStart}-${lineEnd})` : file;
+    setContentModal({ title, content: '', loading: true, error: null });
+    try {
+      const result = await getSourceContent(serviceId, file, commitSha || '', {
+        lineStart: lineStart ?? undefined,
+        lineEnd: lineEnd ?? undefined,
+      });
+      setContentModal({ title, content: result.content, loading: false, error: null });
+    } catch (e) {
+      setContentModal({ title, content: '', loading: false, error: '코드를 불러오지 못했습니다.' });
+    }
+  };
+
+  // tv_context (schemas/selectors/patterns/db_snapshot) 의 한 항목을 JSON 으로 표시.
+  const openTvContextModal = (label: string, data: unknown) => {
+    setContentModal({
+      title: label,
+      content: data == null ? '(없음)' : JSON.stringify(data, null, 2),
+      loading: false,
+      error: null,
+    });
+  };
+
+  // evidence 문자열을 분석해 클릭 시 보여줄 원본 리소스를 연다.
+  // 형식: "파일명.md" (검색 문서), "app/foo.py:10-20" / "app/foo.py (10-20)" (코드 위치), "스키마: <필드>" (DB 제약), "근거 없음".
+  const openEvidenceSource = (
+    evidence: string | undefined,
+    tc: { codebaseRef?: import('../../api/scenarios').CodebaseRef },
+    scenario: { docSearch?: import('../../api/scenarios').DocSearch },
+  ) => {
+    if (!evidence || evidence === '근거 없음') return;
+    if (evidence.startsWith('스키마:')) {
+      const table = tc.codebaseRef?.table;
+      setContentModal({
+        title: evidence,
+        content: table ? `참조 테이블: ${table}` : '스키마 제약 기반 — 참조 테이블 정보 없음',
+        loading: false, error: null,
+      });
+      return;
+    }
+    const codeMatch = evidence.match(/^(.+?)[\s:]\(?(\d+)-(\d+)\)?$/);
+    if (codeMatch) {
+      openSourceModal(codeMatch[1].trim(), tc.codebaseRef?.commit_sha ?? null, Number(codeMatch[2]), Number(codeMatch[3]));
+      return;
+    }
+    const docSrc = scenario.docSearch?.sources?.find(s => s.source === evidence);
+    if (docSrc?.content) {
+      setContentModal({ title: `${evidence} (검색된 청크)`, content: docSrc.content, loading: false, error: null });
+      return;
+    }
+    openDocumentModal(evidence);
+  };
+
+  // given/when/then/value 별 근거 배지 — "근거 없음"은 경고색, 그 외는 출처 표시
+  const renderEvidenceBadge = (evidence?: string, onClick?: () => void) => {
+    if (!evidence) return null;
+    const isNone = evidence === '근거 없음';
+    const clickable = !isNone && !!onClick;
+    return (
+      <span onClick={clickable ? (e => { e.stopPropagation(); onClick!(); }) : undefined}
+        title={clickable ? '참조 리소스 보기' : undefined}
+        className={`ml-1.5 px-1.5 py-0.5 text-[9px] font-mono rounded flex-shrink-0 ${
+        isNone ? 'bg-[#fef3c7] text-[#b45309]' : clickable ? 'bg-[#dcfce7] text-[#15803d] cursor-pointer hover:bg-[#bbf7d0]' : 'bg-[#dcfce7] text-[#15803d]'
+      }`}>
+        [{evidence}]
+      </span>
+    );
+  };
+
   // 예약하기 모달 state
   const [showScheduleModal, setShowScheduleModal] = React.useState(false);
   const [selectedGroupForSchedule, setSelectedGroupForSchedule] = React.useState<string | null>(null);
@@ -167,11 +252,14 @@ onVersionRollback,
 
   // typed aliases to suppress implicit-any from loose prop types
   const _selectedTCIds: string[] = selectedTCIds as string[];
-  const _dynamicScenarios: Array<{ id: string; name: string; tags: string[] }> = dynamicScenarios as any[];
+  const _dynamicScenarios: Array<{ id: string; name: string; tags: string[]; docSearch?: import('../../api/scenarios').DocSearch }> = dynamicScenarios as any[];
   const _dynamicTestCases: Record<string, Array<{
     id: string; name: string;
     given?: string; when?: string; then?: string; tags?: string[];
-    values: Array<{ id: string; name: string; field?: string; value?: string; type?: string; purpose?: string }>;
+    evidence?: import('../../api/scenarios').TestCaseEvidence;
+    codebaseRef?: import('../../api/scenarios').CodebaseRef;
+    tvContext?: import('../../api/scenarios').TvContext;
+    values: Array<{ id: string; name: string; field?: string; value?: string; type?: string; purpose?: string; evidence?: string }>;
   }>> = dynamicTestCases as any;
   const _aiItemActions: Record<string, string> = aiItemActions as Record<string, string>;
   const _dynamicAIItems: Record<string, { reason: string; trigger: string; timestamp: string; targetTcId?: string | null; changedTcIds?: string[]; deletedTcIds?: string[]; deleteTs?: boolean }> = dynamicAIItems as any;
@@ -951,6 +1039,24 @@ onVersionRollback,
                     )}
                   </div>
 
+                  {/* 참조 문서 — TS 생성 시 검색한 도메인 문서 (doc_search.sources) */}
+                  {isExpanded && (scenario.docSearch?.sources?.length ?? 0) > 0 && (
+                    <div className="px-2.5 py-1.5 border-b border-[#f0f0f0]/60 bg-white flex items-center gap-1.5 flex-wrap" style={{ paddingLeft: '2.6rem' }}>
+                      <span className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-widest flex-shrink-0">참조 문서</span>
+                      {scenario.docSearch!.sources.map((src, i) => (
+                        <button key={`${src.source}-${i}`}
+                          onClick={() => src.content
+                            ? setContentModal({ title: `${src.source} (검색된 청크)`, content: src.content!, loading: false, error: null })
+                            : openDocumentModal(src.source)}
+                          title={src.content ? '검색된 청크 보기' : '원문 보기'}
+                          className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-100 text-slate-600 hover:bg-[#EAE8F9] hover:text-[#3615CF] transition-colors flex items-center gap-1">
+                          <FileText className="w-2.5 h-2.5" />
+                          {src.source}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {/* AI 항목 승인/보류/거절 — TC 삭제 요청은 별도 배너로 분리 */}
                   {isAIItem && !isDeleteTsItem && !isDeleteTcItem && (
                     <div className="px-2.5 py-1.5 bg-[#fffbeb]/60 border-b border-[#fde68a] flex items-center gap-1.5">
@@ -1147,12 +1253,65 @@ onVersionRollback,
                                 </div>
                               ) : hasBdd ? (
                                 <div className="space-y-1">
-                                  {tc.given && <div className="flex gap-2 text-[11px]"><span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">Given</span><span className="text-[#1a1a2e] leading-relaxed">{tc.given}</span></div>}
-                                  {tc.when && <div className="flex gap-2 text-[11px]"><span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">When</span><span className="text-[#1a1a2e] leading-relaxed">{tc.when}</span></div>}
-                                  {tc.then && <div className="flex gap-2 text-[11px] pb-2"><span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">Then</span><span className="text-[#1a1a2e] leading-relaxed">{tc.then}</span></div>}
+                                  {tc.given && <div className="flex gap-2 text-[11px] items-start"><span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">Given</span><span className="text-[#1a1a2e] leading-relaxed">{tc.given}</span>{renderEvidenceBadge(tc.evidence?.given, () => openEvidenceSource(tc.evidence?.given, tc, scenario))}</div>}
+                                  {tc.when && <div className="flex gap-2 text-[11px] items-start"><span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">When</span><span className="text-[#1a1a2e] leading-relaxed">{tc.when}</span>{renderEvidenceBadge(tc.evidence?.when, () => openEvidenceSource(tc.evidence?.when, tc, scenario))}</div>}
+                                  {tc.then && <div className="flex gap-2 text-[11px] items-start pb-2"><span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">Then</span><span className="text-[#1a1a2e] leading-relaxed">{tc.then}</span>{renderEvidenceBadge(tc.evidence?.then, () => openEvidenceSource(tc.evidence?.then, tc, scenario))}</div>}
                                 </div>
                               ) : (
                                 <div className="text-[10px] text-[#c4c9d4]">given/when/then 정보가 없습니다.</div>
+                              )}
+                              {/* 참조 코드 — TC 가 참조한 소스 파일/라인 범위 (codebase_ref.files) */}
+                              {(tc.codebaseRef?.files?.length ?? 0) > 0 && (
+                                <div className="flex items-start gap-2 text-[11px] pt-1">
+                                  <span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">Code</span>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {tc.codebaseRef!.files.map((f, i) => (
+                                      <button key={`${f.file}-${i}`}
+                                        onClick={() => openSourceModal(f.file, tc.codebaseRef!.commit_sha, f.line_start, f.line_end)}
+                                        title="검색된 코드 보기"
+                                        className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-100 text-slate-600 hover:bg-[#EAE8F9] hover:text-[#3615CF] transition-colors flex items-center gap-1">
+                                        <FileText className="w-2.5 h-2.5" />
+                                        {f.file}{f.line_start != null && f.line_end != null ? `:${f.line_start}-${f.line_end}` : ''}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {/* 참고 자료 — 이 TC 생성 prompt 에 사용된 schemas/selectors/patterns/db_snapshot */}
+                              {tc.tvContext && (
+                                <div className="flex items-start gap-2 text-[11px] pt-1">
+                                  <span className="w-12 flex-shrink-0 font-semibold text-[#9ca3af] uppercase">참고</span>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {tc.tvContext.schemas != null && (
+                                      <button onClick={() => openTvContextModal('참고 스키마', tc.tvContext!.schemas)}
+                                        title="이 TC 생성에 참고한 스키마"
+                                        className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-100 text-slate-600 hover:bg-[#EAE8F9] hover:text-[#3615CF] transition-colors">
+                                        스키마
+                                      </button>
+                                    )}
+                                    {tc.tvContext.selectors != null && (
+                                      <button onClick={() => openTvContextModal('참고 셀렉터', tc.tvContext!.selectors)}
+                                        title="이 TC 생성에 참고한 프론트엔드 셀렉터"
+                                        className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-100 text-slate-600 hover:bg-[#EAE8F9] hover:text-[#3615CF] transition-colors">
+                                        셀렉터
+                                      </button>
+                                    )}
+                                    {tc.tvContext.patterns != null && (
+                                      <button onClick={() => openTvContextModal('참고 테스트 패턴', tc.tvContext!.patterns)}
+                                        title="이 TC 생성에 참고한 기존 테스트 패턴"
+                                        className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-100 text-slate-600 hover:bg-[#EAE8F9] hover:text-[#3615CF] transition-colors">
+                                        테스트 패턴
+                                      </button>
+                                    )}
+                                    {tc.tvContext.db_snapshot != null && (
+                                      <button onClick={() => openTvContextModal('참고 DB 스냅샷', tc.tvContext!.db_snapshot)}
+                                        title="이 TC 생성에 참고한 DB 스냅샷"
+                                        className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-100 text-slate-600 hover:bg-[#EAE8F9] hover:text-[#3615CF] transition-colors">
+                                        DB 스냅샷
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
                               )}
                             </div>
                             </div>
@@ -1165,7 +1324,7 @@ onVersionRollback,
                           const isOpen = expandedTvDetailKeys.includes(tvKey);
                           const isCopied = tvCopied === tvKey;
                           const isEditingTvDetail = tvDetailEditKey === tvKey;
-                          const hasDetail = !!(tv.field || tv.type || tv.value !== undefined || tv.purpose);
+                          const hasDetail = !!(tv.field || tv.type || tv.value !== undefined || tv.purpose || tv.evidence);
 
                           return (
                             <div key={tv.id}
@@ -1201,6 +1360,8 @@ onVersionRollback,
                                     <span className="font-mono text-[10px] font-semibold text-slate-600 flex-shrink-0">{tv.field ?? tv.name}</span>
                                     <span className="text-slate-300 flex-shrink-0">=</span>
                                     <span className="font-mono text-[10px] text-[#3615CF]/80 truncate">{tv.value === '' ? <em className="not-italic text-slate-400">(빈 값)</em> : String(tv.value ?? '')}</span>
+                                    {/* 원본 리소스 태그 — 클릭 시 참조한 문서/코드/스키마 원문 표시 */}
+                                    {renderEvidenceBadge(tv.evidence, () => openEvidenceSource(tv.evidence, tc, scenario))}
                                   </div>
                                 ) : (
                                   <span className="text-[10px] text-slate-500 truncate flex-1">{tv.name}</span>
@@ -1269,6 +1430,7 @@ onVersionRollback,
                                       <div className="flex gap-2 text-[11px]"><span className="w-16 flex-shrink-0 font-semibold text-slate-400">TYPE</span><span className="font-mono text-slate-700">{tv.type || '-'}</span></div>
                                       <div className="flex gap-2 text-[11px]"><span className="w-16 flex-shrink-0 font-semibold text-slate-400">VALUE</span><span className="font-mono text-slate-700">{tv.value === '' ? <em className="not-italic text-slate-400">(빈 값)</em> : String(tv.value ?? '-')}</span></div>
                                       <div className="flex gap-2 text-[11px]"><span className="w-16 flex-shrink-0 font-semibold text-slate-400">PURPOSE</span><span className="text-slate-600 leading-relaxed">{tv.purpose || '-'}</span></div>
+                                      {tv.evidence && <div className="flex gap-2 text-[11px] items-start"><span className="w-16 flex-shrink-0 font-semibold text-slate-400">EVIDENCE</span>{renderEvidenceBadge(tv.evidence, () => openEvidenceSource(tv.evidence, tc, scenario))}</div>}
                                     </div>
                                   ) : (
                                     <div className="text-[10px] text-slate-300">상세 정보가 없습니다.</div>
@@ -1548,6 +1710,32 @@ onVersionRollback,
                 className="flex-1 px-4 py-2 bg-white border border-[#f0f0f0] rounded-lg hover:bg-gray-50">
                 취소
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 원문 보기 모달 — 참조 문서 / 참조 코드 */}
+      {contentModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setContentModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#f0f0f0]">
+              <div className="flex items-center gap-1.5 font-mono text-sm font-semibold text-[#1a1a2e] truncate">
+                <FileText className="w-4 h-4 text-[#9ca3af] flex-shrink-0" />
+                {contentModal.title}
+              </div>
+              <button onClick={() => setContentModal(null)} className="w-6 h-6 flex items-center justify-center rounded text-[#9ca3af] hover:text-[#1a1a2e] hover:bg-gray-100">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              {contentModal.loading ? (
+                <div className="text-sm text-[#9ca3af]">불러오는 중...</div>
+              ) : contentModal.error ? (
+                <div className="text-sm text-red-500">{contentModal.error}</div>
+              ) : (
+                <pre className="text-[11px] font-mono whitespace-pre-wrap break-all text-[#1a1a2e]">{contentModal.content}</pre>
+              )}
             </div>
           </div>
         </div>

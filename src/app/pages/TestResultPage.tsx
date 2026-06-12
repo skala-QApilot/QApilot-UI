@@ -65,6 +65,106 @@ const ACTION_LABEL: Record<string, string> = {
   wait: '대기', select: '선택', check: '체크', press: '키입력', hover: '호버',
 };
 
+function MappingContextPanel({ mapping }: { mapping: ActionMapping | null }) {
+  const ctx = mapping?.mapping_context;
+  if (!ctx) return null;
+  const routeRefs = ctx.route_refs ?? [];
+  const sourceRefs = ctx.source_refs ?? [];
+  const requestSchemas = ctx.schema_refs?.request_schemas ?? [];
+  const responseSchemas = ctx.schema_refs?.response_schemas ?? [];
+  const dbModels = ctx.schema_refs?.db_models ?? [];
+  const selectorRoutes = ctx.selector_route_refs ?? [];
+  const sourceStatus = ctx.source_status ?? '';
+  const sourceCandidates = ctx.source_candidates ?? [];
+  if (!routeRefs.length && !sourceRefs.length && !requestSchemas.length && !responseSchemas.length && !dbModels.length && !selectorRoutes.length && !sourceStatus && !sourceCandidates.length) return null;
+
+  return (
+    <div className="mt-3 rounded-lg border border-[#f0f0f0] bg-[#fafafa] p-3">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[#9ca3af]">Mapping Context</div>
+      {routeRefs.length > 0 && (
+        <div className="mb-2">
+          <div className="mb-1 text-[10px] font-medium text-[#6b7280]">Route</div>
+          <div className="flex flex-wrap gap-1.5">
+            {routeRefs.map((route, idx) => (
+              <span key={`${route.path ?? 'route'}-${idx}`} className="rounded bg-[#eef2ff] px-2 py-1 text-[10px] text-[#4338ca]">
+                {(route.path || '—')}{route.component_file ? ` · ${route.component_file.split('/').slice(-1)[0]}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {(requestSchemas.length > 0 || responseSchemas.length > 0 || dbModels.length > 0) && (
+        <div className="mb-2">
+          <div className="mb-1 text-[10px] font-medium text-[#6b7280]">Schema</div>
+          <div className="flex flex-wrap gap-1.5">
+            {requestSchemas.map((name) => <span key={`req-${name}`} className="rounded bg-[#ecfeff] px-2 py-1 text-[10px] text-[#0f766e]">REQ {name}</span>)}
+            {responseSchemas.map((name) => <span key={`res-${name}`} className="rounded bg-[#eff6ff] px-2 py-1 text-[10px] text-[#1d4ed8]">RES {name}</span>)}
+            {dbModels.map((name) => <span key={`db-${name}`} className="rounded bg-[#fef3c7] px-2 py-1 text-[10px] text-[#b45309]">DB {name}</span>)}
+          </div>
+        </div>
+      )}
+      {selectorRoutes.length > 0 && (
+        <div className="mb-2">
+          <div className="mb-1 text-[10px] font-medium text-[#6b7280]">Selector Catalog</div>
+          <div className="space-y-1">
+            {selectorRoutes.map((route, idx) => (
+              <div key={`${route.route ?? 'selector'}-${idx}`} className="text-[10px] text-[#6b7280]">
+                {route.route || '—'} · input {route.input_count ?? 0} / button {route.button_count ?? 0} / output {route.output_count ?? 0}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {sourceRefs.length > 0 && (
+        <div>
+          <div className="mb-1 text-[10px] font-medium text-[#6b7280]">Source</div>
+          <div className="space-y-1">
+            {sourceRefs.map((src, idx) => (
+              <div key={`${src.file ?? 'source'}-${idx}`} className="font-mono text-[10px] text-[#4b5563]">
+                {src.file || '—'}{src.line_start != null && src.line_end != null ? `:${src.line_start}-${src.line_end}` : ''}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {(sourceStatus || sourceCandidates.length > 0) && (
+        <div className={sourceRefs.length > 0 ? 'mt-2' : ''}>
+          <div className="mb-1 text-[10px] font-medium text-[#6b7280]">Source Status</div>
+          {sourceStatus && (
+            <div className="mb-1.5">
+              <span className={`rounded px-2 py-1 text-[10px] ${
+                sourceStatus === 'loaded'
+                  ? 'bg-[#dcfce7] text-[#15803d]'
+                  : sourceStatus === 'missing'
+                    ? 'bg-[#fef3c7] text-[#b45309]'
+                    : sourceStatus === 'no_candidates'
+                      ? 'bg-[#ffedd5] text-[#c2410c]'
+                    : 'bg-[#f3f4f6] text-[#6b7280]'
+              }`}>
+                {sourceStatus}
+              </span>
+            </div>
+          )}
+          {sourceCandidates.length > 0 && (
+            <div className="space-y-1">
+              {sourceCandidates.map((candidate, idx) => (
+                <div key={`${candidate.file ?? 'candidate'}-${idx}`} className="rounded border border-[#f1f5f9] bg-white px-2 py-1.5">
+                  <div className="font-mono text-[10px] text-[#4b5563]">
+                    {candidate.file || '—'}{candidate.line_start != null && candidate.line_end != null ? `:${candidate.line_start}-${candidate.line_end}` : ''}
+                  </div>
+                  {candidate.reason && (
+                    <div className="mt-0.5 text-[10px] text-[#6b7280]">{candidate.reason}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const TestResultPage = ({
   selectedExecutionId,
   setSelectedExecutionId,
@@ -489,6 +589,7 @@ export const TestResultPage = ({
                   ) : (
                     <div className="text-sm text-[#9ca3af]">스텝 정보가 없습니다.</div>
                   )}
+                  <MappingContextPanel mapping={activeActionMapping} />
                 </div>
 
                 {/* ② 실제 API 호출 (api_result) */}
