@@ -101,6 +101,14 @@ const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
   );
 };
 
+// ── 페이지 이탈/재진입 시 라이브 상태 보존 캐시 (runId 키) ──────────────
+// 컴포넌트 언마운트로 로컬 state 가 소멸하면 재진입 시 다음 폴링까지
+// 스크린샷·로그·체크 표시가 전부 빈 화면이 된다 — 마지막 상태를 모듈
+// 레벨에 보존해 마운트 즉시 복원. blob URL 은 새 캡처로 교체될 때만
+// revoke (캐시 보존을 위해 unmount 에서 revoke 하지 않음).
+const _progressCache = new Map<string, RunProgress>();
+const _shotCache = new Map<string, string>();
+
 type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'pending' | 'running' | 'aborted' | 'completed' };
 type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED' | 'SKIPPED' | 'UNVERIFIED';
 
@@ -169,10 +177,9 @@ export const TestRunningPage = ({
     // - aborted/completed: 마지막 디스크 상태 1회만 fetch
     // pending = 아직 실행 전 (실제 trace 없음) → 폴링/스크린샷 fetch 안 함.
     if (!serviceUuid || !selectedRun || selectedRun.status === 'pending') {
-      if (screenshotUrlRef.current) {
-        URL.revokeObjectURL(screenshotUrlRef.current);
-        screenshotUrlRef.current = null;
-      }
+      // blob URL 은 캐시 (_shotCache) 가 소유 — 여기서 revoke 하면 재진입
+      // 복원용 캐시가 죽은 URL 을 가리킨다. 로컬 참조만 비운다.
+      screenshotUrlRef.current = null;
       setScreenshotUrl(null);
       setRunProgress(null);
       tickRef.current = undefined;
@@ -182,6 +189,16 @@ export const TestRunningPage = ({
     let cancelled = false;
     const runId = selectedRun.id;
     const isLive = selectedRun.status === 'running';
+
+    // 재진입 즉시 복원 — 마지막 폴링 결과/캡처를 캐시에서 (다음 tick 까지의
+    // 빈 화면 방지). 캐시 blob URL 은 revoke 되지 않았으므로 그대로 유효.
+    const cachedProgress = _progressCache.get(runId);
+    if (cachedProgress) setRunProgress(cachedProgress);
+    const cachedShot = _shotCache.get(runId);
+    if (cachedShot) {
+      screenshotUrlRef.current = cachedShot;
+      setScreenshotUrl(cachedShot);
+    }
 
     const tick = async () => {
       try {
@@ -194,10 +211,14 @@ export const TestRunningPage = ({
           return;
         }
         if (nextUrl) {
-          if (screenshotUrlRef.current) URL.revokeObjectURL(screenshotUrlRef.current);
+          // 이전 blob 은 새 캡처로 교체될 때 revoke (캐시와 동기화)
+          const prev = _shotCache.get(runId);
+          if (prev && prev !== nextUrl) URL.revokeObjectURL(prev);
+          _shotCache.set(runId, nextUrl);
           screenshotUrlRef.current = nextUrl;
           setScreenshotUrl(nextUrl);
         }
+        if (progress) _progressCache.set(runId, progress);
         setRunProgress(progress);
       } catch (err) {
         if (cancelled) return;
@@ -212,10 +233,9 @@ export const TestRunningPage = ({
       cancelled = true;
       tickRef.current = undefined;
       if (timer) clearInterval(timer);
-      if (screenshotUrlRef.current) {
-        URL.revokeObjectURL(screenshotUrlRef.current);
-        screenshotUrlRef.current = null;
-      }
+      // blob URL 은 캐시 보존을 위해 여기서 revoke 하지 않는다 — 재진입 복원용.
+      // (새 캡처 도착 시 교체-revoke, 캐시 자체는 run 당 1장이라 누수 미미)
+      screenshotUrlRef.current = null;
     };
   }, [serviceUuid, selectedRun?.id, selectedRun?.status]);
 
