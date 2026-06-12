@@ -201,27 +201,32 @@ export const TestRunningPage = ({
     }
 
     const tick = async () => {
-      try {
-        const [nextUrl, progress] = await Promise.all([
-          fetchLatestScreenshotUrl(serviceUuid, runId),
-          getRunProgress(serviceUuid, runId),
-        ]);
-        if (cancelled) {
-          if (nextUrl) URL.revokeObjectURL(nextUrl);
-          return;
-        }
-        if (nextUrl) {
-          // 이전 blob 은 새 캡처로 교체될 때 revoke (캐시와 동기화)
-          const prev = _shotCache.get(runId);
-          if (prev && prev !== nextUrl) URL.revokeObjectURL(prev);
-          _shotCache.set(runId, nextUrl);
-          screenshotUrlRef.current = nextUrl;
-          setScreenshotUrl(nextUrl);
-        }
-        if (progress) _progressCache.set(runId, progress);
-        setRunProgress(progress);
-      } catch (err) {
-        if (cancelled) return;
+      // 스크린샷과 progress 를 독립적으로 — Promise.all 결합은 한쪽 실패
+      // (스크린샷 일시 오류 등) 가 progress 표시까지 통째로 죽여 화면 전체가
+      // 비어 보였다. 각자 실패해도 다른 쪽은 갱신.
+      const [shotR, progR] = await Promise.allSettled([
+        fetchLatestScreenshotUrl(serviceUuid, runId),
+        getRunProgress(serviceUuid, runId),
+      ]);
+      if (cancelled) {
+        if (shotR.status === 'fulfilled' && shotR.value) URL.revokeObjectURL(shotR.value);
+        return;
+      }
+      if (shotR.status === 'fulfilled' && shotR.value) {
+        // 이전 blob 은 새 캡처로 교체될 때 revoke (캐시와 동기화)
+        const prev = _shotCache.get(runId);
+        if (prev && prev !== shotR.value) URL.revokeObjectURL(prev);
+        _shotCache.set(runId, shotR.value);
+        screenshotUrlRef.current = shotR.value;
+        setScreenshotUrl(shotR.value);
+      } else if (shotR.status === 'rejected') {
+        console.warn('[running] screenshot fetch 실패', shotR.reason);
+      }
+      if (progR.status === 'fulfilled' && progR.value) {
+        _progressCache.set(runId, progR.value);
+        setRunProgress(progR.value);
+      } else if (progR.status === 'rejected') {
+        console.warn('[running] run-progress fetch 실패', progR.reason);
       }
     };
     tickRef.current = tick;
