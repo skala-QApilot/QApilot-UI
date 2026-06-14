@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  Eye, GitBranch, List, Loader2, Pause, Play, Radio, RotateCcw,
+  Eye, GitBranch, List, Loader2, Pause, Play, RotateCcw,
 } from 'lucide-react';
 import { SubHeader } from '../components/common/SubHeader';
 import { AgentProgressStrip } from '../components/common/AgentProgressStrip';
@@ -842,12 +842,6 @@ export const TestRunningPage = ({
                   ref={canvasRef}
                   className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-full max-h-full ${isStreaming ? 'block' : 'hidden'}`}
                 />
-                {isStreaming && (
-                  <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-full bg-[#f43b47] px-2 py-0.5 text-[10px] font-bold text-white shadow-md">
-                    <Radio className="w-3 h-3 animate-pulse" />
-                    LIVE
-                  </div>
-                )}
                 {/* 폴백: 스트림 프레임이 없으면 기존 스텝별 스크린샷 → 안내 문구. */}
                 {!isStreaming && (
                   screenshotUrl ? (
