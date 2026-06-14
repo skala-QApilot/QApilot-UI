@@ -350,9 +350,17 @@ export const TestResultPage = ({
     const src = stepShotUrl(stepNo);
     if (src) setStepShot({ src, label: `step ${stepNo} · ${ACTION_LABEL[action] ?? action}${isApiModeTc ? ' (참고 화면 — 검증은 API)' : ''}` });
   };
+  // api-mode 대표 화면 — 제출 직전(입력 완료된 폼) 이 가장 시연-친화적이라
+  // 터미널 submit 스텝(api_endpoint 보유)을 hero 로. 없으면 마지막 스텝, 그것도
+  // 없으면 step 1. (참고 화면은 스텝별로 다르게 저장됨 — navigate→fill→제출직전→결과)
+  const apiModeHeroStep =
+    activeActionMapping?.steps?.find(s => s.api_endpoint)?.step_no
+    ?? (activeActionMapping?.steps?.length
+          ? activeActionMapping.steps[activeActionMapping.steps.length - 1].step_no
+          : 1);
   const screenshotSrc = (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId)
     ? (isApiModeTc
-        ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, 1)
+        ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, apiModeHeroStep)
         : (activeError && failStep
             ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeError.scenario,
                               activeFullTcId, failStep.step_no)
@@ -877,7 +885,9 @@ export const TestResultPage = ({
                 <div className="bg-green-50 rounded-lg border border-green-200 p-4 flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-status-pass flex-shrink-0" />
                   <span className="text-sm font-medium text-status-pass">
-                    {(activeUiResult?.steps?.filter(s => s.status === 'pass').length ?? 0)}/{activeUiResult?.steps?.length ?? 0} 스텝 통과
+                    {isApiModeTc
+                      ? `API 검증 통과 · 참고 화면 ${activeActionMapping?.steps?.length ?? 0} 스텝`
+                      : `${(activeUiResult?.steps?.filter(s => s.status === 'pass').length ?? 0)}/${activeUiResult?.steps?.length ?? 0} 스텝 통과`}
                     {' · '}API 오류 {activeApiResult?.error_calls ?? 0}건 → 정상
                   </span>
                 </div>
