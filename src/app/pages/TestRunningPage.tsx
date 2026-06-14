@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  Eye, GitBranch, List, Loader2, Pause, Play, RotateCcw,
+  Eye, GitBranch, List, Loader2, Pause, Play, Radio, RotateCcw,
 } from 'lucide-react';
 import { SubHeader } from '../components/common/SubHeader';
 import { AgentProgressStrip } from '../components/common/AgentProgressStrip';
@@ -13,6 +13,7 @@ import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
 import { fetchLatestScreenshotUrl, getRunProgress, stopRun, type RunProgress } from '../../api/runs';
 import { useRunStream } from '../../hooks/useRunStream';
+import { useCdpStream } from '../../hooks/useCdpStream';
 
 interface RuntimeLog {
   time: string;
@@ -253,6 +254,31 @@ export const TestRunningPage = ({
       onEvent: () => { void tickRef.current?.(); },
     },
   );
+
+  // ── 실시간 스트리밍 — CDP Screencast WebSocket (selectedRun.id == trace_id) ──
+  // 스텝별 스크린샷 폴링은 그대로 두고, running 중에는 라이브 프레임을 받아
+  // canvas 에 그린다. 스트림 프레임이 도착하면 LIVE, 없으면 스크린샷으로 폴백.
+  const cdpFrameDataUrl = useCdpStream(
+    selectedRun?.id ?? null,
+    selectedRun?.status === 'running',
+  );
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const isStreaming = cdpFrameDataUrl !== null;
+
+  // 디코드된 프레임을 canvas 에 그린다 (<img src> 교체 시의 깜빡임 방지 — 새 프레임
+  // 디코드가 끝난 뒤에만 drawImage 로 한 번에 교체).
+  React.useEffect(() => {
+    if (!cdpFrameDataUrl || !canvasRef.current) return;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      canvas.width = img.naturalWidth || 1280;
+      canvas.height = img.naturalHeight || 800;
+      canvas.getContext('2d')?.drawImage(img, 0, 0);
+    };
+    img.src = cdpFrameDataUrl;
+  }, [cdpFrameDataUrl]);
 
   const liveLogs = React.useMemo(() => toRuntimeLogs(runProgress), [runProgress]);
 
@@ -810,28 +836,42 @@ export const TestRunningPage = ({
               </div>
             )}
             <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4">
-              <TerminalFrame title="qapilot-preview - zsh" bodyClassName="aspect-video flex items-center justify-center p-0 overflow-hidden">
-                {screenshotUrl ? (
-                  <img
-                    src={screenshotUrl}
-                    alt="live browser screenshot"
-                    className="max-w-full max-h-full object-contain bg-white"
-                  />
-                ) : (
-                  <div className="text-center text-[#9aa0a6] p-4">
-                    {selectedRun?.status === 'running' ? (
-                      <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
-                    ) : (
-                      <Eye className="w-8 h-8 mx-auto mb-3 opacity-70" />
-                    )}
-                    <div className="font-mono text-xs">
-                      {selectedRun?.status === 'running'
-                        ? '스크린샷을 기다리는 중...'
-                        : selectedRun?.status === 'pending'
-                          ? '"실행" 버튼을 누르면 테스트가 시작됩니다'
-                          : '테스트 실행 중 실시간 화면이 표시됩니다'}
-                    </div>
+              <TerminalFrame title="qapilot-preview - zsh" bodyClassName="aspect-video relative flex items-center justify-center p-0 overflow-hidden bg-black">
+                {/* 실시간 스트리밍(canvas) — 프레임 도착 시에만 표시. */}
+                <canvas
+                  ref={canvasRef}
+                  className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-full max-h-full ${isStreaming ? 'block' : 'hidden'}`}
+                />
+                {isStreaming && (
+                  <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-full bg-[#f43b47] px-2 py-0.5 text-[10px] font-bold text-white shadow-md">
+                    <Radio className="w-3 h-3 animate-pulse" />
+                    LIVE
                   </div>
+                )}
+                {/* 폴백: 스트림 프레임이 없으면 기존 스텝별 스크린샷 → 안내 문구. */}
+                {!isStreaming && (
+                  screenshotUrl ? (
+                    <img
+                      src={screenshotUrl}
+                      alt="live browser screenshot"
+                      className="max-w-full max-h-full object-contain bg-white"
+                    />
+                  ) : (
+                    <div className="text-center text-[#9aa0a6] p-4">
+                      {selectedRun?.status === 'running' ? (
+                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+                      ) : (
+                        <Eye className="w-8 h-8 mx-auto mb-3 opacity-70" />
+                      )}
+                      <div className="font-mono text-xs">
+                        {selectedRun?.status === 'running'
+                          ? '스트리밍 연결 중...'
+                          : selectedRun?.status === 'pending'
+                            ? '"실행" 버튼을 누르면 테스트가 시작됩니다'
+                            : '테스트 실행 중 실시간 화면이 표시됩니다'}
+                      </div>
+                    </div>
+                  )
                 )}
               </TerminalFrame>
               <RuntimeTerminal
