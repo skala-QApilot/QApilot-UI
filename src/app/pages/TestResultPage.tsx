@@ -823,7 +823,7 @@ export const TestResultPage = ({
                           <tr key={s.step_no} className="border-t border-[#f5f5f5]">
                             <td className="py-1.5 text-[#9ca3af]">{s.step_no}</td>
                             <td className="py-1.5 text-[#1a1a2e] font-medium">{ACTION_LABEL[s.action] ?? s.action}</td>
-                            <td className="py-1.5 text-[#6b7280] truncate max-w-[120px]">{s.target_name || s.target_kind || '—'}</td>
+                            <td className="py-1.5 text-[#6b7280] truncate max-w-[120px]">{(s as { selector?: string | null }).selector || s.target_name || s.target_kind || '—'}</td>
                             <td className="py-1.5 text-[#6b7280] truncate max-w-[120px]">{s.value ?? '—'}</td>
                             <td className="py-1.5">
                               {s.api_endpoint

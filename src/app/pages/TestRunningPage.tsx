@@ -12,7 +12,16 @@ import { useScenarioStore, toUiScenario, toUiTestCase } from '../../store/scenar
 import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
 import { fetchLatestScreenshotUrl, getRunProgress, stopRun, type RunProgress } from '../../api/runs';
+import { getActionMapping, type ActionStep } from '../../api/artifacts';
 import { useRunStream } from '../../hooks/useRunStream';
+
+// 실행 스텝 action → 한글 라벨 (좌측 패널 표시용)
+const ACTION_LABEL: Record<string, string> = {
+  navigate: '이동', fill: '입력', click: '클릭', check: '체크', uncheck: '체크해제',
+  select: '선택', upload: '업로드', press: '키입력', hover: '호버',
+  assert: '검증', assert_visible: '표시 검증', assert_text: '텍스트 검증',
+  assert_url: 'URL 검증', wait: '대기', reload: '새로고침',
+};
 import { useCdpStream } from '../../hooks/useCdpStream';
 
 interface RuntimeLog {
@@ -172,6 +181,13 @@ export const TestRunningPage = ({
   // tick 함수를 ref 로 — SSE 이벤트 핸들러가 stale closure 없이 최신 버전 호출 가능.
   const tickRef = React.useRef<() => Promise<void>>();
 
+  // ── 현재 진행 스텝 + TC별 스텝 목록 (좌측 패널 TV 대체 + 프리뷰 싱크) ──
+  // currentStep: artifact SSE 이벤트(step_index + s3_key)로 갱신 → 프리뷰가
+  // 보여주는 스크린샷과 동일 스텝. stepMappings: TC 펼침 시 action mapping fetch.
+  const [currentStep, setCurrentStep] = React.useState<{ tcId: string; stepIndex: number } | null>(null);
+  const [stepMappings, setStepMappings] = React.useState<Record<string, ActionStep[]>>({});
+  const fetchedMappingsRef = React.useRef<Set<string>>(new Set());
+
   React.useEffect(() => {
     // 폴링 조건: serviceUuid + selectedRun 모두 있을 때.
     // - running: 1초 간격 폴링 + SSE 이벤트 도착 시 즉시 추가 tick
@@ -251,7 +267,17 @@ export const TestRunningPage = ({
     selectedRun?.id ?? null,
     {
       enabled: selectedRun?.status === 'running',
-      onEvent: () => { void tickRef.current?.(); },
+      onEvent: (ev) => {
+        void tickRef.current?.();
+        // artifact 이벤트 = 스텝별 스크린샷이 방금 저장됨 → 그 스텝이 현재 진행 스텝.
+        // s3_key: runs/{run}/tc/{ts}/{tc}/screenshots/step_N.png 에서 tc_id 추출.
+        if (ev?.type === 'artifact' && ev.data) {
+          const key = String((ev.data as Record<string, unknown>).s3_key ?? '');
+          const tcId = key.match(/\/([^/]+)\/screenshots\//)?.[1];
+          const stepIndex = Number((ev.data as Record<string, unknown>).step_index);
+          if (tcId && Number.isFinite(stepIndex)) setCurrentStep({ tcId, stepIndex });
+        }
+      },
     },
   );
 
@@ -529,12 +555,39 @@ export const TestRunningPage = ({
     setExpandedScenarios(prev => prev.includes(currentTsId) ? prev : [...prev, currentTsId]);
   }, [currentTsId]);
 
-  // 현재 실행 중인 TC 가 보이도록 사이드바 자동 스크롤
+  // 현재 실행 중인 TC 가 보이도록 사이드바 자동 스크롤 + 자동 펼침 (스텝 표시)
   React.useEffect(() => {
     if (!currentTcId) return;
     const el = scenarioListRef.current?.querySelector<HTMLElement>(`[data-tc-id="${currentTcId}"]`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [currentTcId]);
+    if (currentTsId) {
+      const key = `${currentTsId}_${currentTcId}`;
+      setExpandedTestCases(prev => prev.includes(key) ? prev : [...prev, key]);
+    }
+  }, [currentTcId, currentTsId]);
+
+  // run 바뀌면 현재 스텝/스텝 매핑 캐시 리셋
+  React.useEffect(() => {
+    setCurrentStep(null);
+    setStepMappings({});
+    fetchedMappingsRef.current = new Set();
+  }, [selectedRun?.id]);
+
+  // 펼쳐진 TC 의 action mapping(스텝 목록) fetch — TV 대신 표시할 스텝.
+  React.useEffect(() => {
+    if (!serviceUuid || !selectedRun?.id) return;
+    const runId = selectedRun.id;
+    expandedTestCases.forEach((key) => {
+      const tcId = key.split('_')[1];  // key = `${scenarioId}_${tcId}` (각 1개 '_')
+      if (!tcId || fetchedMappingsRef.current.has(tcId)) return;
+      fetchedMappingsRef.current.add(tcId);
+      getActionMapping(serviceUuid, runId, tcId)
+        .then((am) => {
+          if (am?.steps?.length) setStepMappings((prev) => ({ ...prev, [tcId]: am.steps }));
+        })
+        .catch(() => fetchedMappingsRef.current.delete(tcId));
+    });
+  }, [expandedTestCases, serviceUuid, selectedRun?.id]);
 
   // empty state
   if (!selectedRun) {
@@ -695,9 +748,7 @@ export const TestRunningPage = ({
                               );
                             }}>
                             <button className="flex-shrink-0" onClick={e => e.stopPropagation()}>
-                              {tc.values.length > 0
-                                ? (isTCExpanded ? <ChevronDown className="w-3 h-3 text-[#9ca3af]" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af]" />)
-                                : <span className="w-3" />}
+                              {isTCExpanded ? <ChevronDown className="w-3 h-3 text-[#9ca3af]" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af]" />}
                             </button>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1 flex-wrap">
@@ -720,55 +771,67 @@ export const TestRunningPage = ({
                               : <StatusIcon status={liveTcStatus(tc.id)} size="w-3 h-3" />}
                           </div>
 
-                          {/* TV 행 */}
-                          {isTCExpanded && tc.values.map(tv => {
-                            const tvKey = `${scenario.id}_${tc.id}_${tv.id}`;
-                            const ep = mockTVEndpoints[tvKey];
-                            const validations = mockValidationConditions[tvKey] || [];
-                            const isOk = ep ? ep.statusCode < 400 : true;
-                            return (
-                              <div key={tv.id} className="border-b border-[#f0f0f0]/30" style={{ paddingLeft: '3.25rem' }}>
-                                <div className="group flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer transition-colors bg-white hover:bg-slate-50"
-                                  onClick={() => scrollToLog(0)}>
-                                  <span className="px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 bg-slate-100 text-slate-500">{tv.id}</span>
-                                  {ep ? (
-                                    <div className="flex items-center gap-1 flex-1 min-w-0">
-                                      <span className={`text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
-                                      <span className="font-mono text-[9.5px] text-slate-500 truncate">{ep.path}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-500 truncate flex-1">{tv.name}</span>
-                                  )}
-                                  <StatusIcon status={tv.status} size="w-3 h-3" />
+                          {/* 스텝 행 (TV 대체) — action mapping 의 스텝. 현재 진행
+                              스텝(artifact 이벤트)을 강조 → qapilot-preview 와 싱크. */}
+                          {isTCExpanded && (() => {
+                            const steps = stepMappings[tc.id];
+                            if (!steps) {
+                              return (
+                                <div className="py-1.5 text-[10px] text-slate-400" style={{ paddingLeft: '3.25rem' }}>
+                                  스텝 불러오는 중…
                                 </div>
-                                {ep && (
-                                  <div className="mx-2 mb-1 mt-0.5 rounded border border-slate-100 bg-slate-50 overflow-hidden">
-                                    <div className="px-2 py-1.5 overflow-x-auto">
-                                      <LightJson obj={ep.requestBody ?? {}} />
-                                    </div>
-                                    <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-[#EAE8F9]' : 'bg-red-50'}`}>
-                                      <span className={`font-mono text-[9px] font-bold ${isOk ? 'text-[#3615CF]/70' : 'text-red-500'}`}>
-                                        ← {ep.statusCode}
-                                      </span>
-                                      <span className={`text-[9px] ${isOk ? 'text-[#3615CF]' : 'text-red-400'}`}>
-                                        {HTTP_STATUS_TEXT[ep.statusCode] ?? ''}
-                                      </span>
-                                    </div>
-                                  </div>
-                                )}
-                                {validations.length > 0 && (
-                                  <div className="mx-2 mb-1.5 space-y-0.5">
-                                    {validations.map((v, i) => (
-                                      <div key={i} className="flex gap-1.5 px-2 py-1 bg-gray-50 rounded border border-[#e5e7eb] text-[10px]">
-                                        <span className="text-[#3615CF] flex-shrink-0 font-bold">✓</span>
-                                        <span className="text-[#6b7280] leading-relaxed">{v}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
+                              );
+                            }
+                            if (steps.length === 0) {
+                              return (
+                                <div className="py-1.5 text-[10px] text-slate-400" style={{ paddingLeft: '3.25rem' }}>
+                                  실행 스텝 없음
+                                </div>
+                              );
+                            }
+                            return steps.map((st) => {
+                              // 프리뷰가 보여주는 스텝(artifact 이벤트) 과 동일 → 싱크
+                              const isCurrent = currentStep?.tcId === tc.id
+                                && currentStep?.stepIndex === st.step_no;
+                              return (
+                                <div
+                                  key={st.step_no}
+                                  style={{ paddingLeft: '3.25rem' }}
+                                  className={`flex items-center gap-1.5 pr-2 py-1.5 border-b border-[#f0f0f0]/30 transition-colors ${
+                                    isCurrent
+                                      ? 'bg-[#EAE8F9]/70 border-l-[3px] border-l-[#3615CF]'
+                                      : 'bg-white hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className="px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 bg-slate-100 text-slate-500">
+                                    {st.step_no}
+                                  </span>
+                                  <span className="text-[10px] font-medium text-[#1a1a2e] flex-shrink-0">
+                                    {ACTION_LABEL[st.action] ?? st.action}
+                                  </span>
+                                  {/* 실제 대상 요소(selector/target) 를 주 표시 — API 가 아님 */}
+                                  <span className="text-[9.5px] text-slate-500 truncate flex-1 font-mono">
+                                    {(() => {
+                                      const sel = (st as { selector?: string | null }).selector;
+                                      if (st.action === 'navigate' || st.action === 'assert_url') return st.value || '';
+                                      if (st.action === 'fill') {
+                                        const f = sel || st.target_name || '';
+                                        return st.value ? `${f} = ${st.value}` : f;
+                                      }
+                                      return sel || st.target_name || '';
+                                    })()}
+                                  </span>
+                                  {/* 이 스텝이 트리거하는 API — 보조 배지 (클릭 대상 아님) */}
+                                  {st.api_endpoint
+                                    ? <span className="px-1 py-0.5 text-[8px] font-mono rounded bg-[#3615CF]/10 text-[#3615CF] flex-shrink-0">{st.api_endpoint}</span>
+                                    : null}
+                                  {isCurrent
+                                    ? <Loader2 className="w-3 h-3 text-[#3615CF] animate-spin flex-shrink-0" />
+                                    : null}
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       );
                     })}
