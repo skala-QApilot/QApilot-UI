@@ -6,7 +6,7 @@ import { LeftNavigation } from './components/common/LeftNavigation';
 import { NavBar } from './components/common/NavBar';
 import { HomePage, type ProjectMeta, type ProjectSummary } from './pages/HomePage';
 import { TestRunningPage } from './pages/TestRunningPage';
-import { TestResultPage } from './pages/TestResultPage';
+import { TestResultPage, type SlackShareContext } from './pages/TestResultPage';
 import { RTMPage } from './pages/RTMPage';
 import { TestPage } from './pages/TestPage';
 import { ScenarioPage } from './pages/ScenarioPage';
@@ -25,6 +25,7 @@ import AgentTracePanel from './components/AgentTracePanel';
 import { ScenarioChatbar } from './components/ScenarioChatbar';
 import { LinkedFilesModal } from './components/LinkedFilesModal';
 import { RetestNavModal } from './components/RetestNavModal';
+import { SlackSendModal } from './components/SlackSendModal';
 import { getProject, type ProjectDashboardResponse } from '../api/projects';
 import { useProjectStore } from '../store/projectStore';
 import { useNotificationStore } from '../store/notificationStore';
@@ -334,6 +335,9 @@ export default function App() {
   // 재테스트 대상 TS — TestResultPage 가 체크된 defect 들의 ts_id 를 채움 (실제 run 트리거용)
   const [retestTsIds, setRetestTsIds] = useState<string[]>([]);
   const [showRetestNavModal, setShowRetestNavModal] = useState(false);
+  // 결과 페이지 CSV/PDF/Slack 공유 — 버튼 클릭 시점에 행/제목/파일명을 확정해 모달에 전달.
+  const [showSlackSendModal, setShowSlackSendModal] = useState(false);
+  const [slackShareContext, setSlackShareContext] = useState<SlackShareContext | null>(null);
 
   // 시나리오 그룹 선택 & 예약 설정
   const [selectedScenarioGroupId, setSelectedScenarioGroupId] = useState<string | null>(null);
@@ -1748,6 +1752,8 @@ export default function App() {
                   setShowRetestNavModal={setShowRetestNavModal}
                   setRetestTsIds={setRetestTsIds}
                   serviceUuid={scenarioGenPollingServiceId}
+                  setShowSlackSendModal={setShowSlackSendModal}
+                  setSlackShareContext={setSlackShareContext}
                 />
               ) : (
                 <TestPage
@@ -1853,6 +1859,14 @@ export default function App() {
         open={codeGenConfirmOpen}
         onConfirm={handleStartCodeGen}
         onDismiss={() => setCodeGenConfirmOpen(false)}
+      />
+
+      <SlackSendModal
+        open={showSlackSendModal}
+        context={slackShareContext}
+        serviceUuid={scenarioGenPollingServiceId}
+        runId={selectedExecutionId}
+        onClose={() => setShowSlackSendModal(false)}
       />
 
       {/* ── Scenario Chatbar ── */}
