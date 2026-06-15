@@ -201,6 +201,25 @@ onVersionRollback,
     (_dynamicTestCases[s.id] || []).some((tc: any) => _selectedTCIds.includes(`${s.id}_${tc.id}`))
   ).length;
 
+  // 체크박스로 선택된 TS→TC 집합 (CSV 다운로드 대상). 1-part(TS 전체 선택) / 2-part(TC) /
+  // 3-part(TV→소속 TC) 키를 모두 TC 단위로 정규화.
+  const selectedTcByTs = React.useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    const addTc = (tsId: string, tcId: string) => {
+      if (!map.has(tsId)) map.set(tsId, new Set());
+      map.get(tsId)!.add(tcId);
+    };
+    _selectedTCIds.forEach((key) => {
+      const [tsId, tcId] = key.split('_');
+      if (!tcId) {
+        (_dynamicTestCases[tsId] || []).forEach(tc => addTc(tsId, tc.id));
+      } else {
+        addTc(tsId, tcId);
+      }
+    });
+    return map;
+  }, [_selectedTCIds, _dynamicTestCases]);
+
   const toggleTSSelection = (tsId: string) => {
     const tcs = _dynamicTestCases[tsId] || [];
     const tcKeys = tcs.map((tc: any) => `${tsId}_${tc.id}`);
@@ -251,6 +270,45 @@ onVersionRollback,
     const matchGroup = !activeGroup || (activeGroup.scenarios as string[]).includes(s.id);
     return matchSearch && matchChange && !isDeferred && matchGroup;
   });
+  // CSV 셀 값 escape — 쉼표/줄바꿈/쌍따옴표 포함 시 쌍따옴표로 감싸고 내부 쌍따옴표는 두 배로.
+  const escapeCsvField = (value: string): string =>
+    /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+
+  // 체크박스로 선택된 TS/TC를 CSV로 내려받기 (TS/TC 1행, TV는 요약 문자열로 병합).
+  // 선택 항목이 없으면 버튼이 비활성화되어 호출되지 않는다.
+  const handleDownloadCsv = () => {
+    const header = ['TS ID', 'TS명', 'TC ID', 'TC명', 'Given', 'When', 'Then', '태그', '테스트 데이터'];
+    const rows: string[][] = [header];
+
+    _dynamicScenarios.forEach((ts) => {
+      const selectedTcIds = selectedTcByTs.get(ts.id);
+      if (!selectedTcIds) return;
+      const tcs = (_dynamicTestCases[ts.id] || []).filter(tc => selectedTcIds.has(tc.id));
+      tcs.forEach((tc) => {
+        const tvSummary = (tc.values || [])
+          .map((tv) => `${tv.field ?? tv.purpose ?? tv.name}=${tv.value ?? ''}`)
+          .join('; ');
+        rows.push([
+          ts.id, ts.name, tc.id, tc.name,
+          tc.given ?? '', tc.when ?? '', tc.then ?? '',
+          (tc.tags || []).join(', '), tvSummary,
+        ]);
+      });
+    });
+
+    const csvContent = rows.map(row => row.map(escapeCsvField).join(',')).join('\r\n');
+    // UTF-8 BOM — Excel 에서 한글 깨짐 방지.
+    const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `시나리오목록_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const deferredAIIds = Object.entries(_aiItemActions)
     .filter(([, value]) => value === 'deferred')
     .map(([id]) => id);
@@ -305,14 +363,24 @@ onVersionRollback,
   // draft 상태 localStorage 키 (서비스별)
   const draftKey = serviceId ? `draft_edit_${serviceId}` : null;
 
+  // 서비스 진입/전환 시 1회만 DB 로드 상태로 showReviewActions 를 초기화한다.
+  // 초기화 이후 "E2E TEST 실행" 으로의 전환은 codeGenReviewStartTick("생성 시작" 확정)
+  // 에서만 일어나야 한다 — 그렇지 않으면 "검토 확인" 클릭만으로 (버전 박제 전, AI 항목
+  // 정리만 일어난 시점에) hasPendingAIReview/hasUserConfirmedVersion 이 바뀌면서
+  // 모달 "취소" 와 무관하게 버튼이 "E2E TEST 실행" 으로 잘못 전환되는 문제가 있었다.
+  const reviewActionsInitRef = React.useRef<string | null>(null);
+
   React.useEffect(() => {
     const storedDraftEdit = draftKey ? localStorage.getItem(draftKey) === 'true' : false;
     setHasDraftEdit(storedDraftEdit);
+    if (reviewActionsInitRef.current === draftKey) return;
     if (hasPendingAIReview) {
       setShowReviewActions(false);
+      reviewActionsInitRef.current = draftKey;
     } else if (hasUserConfirmedVersion) {
       // localStorage에 직접 수정 draft 마크가 있으면 검토 확인 모드 유지
       setShowReviewActions(!storedDraftEdit);
+      reviewActionsInitRef.current = draftKey;
     }
   }, [hasPendingAIReview, hasUserConfirmedVersion, draftKey]);
 
@@ -512,6 +580,9 @@ onVersionRollback,
     setShowReviewActions(false);
     setHasDraftEdit(true);
     if (draftKey) localStorage.setItem(draftKey, 'true');
+    // "수정중" 노드가 새로 생기는 시점 — 사용자가 보던 확정 버전이 아닌
+    // 수정중 노드를 바로 바라보도록 선택을 전환한다.
+    setSelectedScenarioVersion(DRAFT_VERSION_ID);
   };
 
   // 검토 확인 완료 시 draft 상태 해제
@@ -792,7 +863,15 @@ onVersionRollback,
                 {selectedTSCount}개
               </span>
             )}
-            <button className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#6b7280] hover:text-[#1a1a2e] border border-[#e5e7eb] rounded hover:bg-white transition-colors flex-shrink-0">
+            <button
+              onClick={handleDownloadCsv}
+              disabled={!someSelected}
+              title={someSelected ? '선택한 TC를 CSV로 다운로드' : 'TC를 선택하면 CSV로 다운로드할 수 있어요'}
+              className={`flex items-center gap-1 px-2 py-1 text-[10px] border rounded transition-colors flex-shrink-0 ${
+                someSelected
+                  ? 'text-[#6b7280] hover:text-[#1a1a2e] border-[#e5e7eb] hover:bg-white'
+                  : 'text-[#c4c9d4] border-[#e5e7eb] cursor-not-allowed'
+              }`}>
               <Download className="w-3 h-3" /> CSV
             </button>
             <SearchBar

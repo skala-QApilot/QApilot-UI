@@ -535,8 +535,6 @@ export default function App() {
 
 
   const onReviewConfirm = async () => {
-    const token = useAuthStore.getState().accessToken;
-    const versionServiceId = scenarioGenPollingServiceId ?? selectedServiceId;
     const storeVersionsBeforeSave = useScenarioStore.getState().versions;
     const previousMilestone = storeVersionsBeforeSave[0];
     const previousConfirmed = previousMilestone?.description === '검토 확인 시 자동 저장'
@@ -544,65 +542,13 @@ export default function App() {
       : null;
     const currentSnapshot = buildCurrentScenarioSnapshot(dynamicScenarios, dynamicTestCases);
     const codeGenDelta = computeCodeGenDelta(previousConfirmed, currentSnapshot);
-    const hasConfirmedVersion = storeVersionsBeforeSave.some(v => v.description === '검토 확인 시 자동 저장');
-    let saved = false;
-
-    if (versionServiceId && token) {
-      if (previousMilestone && !hasConfirmedVersion) {
-        // v1.0(초기 자동 생성)에 대한 최초 1회 검토 확인 — 지금 보고 있는 시나리오가 곧
-        // v1.0 자체이므로 새 버전(v1.1)으로 분기하지 않고, v1.0을 사용자 확정 기준선으로
-        // 그대로 전환한다 ("검토 확인을 눌렀더니 버전이 갈라졌다"는 혼란 방지).
-        try {
-          await updateScenarioVersion(versionServiceId, previousMilestone.versionId, {
-            description: '검토 확인 시 자동 저장',
-          });
-          saved = true;
-        } catch (err) {
-          console.error('v1.0 검토 확인 전환 실패', err);
-        }
-      } else {
-        const stableVersions = scenarioVersions.filter(v => !v.hasChange);
-        // scenarioVersions는 Spring DESC 순 (최신이 index 0) → 첫 번째가 최신 라벨
-        const latestLabel = stableVersions[0]?.label ?? 'v1.0';
-        const match = latestLabel.match(/^v(\d+)\.(\d+)$/);
-        const [major, minor] = match ? [parseInt(match[1]), parseInt(match[2])] : [1, 0];
-        let newLabel = `v${major}.${minor + 1}`;
-        // 백엔드 박제 — 현재 시점 시나리오 N개를 통째로 scenario_versions row 로 저장.
-        // UNIQUE(service_id, label) 충돌 시 minor 한 단계 더 올려 재시도 (자동 계산 미스 안전망).
-        let attempt = 0;
-        while (attempt < 3) {
-          try {
-            await createScenarioVersion(versionServiceId, {
-              label: newLabel,
-              description: '검토 확인 시 자동 저장',
-            });
-            saved = true;
-            break;
-          } catch (err: any) {
-            // UNIQUE 충돌이면 라벨 +1 후 재시도, 그 외엔 중단.
-            const status = err?.response?.status;
-            if (status === 409 || status === 500) {
-              attempt += 1;
-              newLabel = `v${major}.${minor + 1 + attempt}`;
-              continue;
-            }
-            console.error('버전 저장 실패', err);
-            break;
-          }
-        }
-      }
-    }
 
     setAiItemActions({});
     setDynamicAIItems({});
     setPendingCodeGenDelta(codeGenDelta);
 
-    if (saved && versionServiceId) {
-      // DB에 정상 저장된 경우 → DB에서 실제 데이터 재로드 (순서/날짜 일관성 보장)
-      await syncScenarioFromStore(versionServiceId);
-    }
-
-    // 검토 완료 → 코드 생성 시작 여부 확인 모달.
+    // 검토 완료 → 코드 생성 시작 여부 확인 모달. 버전 박제(저장)는 사용자가 모달에서
+    // "생성 시작"을 눌러 확정할 때 수행한다 (취소 시 아무 것도 바뀌지 않아야 하므로).
     setCodeGenConfirmOpen(true);
   };
 
@@ -1043,6 +989,63 @@ export default function App() {
       console.warn('handleStartCodeGen: serviceId 또는 토큰 미확보');
       return;
     }
+
+    // 버전 박제(저장) — "검토 확인" 클릭 시점이 아닌, 사용자가 모달에서 "생성 시작"을
+    // 확정한 이 시점에 수행한다 ("취소" 시에는 아무 버전도 생성/전환되지 않아야 하므로).
+    const storeVersionsBeforeSave = useScenarioStore.getState().versions;
+    const previousMilestone = storeVersionsBeforeSave[0];
+    const hasConfirmedVersion = storeVersionsBeforeSave.some(v => v.description === '검토 확인 시 자동 저장');
+    let saved = false;
+
+    if (previousMilestone && !hasConfirmedVersion) {
+      // v1.0(초기 자동 생성)에 대한 최초 1회 검토 확인 — 지금 보고 있는 시나리오가 곧
+      // v1.0 자체이므로 새 버전(v1.1)으로 분기하지 않고, v1.0을 사용자 확정 기준선으로
+      // 그대로 전환한다 ("검토 확인을 눌렀더니 버전이 갈라졌다"는 혼란 방지).
+      try {
+        await updateScenarioVersion(scenarioGenPollingServiceId, previousMilestone.versionId, {
+          description: '검토 확인 시 자동 저장',
+        });
+        saved = true;
+      } catch (err) {
+        console.error('v1.0 검토 확인 전환 실패', err);
+      }
+    } else {
+      const stableVersions = scenarioVersions.filter(v => !v.hasChange);
+      // scenarioVersions는 Spring DESC 순 (최신이 index 0) → 첫 번째가 최신 라벨
+      const latestLabel = stableVersions[0]?.label ?? 'v1.0';
+      const match = latestLabel.match(/^v(\d+)\.(\d+)$/);
+      const [major, minor] = match ? [parseInt(match[1]), parseInt(match[2])] : [1, 0];
+      let newLabel = `v${major}.${minor + 1}`;
+      // 백엔드 박제 — 현재 시점 시나리오 N개를 통째로 scenario_versions row 로 저장.
+      // UNIQUE(service_id, label) 충돌 시 minor 한 단계 더 올려 재시도 (자동 계산 미스 안전망).
+      let attempt = 0;
+      while (attempt < 3) {
+        try {
+          await createScenarioVersion(scenarioGenPollingServiceId, {
+            label: newLabel,
+            description: '검토 확인 시 자동 저장',
+          });
+          saved = true;
+          break;
+        } catch (err: any) {
+          // UNIQUE 충돌이면 라벨 +1 후 재시도, 그 외엔 중단.
+          const status = err?.response?.status;
+          if (status === 409 || status === 500) {
+            attempt += 1;
+            newLabel = `v${major}.${minor + 1 + attempt}`;
+            continue;
+          }
+          console.error('버전 저장 실패', err);
+          break;
+        }
+      }
+    }
+
+    if (saved) {
+      // DB에 정상 저장된 경우 → DB에서 실제 데이터 재로드 (순서/날짜 일관성 보장)
+      await syncScenarioFromStore(scenarioGenPollingServiceId);
+    }
+
     try {
       // {percent:0} seed → 처음부터 controlled 모드 (타이머 자동완료 비활성).
       setCodeGenProgress({ percent: 0, message: '테스트 코드 생성을 준비하는 중...' });
