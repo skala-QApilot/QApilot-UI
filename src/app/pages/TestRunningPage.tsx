@@ -12,7 +12,17 @@ import { useScenarioStore, toUiScenario, toUiTestCase } from '../../store/scenar
 import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
 import { fetchLatestScreenshotUrl, getRunProgress, stopRun, type RunProgress } from '../../api/runs';
+import { getActionMapping, type ActionStep } from '../../api/artifacts';
 import { useRunStream } from '../../hooks/useRunStream';
+
+// 실행 스텝 action → 한글 라벨 (좌측 패널 표시용)
+const ACTION_LABEL: Record<string, string> = {
+  navigate: '이동', fill: '입력', click: '클릭', check: '체크', uncheck: '체크해제',
+  select: '선택', upload: '업로드', press: '키입력', hover: '호버',
+  assert: '검증', assert_visible: '표시 검증', assert_text: '텍스트 검증',
+  assert_url: 'URL 검증', wait: '대기', reload: '새로고침',
+};
+import { useCdpStream } from '../../hooks/useCdpStream';
 
 interface RuntimeLog {
   time: string;
@@ -101,8 +111,16 @@ const LightJson = ({ obj }: { obj: Record<string, unknown> }) => {
   );
 };
 
+// ── 페이지 이탈/재진입 시 라이브 상태 보존 캐시 (runId 키) ──────────────
+// 컴포넌트 언마운트로 로컬 state 가 소멸하면 재진입 시 다음 폴링까지
+// 스크린샷·로그·체크 표시가 전부 빈 화면이 된다 — 마지막 상태를 모듈
+// 레벨에 보존해 마운트 즉시 복원. blob URL 은 새 캡처로 교체될 때만
+// revoke (캐시 보존을 위해 unmount 에서 revoke 하지 않음).
+const _progressCache = new Map<string, RunProgress>();
+const _shotCache = new Map<string, string>();
+
 type RunningTest = { id: string; name: string; groupId: string | null; startTime: string; status: 'pending' | 'running' | 'aborted' | 'completed' };
-type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED';
+type ScenarioSidebarTab = 'TOTAL' | 'PASS' | 'FILTERED' | 'SKIPPED' | 'UNVERIFIED';
 
 interface TestRunningPageProps {
   runningTests: RunningTest[];
@@ -163,16 +181,22 @@ export const TestRunningPage = ({
   // tick 함수를 ref 로 — SSE 이벤트 핸들러가 stale closure 없이 최신 버전 호출 가능.
   const tickRef = React.useRef<() => Promise<void>>();
 
+  // ── 현재 진행 스텝 + TC별 스텝 목록 (좌측 패널 TV 대체 + 프리뷰 싱크) ──
+  // currentStep: artifact SSE 이벤트(step_index + s3_key)로 갱신 → 프리뷰가
+  // 보여주는 스크린샷과 동일 스텝. stepMappings: TC 펼침 시 action mapping fetch.
+  const [currentStep, setCurrentStep] = React.useState<{ tcId: string; stepIndex: number } | null>(null);
+  const [stepMappings, setStepMappings] = React.useState<Record<string, ActionStep[]>>({});
+  const fetchedMappingsRef = React.useRef<Set<string>>(new Set());
+
   React.useEffect(() => {
     // 폴링 조건: serviceUuid + selectedRun 모두 있을 때.
     // - running: 1초 간격 폴링 + SSE 이벤트 도착 시 즉시 추가 tick
     // - aborted/completed: 마지막 디스크 상태 1회만 fetch
     // pending = 아직 실행 전 (실제 trace 없음) → 폴링/스크린샷 fetch 안 함.
     if (!serviceUuid || !selectedRun || selectedRun.status === 'pending') {
-      if (screenshotUrlRef.current) {
-        URL.revokeObjectURL(screenshotUrlRef.current);
-        screenshotUrlRef.current = null;
-      }
+      // blob URL 은 캐시 (_shotCache) 가 소유 — 여기서 revoke 하면 재진입
+      // 복원용 캐시가 죽은 URL 을 가리킨다. 로컬 참조만 비운다.
+      screenshotUrlRef.current = null;
       setScreenshotUrl(null);
       setRunProgress(null);
       tickRef.current = undefined;
@@ -183,24 +207,43 @@ export const TestRunningPage = ({
     const runId = selectedRun.id;
     const isLive = selectedRun.status === 'running';
 
+    // 재진입 즉시 복원 — 마지막 폴링 결과/캡처를 캐시에서 (다음 tick 까지의
+    // 빈 화면 방지). 캐시 blob URL 은 revoke 되지 않았으므로 그대로 유효.
+    const cachedProgress = _progressCache.get(runId);
+    if (cachedProgress) setRunProgress(cachedProgress);
+    const cachedShot = _shotCache.get(runId);
+    if (cachedShot) {
+      screenshotUrlRef.current = cachedShot;
+      setScreenshotUrl(cachedShot);
+    }
+
     const tick = async () => {
-      try {
-        const [nextUrl, progress] = await Promise.all([
-          fetchLatestScreenshotUrl(serviceUuid, runId),
-          getRunProgress(serviceUuid, runId),
-        ]);
-        if (cancelled) {
-          if (nextUrl) URL.revokeObjectURL(nextUrl);
-          return;
-        }
-        if (nextUrl) {
-          if (screenshotUrlRef.current) URL.revokeObjectURL(screenshotUrlRef.current);
-          screenshotUrlRef.current = nextUrl;
-          setScreenshotUrl(nextUrl);
-        }
-        setRunProgress(progress);
-      } catch (err) {
-        if (cancelled) return;
+      // 스크린샷과 progress 를 독립적으로 — Promise.all 결합은 한쪽 실패
+      // (스크린샷 일시 오류 등) 가 progress 표시까지 통째로 죽여 화면 전체가
+      // 비어 보였다. 각자 실패해도 다른 쪽은 갱신.
+      const [shotR, progR] = await Promise.allSettled([
+        fetchLatestScreenshotUrl(serviceUuid, runId),
+        getRunProgress(serviceUuid, runId),
+      ]);
+      if (cancelled) {
+        if (shotR.status === 'fulfilled' && shotR.value) URL.revokeObjectURL(shotR.value);
+        return;
+      }
+      if (shotR.status === 'fulfilled' && shotR.value) {
+        // 이전 blob 은 새 캡처로 교체될 때 revoke (캐시와 동기화)
+        const prev = _shotCache.get(runId);
+        if (prev && prev !== shotR.value) URL.revokeObjectURL(prev);
+        _shotCache.set(runId, shotR.value);
+        screenshotUrlRef.current = shotR.value;
+        setScreenshotUrl(shotR.value);
+      } else if (shotR.status === 'rejected') {
+        console.warn('[running] screenshot fetch 실패', shotR.reason);
+      }
+      if (progR.status === 'fulfilled' && progR.value) {
+        _progressCache.set(runId, progR.value);
+        setRunProgress(progR.value);
+      } else if (progR.status === 'rejected') {
+        console.warn('[running] run-progress fetch 실패', progR.reason);
       }
     };
     tickRef.current = tick;
@@ -212,10 +255,9 @@ export const TestRunningPage = ({
       cancelled = true;
       tickRef.current = undefined;
       if (timer) clearInterval(timer);
-      if (screenshotUrlRef.current) {
-        URL.revokeObjectURL(screenshotUrlRef.current);
-        screenshotUrlRef.current = null;
-      }
+      // blob URL 은 캐시 보존을 위해 여기서 revoke 하지 않는다 — 재진입 복원용.
+      // (새 캡처 도착 시 교체-revoke, 캐시 자체는 run 당 1장이라 누수 미미)
+      screenshotUrlRef.current = null;
     };
   }, [serviceUuid, selectedRun?.id, selectedRun?.status]);
 
@@ -225,29 +267,82 @@ export const TestRunningPage = ({
     selectedRun?.id ?? null,
     {
       enabled: selectedRun?.status === 'running',
-      onEvent: () => { void tickRef.current?.(); },
+      onEvent: (ev) => {
+        void tickRef.current?.();
+        // artifact 이벤트 = 스텝별 스크린샷이 방금 저장됨 → 그 스텝이 현재 진행 스텝.
+        // s3_key: runs/{run}/tc/{ts}/{tc}/screenshots/step_N.png 에서 tc_id 추출.
+        if (ev?.type === 'artifact' && ev.data) {
+          const key = String((ev.data as Record<string, unknown>).s3_key ?? '');
+          const tcId = key.match(/\/([^/]+)\/screenshots\//)?.[1];
+          const stepIndex = Number((ev.data as Record<string, unknown>).step_index);
+          if (tcId && Number.isFinite(stepIndex)) setCurrentStep({ tcId, stepIndex });
+        }
+      },
     },
   );
 
+  // ── 실시간 스트리밍 — CDP Screencast WebSocket (selectedRun.id == trace_id) ──
+  // 스텝별 스크린샷 폴링은 그대로 두고, running 중에는 라이브 프레임을 받아
+  // canvas 에 그린다. 스트림 프레임이 도착하면 LIVE, 없으면 스크린샷으로 폴백.
+  const cdpFrameDataUrl = useCdpStream(
+    selectedRun?.id ?? null,
+    selectedRun?.status === 'running',
+  );
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const isStreaming = cdpFrameDataUrl !== null;
+
+  // 디코드된 프레임을 canvas 에 그린다 (<img src> 교체 시의 깜빡임 방지 — 새 프레임
+  // 디코드가 끝난 뒤에만 drawImage 로 한 번에 교체).
+  React.useEffect(() => {
+    if (!cdpFrameDataUrl || !canvasRef.current) return;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      canvas.width = img.naturalWidth || 1280;
+      canvas.height = img.naturalHeight || 800;
+      canvas.getContext('2d')?.drawImage(img, 0, 0);
+    };
+    img.src = cdpFrameDataUrl;
+  }, [cdpFrameDataUrl]);
+
   const liveLogs = React.useMemo(() => toRuntimeLogs(runProgress), [runProgress]);
 
-  // 현재 실행 중인 ts_id / tc_id — 마지막 로그 액션에서 추출.
-  const [currentTsId, currentTcId] = React.useMemo(() => {
-    if (selectedRun?.status !== 'running' || !liveLogs.length) return [null, null];
-    const lastLog = liveLogs[liveLogs.length - 1];
-    const parts = lastLog?.action?.split('/') ?? [];
-    return [parts[0] ?? null, parts[1]?.split(' ')[0] ?? null];
-  }, [selectedRun?.status, liveLogs]);
-
-  // 현재 run progress 에서 tc_id → 실시간 pass/fail 맵.
-  // scenarioStore 의 last_run_status(이전 실행 결과)를 덮어써서 X / ✓ 가 즉시 반영되도록.
-  const liveStatusMap = React.useMemo<Record<string, 'passed' | 'failed'>>(() => {
+  // 현재 run progress 에서 tc_id → 실시간 상태 맵.
+  // 우선순위 3단 (run b3c98e44 전수 점검):
+  //  ① cross_check kind (최종 verdict — pass/fail/unverified) — items 에 이미 내려옴
+  //  ② api-mode (ui.verify_mode='api') 의 api.verdict — 브라우저 미수행 TC 의 즉시 판정
+  //  ③ ui kind status / step 휴리스틱 (기존)
+  // 기존엔 ③만 봐서 api-mode TC (전체의 ~89%) 가 영원히 '대기' 아이콘이었다.
+  const liveStatusMap = React.useMemo<Record<string, 'passed' | 'failed' | 'skipped' | 'unverified'>>(() => {
     if (!runProgress?.items?.length) return {};
-    const map: Record<string, 'passed' | 'failed'> = {};
+    const map: Record<string, 'passed' | 'failed' | 'skipped' | 'unverified'> = {};
     for (const item of runProgress.items) {
-      const uiStatus = (item.ui as any)?.status ?? (item.ui as any)?.tc_status;
-      if (uiStatus === 'pass') { map[item.tc_id] = 'passed'; continue; }
-      if (uiStatus === 'fail') { map[item.tc_id] = 'failed'; continue; }
+      // ① cross_check verdict 최우선 — skip 보호 (cc 무신호 pass 가 skip 을 덮지 않음)
+      const cc = (item as any).cross_check;
+      const uiStatusRaw = (item.ui as any)?.status ?? (item.ui as any)?.tc_status;
+      if (cc) {
+        const mismatch = cc.has_mismatch === true;
+        const unverifiedFlags = cc.inputs_incomplete || cc.ui_skipped
+          || cc.db_unverified || cc.api_unverified || cc.error_code === 'CC_PARSE_FAIL';
+        const execVerdict = cc.api_exec_verdict;
+        if (execVerdict === 'pass') { map[item.tc_id] = 'passed'; continue; }
+        if (execVerdict === 'fail') { map[item.tc_id] = 'failed'; continue; }
+        if (mismatch) { map[item.tc_id] = 'failed'; continue; }
+        if (unverifiedFlags) { map[item.tc_id] = 'unverified'; continue; }
+        if (uiStatusRaw !== 'skip') { map[item.tc_id] = 'passed'; continue; }
+      }
+      // ② api-mode — exec verdict 가 최종 (cc 도착 전 실시간 표시)
+      if ((item.ui as any)?.verify_mode === 'api') {
+        const v = (item.api as any)?.verdict;
+        if (v === 'pass') { map[item.tc_id] = 'passed'; continue; }
+        if (v === 'fail') { map[item.tc_id] = 'failed'; continue; }
+      }
+      // ③ ui kind (기존 휴리스틱)
+      if (uiStatusRaw === 'pass') { map[item.tc_id] = 'passed'; continue; }
+      if (uiStatusRaw === 'fail') { map[item.tc_id] = 'failed'; continue; }
+      // 'skip' = 검증 미완 (자동화 불가 step 보유) — passed 로 둔갑 금지
+      if (uiStatusRaw === 'skip') { map[item.tc_id] = 'skipped'; continue; }
       if (item.ui) {
         const steps: any[] = (item.ui as any)?.steps ?? [];
         const hasFail = steps.some((s: any) => s.status === 'fail');
@@ -258,30 +353,15 @@ export const TestRunningPage = ({
     return map;
   }, [runProgress]);
 
-  /**
-   * AgentProgressStrip 의 단계별 상태를 runProgress + selectedRun 에서 derive.
-   * - UI/API/DB: TC 당 ui_result/api_result/db_result 가 디스크에 쓰이면 카운트.
-   *   전체 카운트 > 0 면 "running", 전 항목에 결과 있으면 "complete".
-   * - Cross-check / 원인 분석 / Report: 별도 endpoint 없어서 heuristic.
-   *   selectedRun.status === 'completed' 면 모두 complete.
-   *   그 외엔 inactive (실제 진행 표시는 향후 L3 API 도입 시 보강).
-   */
-  const liveGetNodeStatus = React.useCallback((stage: string): 'inactive' | 'running' | 'complete' => {
-    if (!runProgress || runProgress.items.length === 0) return 'inactive';
-    const total = runProgress.items.length;
-    const has = (kind: 'ui' | 'api' | 'db') => runProgress.items.filter(it => (it as any)[kind]).length;
-    if (stage === 'UI' || stage === 'API' || stage === 'DB') {
-      const kind = stage.toLowerCase() as 'ui' | 'api' | 'db';
-      const done = has(kind);
-      if (done === 0) return 'inactive';
-      if (done >= total && selectedRun?.status !== 'running') return 'complete';
-      if (done >= total) return 'complete';
-      return 'running';
-    }
-    // L3 stages: completed 시 일괄 complete, 그 외 inactive.
-    if (selectedRun?.status === 'completed') return 'complete';
-    return 'inactive';
-  }, [runProgress, selectedRun?.status]);
+  // 결과 보유 TC 집합 — "현재 실행 중 TC" 판정용 (선언 순서상 allTCs 계산
+  // 이후에 사용; 아래 doneTcIds/currentTsId 참조).
+  const doneTcIds = React.useMemo(
+    () => new Set((runProgress?.items ?? []).map(it => it.tc_id)),
+    [runProgress],
+  );
+
+  // (liveGetNodeStatus 는 전체 계획 TC 수 (allTCs) 가 필요해 allTCs 계산부
+  //  이후에 plain 함수로 정의 — useCallback 이 stale allTCs 를 캡처하지 않게)
 
   /**
    * 현재 selectedRun 을 다시 실행.
@@ -343,18 +423,8 @@ export const TestRunningPage = ({
     return `${s}s`;
   };
 
-  // 현재 실행 중인 TS 자동 펼침
-  React.useEffect(() => {
-    if (!currentTsId) return;
-    setExpandedScenarios(prev => prev.includes(currentTsId) ? prev : [...prev, currentTsId]);
-  }, [currentTsId]);
-
-  // 현재 실행 중인 TC 가 보이도록 사이드바 자동 스크롤
-  React.useEffect(() => {
-    if (!currentTcId) return;
-    const el = scenarioListRef.current?.querySelector<HTMLElement>(`[data-tc-id="${currentTcId}"]`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [currentTcId]);
+  // (현재 TS 자동 펼침 / TC 자동 스크롤 effect 는 currentTsId/currentTcId
+  //  선언 이후로 이동 — 아래 allTCs 계산부 직후 참조)
 
   const formatDate  = (value: string) => value.split(' ')[0] ?? value;
   const formatClock = (value: string) => value.split(' ').slice(-1)[0] ?? value;
@@ -429,8 +499,95 @@ export const TestRunningPage = ({
   );
 
   const allTCs    = scenarios.flatMap(s => (testCasesMap[s.id] || []).map(tc => ({ sId: s.id, tc })));
-  const passedTCs = allTCs.filter(({ tc }) => { const s = liveStatusMap[tc.id] ?? tc.status; return s === 'passed' || s === 'completed'; });
-  const failedTCs = allTCs.filter(({ tc }) => (liveStatusMap[tc.id] ?? tc.status) === 'failed');
+  // 이 run 의 결과만 표시 — tc.status (scenarioStore 의 last_run_status =
+  // '이전 실행' 결과) 폴백은 아직 안 돈 TC/TS 에 과거의 X 를 미리 그린다
+  // (스크린샷 실증: 미진행 TS-007~010 이 전부 X). 결과 미보유 = pending.
+  const liveTcStatus = (tcId: string): string => liveStatusMap[tcId] ?? 'pending';
+  const passedTCs = allTCs.filter(({ tc }) => liveTcStatus(tc.id) === 'passed');
+  const failedTCs = allTCs.filter(({ tc }) => liveTcStatus(tc.id) === 'failed');
+  const skippedTCs = allTCs.filter(({ tc }) => liveTcStatus(tc.id) === 'skipped');
+  const unverifiedTCs = allTCs.filter(({ tc }) => liveTcStatus(tc.id) === 'unverified');
+
+  // 현재 실행 중 TC = "결과 미보유 첫 TC" (실행은 TS/TC 순번대로 진행).
+  // 기존 '마지막 로그 항목' 방식은 items 가 사전순 + api-mode TC 가 1초 미만에
+  // 지나가서, ui-mode 타임아웃 구간과 L3 분석 단계 (수 분) 동안 마지막
+  // ui-mode TC 에 고정돼 'TS-016 멈춤' 으로 보였다 (run b3c98e44 전수 점검).
+  const isRunningLive = selectedRun?.status === 'running';
+  const firstPending = isRunningLive && doneTcIds.size > 0
+    ? allTCs.find(({ tc }) => !doneTcIds.has(tc.id))
+    : undefined;
+  const currentTsId = firstPending?.sId ?? null;
+  const currentTcId = firstPending?.tc.id ?? null;
+  // 전 TC 결과 보유 + 아직 running = 실행 단계 종료, L3 (정합/원인 분석) 진행 중
+  const inAnalysisPhase = isRunningLive && doneTcIds.size > 0 && allTCs.length > 0 && !firstPending;
+
+  /**
+   * AgentProgressStrip 단계별 상태 — 기준 분모는 '전체 계획 TC 수' (allTCs).
+   * 이전엔 '결과 보유 항목 수' 를 분모로 써서 결과가 1개만 쌓여도
+   * done==total → UI/API/DB 가 실행 초반부터 ✓ 로 보였다 (스크린샷 실증).
+   */
+  const liveGetNodeStatus = (stage: string): 'inactive' | 'running' | 'complete' => {
+    const items = runProgress?.items ?? [];
+    if (selectedRun?.status === 'completed') return 'complete';
+    if (!items.length) return 'inactive';
+    const total = allTCs.length || items.length;  // 계획 수 우선, 폴백으로 보유 수
+    const has = (kind: 'ui' | 'api' | 'db') =>
+      items.filter(it => (it as any)[kind]).length;
+    if (stage === 'UI' || stage === 'API' || stage === 'DB') {
+      const done = has(stage.toLowerCase() as 'ui' | 'api' | 'db');
+      if (done === 0) return 'inactive';
+      return done >= total ? 'complete' : 'running';
+    }
+    // Cross-check: items 의 cross_check payload 보유 수로 실측
+    const ccDone = items.filter(it => (it as any).cross_check).length;
+    if (stage === 'Cross-check') {
+      if (ccDone > 0) return ccDone >= total ? 'complete' : 'running';
+      // 실행 결과는 전부 모였는데 cc 미도착 — 분석 단계 진입 중
+      return has('ui') >= total && isRunningLive ? 'running' : 'inactive';
+    }
+    // 원인 분석 / Report: cc 가 다 모인 뒤 running 으로 표시
+    return ccDone >= total && isRunningLive ? 'running' : 'inactive';
+  };
+
+  // 현재 실행 중인 TS 자동 펼침
+  React.useEffect(() => {
+    if (!currentTsId) return;
+    setExpandedScenarios(prev => prev.includes(currentTsId) ? prev : [...prev, currentTsId]);
+  }, [currentTsId]);
+
+  // 현재 실행 중인 TC 가 보이도록 사이드바 자동 스크롤 + 자동 펼침 (스텝 표시)
+  React.useEffect(() => {
+    if (!currentTcId) return;
+    const el = scenarioListRef.current?.querySelector<HTMLElement>(`[data-tc-id="${currentTcId}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (currentTsId) {
+      const key = `${currentTsId}_${currentTcId}`;
+      setExpandedTestCases(prev => prev.includes(key) ? prev : [...prev, key]);
+    }
+  }, [currentTcId, currentTsId]);
+
+  // run 바뀌면 현재 스텝/스텝 매핑 캐시 리셋
+  React.useEffect(() => {
+    setCurrentStep(null);
+    setStepMappings({});
+    fetchedMappingsRef.current = new Set();
+  }, [selectedRun?.id]);
+
+  // 펼쳐진 TC 의 action mapping(스텝 목록) fetch — TV 대신 표시할 스텝.
+  React.useEffect(() => {
+    if (!serviceUuid || !selectedRun?.id) return;
+    const runId = selectedRun.id;
+    expandedTestCases.forEach((key) => {
+      const tcId = key.split('_')[1];  // key = `${scenarioId}_${tcId}` (각 1개 '_')
+      if (!tcId || fetchedMappingsRef.current.has(tcId)) return;
+      fetchedMappingsRef.current.add(tcId);
+      getActionMapping(serviceUuid, runId, tcId)
+        .then((am) => {
+          if (am?.steps?.length) setStepMappings((prev) => ({ ...prev, [tcId]: am.steps }));
+        })
+        .catch(() => fetchedMappingsRef.current.delete(tcId));
+    });
+  }, [expandedTestCases, serviceUuid, selectedRun?.id]);
 
   // empty state
   if (!selectedRun) {
@@ -492,6 +649,8 @@ export const TestRunningPage = ({
                 { key: 'TOTAL',    label: 'TOTAL' },
                 { key: 'PASS',     label: 'PASS', count: passedTCs.length, color: 'text-status-pass', badge: 'bg-status-pass/15 text-status-pass', underline: 'bg-status-pass' },
                 { key: 'FILTERED', label: 'FAIL', count: failedTCs.length, color: 'text-status-fail', badge: 'bg-status-fail/15 text-status-fail', underline: 'bg-status-fail' },
+                { key: 'SKIPPED',  label: 'SKIPPED', count: skippedTCs.length, color: 'text-[#d4a017]', badge: 'bg-[#d4a017]/15 text-[#d4a017]', underline: 'bg-[#d4a017]' },
+                { key: 'UNVERIFIED', label: 'UNVERIFIED', count: unverifiedTCs.length, color: 'text-[#7c8db5]', badge: 'bg-[#7c8db5]/15 text-[#7c8db5]', underline: 'bg-[#7c8db5]' },
               ].map(tab => {
                 const active = scenarioSidebarTab === tab.key;
                 return (
@@ -523,17 +682,23 @@ export const TestRunningPage = ({
                 const isCurrentTs = selectedRun?.status === 'running' && currentTsId === scenario.id;
                 const allTcs = testCasesMap[scenario.id] || [];
                 const tcs = scenarioSidebarTab === 'PASS'
-                  ? allTcs.filter(tc => { const s = liveStatusMap[tc.id] ?? tc.status; return s === 'passed' || s === 'completed'; })
+                  ? allTcs.filter(tc => liveTcStatus(tc.id) === 'passed')
                   : scenarioSidebarTab === 'FILTERED'
-                  ? allTcs.filter(tc => (liveStatusMap[tc.id] ?? tc.status) === 'failed')
+                  ? allTcs.filter(tc => liveTcStatus(tc.id) === 'failed')
+                  : scenarioSidebarTab === 'SKIPPED'
+                  ? allTcs.filter(tc => liveTcStatus(tc.id) === 'skipped')
+                  : scenarioSidebarTab === 'UNVERIFIED'
+                  ? allTcs.filter(tc => liveTcStatus(tc.id) === 'unverified')
                   : allTcs;
                 // TS 단위 live 상태 — TC live 결과에서 derive.
                 const liveTsStatus = (() => {
-                  if (!allTcs.length) return scenario.status;
-                  const statuses = allTcs.map(tc => liveStatusMap[tc.id] ?? tc.status);
+                  if (!allTcs.length) return 'pending';
+                  const statuses = allTcs.map(tc => liveTcStatus(tc.id));
+                  // 이 run 의 결과가 하나도 없으면 미진행 — 과거 결과로 칠하지 않는다
+                  if (statuses.every(s => s === 'pending')) return 'pending';
                   if (statuses.some(s => s === 'failed')) return 'failed';
-                  if (statuses.every(s => s === 'passed' || s === 'completed')) return 'passed';
-                  return scenario.status;
+                  if (statuses.every(s => s === 'passed')) return 'passed';
+                  return 'running';
                 })();
                 if (scenarioSidebarTab !== 'TOTAL' && tcs.length === 0) return null;
                 return (
@@ -583,9 +748,7 @@ export const TestRunningPage = ({
                               );
                             }}>
                             <button className="flex-shrink-0" onClick={e => e.stopPropagation()}>
-                              {tc.values.length > 0
-                                ? (isTCExpanded ? <ChevronDown className="w-3 h-3 text-[#9ca3af]" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af]" />)
-                                : <span className="w-3" />}
+                              {isTCExpanded ? <ChevronDown className="w-3 h-3 text-[#9ca3af]" /> : <ChevronRight className="w-3 h-3 text-[#9ca3af]" />}
                             </button>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1 flex-wrap">
@@ -605,58 +768,70 @@ export const TestRunningPage = ({
                             </div>
                             {isCurrentTc
                               ? <Loader2 className="w-3 h-3 text-[#3615CF] animate-spin flex-shrink-0" />
-                              : <StatusIcon status={liveStatusMap[tc.id] ?? tc.status} size="w-3 h-3" />}
+                              : <StatusIcon status={liveTcStatus(tc.id)} size="w-3 h-3" />}
                           </div>
 
-                          {/* TV 행 */}
-                          {isTCExpanded && tc.values.map(tv => {
-                            const tvKey = `${scenario.id}_${tc.id}_${tv.id}`;
-                            const ep = mockTVEndpoints[tvKey];
-                            const validations = mockValidationConditions[tvKey] || [];
-                            const isOk = ep ? ep.statusCode < 400 : true;
-                            return (
-                              <div key={tv.id} className="border-b border-[#f0f0f0]/30" style={{ paddingLeft: '3.25rem' }}>
-                                <div className="group flex items-center gap-1.5 pr-2 py-1.5 cursor-pointer transition-colors bg-white hover:bg-slate-50"
-                                  onClick={() => scrollToLog(0)}>
-                                  <span className="px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 bg-slate-100 text-slate-500">{tv.id}</span>
-                                  {ep ? (
-                                    <div className="flex items-center gap-1 flex-1 min-w-0">
-                                      <span className={`text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${METHOD_STYLE[ep.method]}`}>{ep.method}</span>
-                                      <span className="font-mono text-[9.5px] text-slate-500 truncate">{ep.path}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-500 truncate flex-1">{tv.name}</span>
-                                  )}
-                                  <StatusIcon status={tv.status} size="w-3 h-3" />
+                          {/* 스텝 행 (TV 대체) — action mapping 의 스텝. 현재 진행
+                              스텝(artifact 이벤트)을 강조 → qapilot-preview 와 싱크. */}
+                          {isTCExpanded && (() => {
+                            const steps = stepMappings[tc.id];
+                            if (!steps) {
+                              return (
+                                <div className="py-1.5 text-[10px] text-slate-400" style={{ paddingLeft: '3.25rem' }}>
+                                  스텝 불러오는 중…
                                 </div>
-                                {ep && (
-                                  <div className="mx-2 mb-1 mt-0.5 rounded border border-slate-100 bg-slate-50 overflow-hidden">
-                                    <div className="px-2 py-1.5 overflow-x-auto">
-                                      <LightJson obj={ep.requestBody ?? {}} />
-                                    </div>
-                                    <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-slate-100 ${isOk ? 'bg-[#EAE8F9]' : 'bg-red-50'}`}>
-                                      <span className={`font-mono text-[9px] font-bold ${isOk ? 'text-[#3615CF]/70' : 'text-red-500'}`}>
-                                        ← {ep.statusCode}
-                                      </span>
-                                      <span className={`text-[9px] ${isOk ? 'text-[#3615CF]' : 'text-red-400'}`}>
-                                        {HTTP_STATUS_TEXT[ep.statusCode] ?? ''}
-                                      </span>
-                                    </div>
-                                  </div>
-                                )}
-                                {validations.length > 0 && (
-                                  <div className="mx-2 mb-1.5 space-y-0.5">
-                                    {validations.map((v, i) => (
-                                      <div key={i} className="flex gap-1.5 px-2 py-1 bg-gray-50 rounded border border-[#e5e7eb] text-[10px]">
-                                        <span className="text-[#3615CF] flex-shrink-0 font-bold">✓</span>
-                                        <span className="text-[#6b7280] leading-relaxed">{v}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
+                              );
+                            }
+                            if (steps.length === 0) {
+                              return (
+                                <div className="py-1.5 text-[10px] text-slate-400" style={{ paddingLeft: '3.25rem' }}>
+                                  실행 스텝 없음
+                                </div>
+                              );
+                            }
+                            return steps.map((st) => {
+                              // 프리뷰가 보여주는 스텝(artifact 이벤트) 과 동일 → 싱크
+                              const isCurrent = currentStep?.tcId === tc.id
+                                && currentStep?.stepIndex === st.step_no;
+                              return (
+                                <div
+                                  key={st.step_no}
+                                  style={{ paddingLeft: '3.25rem' }}
+                                  className={`flex items-center gap-1.5 pr-2 py-1.5 border-b border-[#f0f0f0]/30 transition-colors ${
+                                    isCurrent
+                                      ? 'bg-[#EAE8F9]/70 border-l-[3px] border-l-[#3615CF]'
+                                      : 'bg-white hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className="px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 bg-slate-100 text-slate-500">
+                                    {st.step_no}
+                                  </span>
+                                  <span className="text-[10px] font-medium text-[#1a1a2e] flex-shrink-0">
+                                    {ACTION_LABEL[st.action] ?? st.action}
+                                  </span>
+                                  {/* 실제 대상 요소(selector/target) 를 주 표시 — API 가 아님 */}
+                                  <span className="text-[9.5px] text-slate-500 truncate flex-1 font-mono">
+                                    {(() => {
+                                      const sel = (st as { selector?: string | null }).selector;
+                                      if (st.action === 'navigate' || st.action === 'assert_url') return st.value || '';
+                                      if (st.action === 'fill') {
+                                        const f = sel || st.target_name || '';
+                                        return st.value ? `${f} = ${st.value}` : f;
+                                      }
+                                      return sel || st.target_name || '';
+                                    })()}
+                                  </span>
+                                  {/* 이 스텝이 트리거하는 API — 보조 배지 (클릭 대상 아님) */}
+                                  {st.api_endpoint
+                                    ? <span className="px-1 py-0.5 text-[8px] font-mono rounded bg-[#3615CF]/10 text-[#3615CF] flex-shrink-0">{st.api_endpoint}</span>
+                                    : null}
+                                  {isCurrent
+                                    ? <Loader2 className="w-3 h-3 text-[#3615CF] animate-spin flex-shrink-0" />
+                                    : null}
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       );
                     })}
@@ -717,29 +892,43 @@ export const TestRunningPage = ({
         <div className="flex-1 min-w-0 overflow-hidden bg-[#eef1f4] p-4">
           <div className="flex h-full min-h-0 flex-col gap-3">
             <AgentProgressStrip getNodeStatus={liveGetNodeStatus} />
+            {inAnalysisPhase && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#3615CF]/5 border border-[#3615CF]/15 text-xs text-[#3615CF] flex-shrink-0">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                전체 TC 실행 완료 — 정합성 검증(Cross-check)·원인 분석 단계 진행 중입니다. 결과가 곧 확정됩니다.
+              </div>
+            )}
             <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4">
-              <TerminalFrame title="qapilot-preview - zsh" bodyClassName="aspect-video flex items-center justify-center p-0 overflow-hidden">
-                {screenshotUrl ? (
-                  <img
-                    src={screenshotUrl}
-                    alt="live browser screenshot"
-                    className="max-w-full max-h-full object-contain bg-white"
-                  />
-                ) : (
-                  <div className="text-center text-[#9aa0a6] p-4">
-                    {selectedRun?.status === 'running' ? (
-                      <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
-                    ) : (
-                      <Eye className="w-8 h-8 mx-auto mb-3 opacity-70" />
-                    )}
-                    <div className="font-mono text-xs">
-                      {selectedRun?.status === 'running'
-                        ? '스크린샷을 기다리는 중...'
-                        : selectedRun?.status === 'pending'
-                          ? '"실행" 버튼을 누르면 테스트가 시작됩니다'
-                          : '테스트 실행 중 실시간 화면이 표시됩니다'}
+              <TerminalFrame title="qapilot-preview - zsh" bodyClassName="aspect-video relative flex items-center justify-center p-0 overflow-hidden bg-black">
+                {/* 실시간 스트리밍(canvas) — 프레임 도착 시에만 표시. */}
+                <canvas
+                  ref={canvasRef}
+                  className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-full max-h-full ${isStreaming ? 'block' : 'hidden'}`}
+                />
+                {/* 폴백: 스트림 프레임이 없으면 기존 스텝별 스크린샷 → 안내 문구. */}
+                {!isStreaming && (
+                  screenshotUrl ? (
+                    <img
+                      src={screenshotUrl}
+                      alt="live browser screenshot"
+                      className="max-w-full max-h-full object-contain bg-white"
+                    />
+                  ) : (
+                    <div className="text-center text-[#9aa0a6] p-4">
+                      {selectedRun?.status === 'running' ? (
+                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+                      ) : (
+                        <Eye className="w-8 h-8 mx-auto mb-3 opacity-70" />
+                      )}
+                      <div className="font-mono text-xs">
+                        {selectedRun?.status === 'running'
+                          ? '스트리밍 연결 중...'
+                          : selectedRun?.status === 'pending'
+                            ? '"실행" 버튼을 누르면 테스트가 시작됩니다'
+                            : '테스트 실행 중 실시간 화면이 표시됩니다'}
+                      </div>
                     </div>
-                  </div>
+                  )
                 )}
               </TerminalFrame>
               <RuntimeTerminal

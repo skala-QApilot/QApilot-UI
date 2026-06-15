@@ -34,6 +34,14 @@ export default defineConfig({
   server: {
     // 개발 환경에서 /api/* 호출을 Spring 게이트웨이로 포워딩
     proxy: {
+      // CDP 실시간 스트리밍 WebSocket — FastAPI(8001) 직접 연결.
+      // 일반 /api 규칙보다 먼저 와야 매칭된다 (더 구체적인 경로 우선).
+      '/api/agent/ws': {
+        target: 'ws://localhost:8001',
+        ws: true,
+        changeOrigin: true,
+      },
+      // 나머지 /api/* → Spring 게이트웨이(8080)
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,

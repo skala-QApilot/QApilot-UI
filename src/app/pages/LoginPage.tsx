@@ -11,7 +11,6 @@ interface LoginPageProps {
   projectSlug?: string;
 }
 
-const FALLBACK_PROJECT_SLUG = 'temp-project';
 const FALLBACK_SERVER_AUTH_TOKEN = 'temp-server-auth-token';
 
 export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
@@ -39,13 +38,21 @@ export function LoginPage({ onLogin, onBack, projectSlug }: LoginPageProps) {
       if (isLogin) {
         await useAuthStore.getState().login(email, password);
       } else {
-        const tokens = await registerApi({
-          name,
-          email,
-          password,
-          project_slug: projectSlug || FALLBACK_PROJECT_SLUG,
-          server_auth_token: FALLBACK_SERVER_AUTH_TOKEN,
-        });
+        // 실제 프로젝트 초대(projectSlug)가 있을 때만 서비스 가입 필드를 보낸다.
+        // 일반 자가 회원가입은 name/email/password 만으로 진행 — 백엔드가 더 이상
+        // project_slug 를 강제하지 않으므로 가짜 fallback 값을 보내지 않는다
+        // (가짜 값은 SERVICE_001 "서비스를 찾을 수 없습니다" 로 가입 실패의 원인).
+        const tokens = await registerApi(
+          projectSlug
+            ? {
+                name,
+                email,
+                password,
+                project_slug: projectSlug,
+                server_auth_token: FALLBACK_SERVER_AUTH_TOKEN,
+              }
+            : { name, email, password },
+        );
         useAuthStore.getState().setSession(tokens);
       }
       onLogin();

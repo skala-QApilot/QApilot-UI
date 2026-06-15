@@ -12,6 +12,8 @@ export interface UiExecutionRow {
   pass: number;
   fail: number;
   hitlPending: number;
+  skipped: number;        // 검증 미완 (S) — 실행됐지만 자동 검증 불가
+  unverified: number;     // 판정 보류 (U) — cross_check 의 검증축 부재
   notRun: number;
   status: string;
 }
@@ -20,6 +22,8 @@ export interface UiPassHistoryPoint {
   date: string;
   pass: number;
   fail: number;
+  unverified: number;
+  skipped: number;
   total: number;
 }
 
@@ -79,8 +83,13 @@ export const useTestStore = create<TestState>()((set, get) => ({
   ...initialState,
 
   loadResults: async (serviceId) => {
-    const { results, total } = await resultsApi.listResults(serviceId, { limit: 50 });
-    set({ results, statistics: { total, passed: get().statistics?.passed ?? 0, failed: 0, passRate: null } });
+    // 통계를 클라이언트에서 조립하지 않는다 — 이전 구현은 failed:0 하드코딩 +
+    // stale passed 재사용으로 실패가 항상 0 으로 표시됐다. 서버 통계를 함께 갱신.
+    const [{ results }, statistics] = await Promise.all([
+      resultsApi.listResults(serviceId, { limit: 50 }),
+      resultsApi.getStatistics(serviceId),
+    ]);
+    set({ results, statistics });
   },
 
   loadStatistics: async (serviceId) => {
@@ -132,7 +141,9 @@ export const useTestStore = create<TestState>()((set, get) => ({
         pass: r.pass_count,
         fail: r.fail_count,
         hitlPending: 0, // 백엔드 별도 추적 X — 0 fallback
-        notRun: Math.max(0, r.total_tc_count - r.pass_count - r.fail_count),
+        skipped: r.skip_count ?? 0,
+        unverified: r.unverified_count ?? 0,
+        notRun: Math.max(0, r.total_tc_count - r.pass_count - r.fail_count - (r.skip_count ?? 0) - (r.unverified_count ?? 0)),
         status: r.status,
       });
     }
@@ -140,20 +151,27 @@ export const useTestStore = create<TestState>()((set, get) => ({
   },
 
   // PassRate 차트 — completed 만 집계. aborted 의 0/0 가 평균을 왜곡하지 않도록 제외.
+  // unverified/skipped 도 집계 — '판정 보류' 가 PASS/FAIL 어디에도 안 보이면
+  // 전체 수가 안 맞아 보인다 (UI 전수 점검 후속: '4 UNVERIFIED 표시 필요').
   getPassHistory: (days = 14) => {
-    const agg: Record<string, { pass: number; fail: number }> = {};
+    const agg: Record<string, { pass: number; fail: number; unverified: number; skipped: number }> = {};
     for (const r of get().results) {
       if (r.command !== 'test') continue;
       if (r.status !== 'completed') continue;
       const k = dayKey(r.completed_at || r.started_at);
       if (!k) continue;
-      if (!agg[k]) agg[k] = { pass: 0, fail: 0 };
+      if (!agg[k]) agg[k] = { pass: 0, fail: 0, unverified: 0, skipped: 0 };
       agg[k].pass += r.pass_count;
       agg[k].fail += r.fail_count;
+      agg[k].unverified += r.unverified_count ?? 0;
+      agg[k].skipped += r.skip_count ?? 0;
     }
     const sorted = Object.entries(agg)
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-days);
-    return sorted.map(([date, { pass, fail }]) => ({ date, pass, fail, total: pass + fail }));
+    return sorted.map(([date, { pass, fail, unverified, skipped }]) => ({
+      date, pass, fail, unverified, skipped,
+      total: pass + fail + unverified + skipped,
+    }));
   },
 }));
