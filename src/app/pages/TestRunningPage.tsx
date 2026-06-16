@@ -11,7 +11,7 @@ import { mockTVEndpoints, type HttpMethod } from '../data/mockData';
 import { useScenarioStore, toUiScenario, toUiTestCase } from '../../store/scenarioStore';
 import { useRtmStore } from '../../store/rtmStore';
 import { useTestStore } from '../../store/testStore';
-import { fetchLatestScreenshotUrl, getRunProgress, stopRun, type RunProgress } from '../../api/runs';
+import { fetchLatestScreenshotUrl, getRunProgress, stopRun, type RunProgress, type RunProgressItem } from '../../api/runs';
 import { getActionMapping, type ActionStep } from '../../api/artifacts';
 import { useRunStream } from '../../hooks/useRunStream';
 
@@ -64,6 +64,84 @@ function toRuntimeLogs(progress: RunProgress | null): RuntimeLog[] {
     }
   }
   return out;
+}
+
+/**
+ * 스텝 아래 표시할 "DB 검증" 한 줄 — 무엇을 검증하는지 간략 서술.
+ * 우선순위: ① api db_observation(kind/table) → ② db_result snapshots 변화 → ③ 일반 폴백.
+ * DB 가 생략(skipped)됐으면 null (표시 안 함).
+ */
+function deriveDbVerifyText(item: RunProgressItem | undefined): string | null {
+  if (!item) return '데이터 반영 검증';  // 결과 도착 전(live) — 무엇을 볼지 미리 표기
+  const api = item.api as Record<string, any> | null | undefined;
+  const db = item.db as Record<string, any> | null | undefined;
+
+  // ① API-mode 의 DB 관찰 계약 (kind + table)
+  const obs = api?.db_observation as { kind?: string; table?: string } | undefined;
+  if (obs?.table) {
+    if (obs.kind === 'exists') return `${obs.table} 테이블 신규 행 생성 확인`;
+    if (obs.kind === 'hash') return `${obs.table} 테이블 암호화 저장 확인`;
+    return `${obs.table} 테이블 상태 확인`;
+  }
+
+  // ② 일반 경로 — 스냅샷 전후 diff
+  if (db?.skipped) return null;
+  const snaps = (db?.snapshots as any[] | undefined) ?? [];
+  if (snaps.length) {
+    const changed = snaps
+      .map((s) => {
+        const parts: string[] = [];
+        if (s.added) parts.push(`+${s.added}행`);
+        if (s.deleted) parts.push(`-${s.deleted}행`);
+        if (s.modified) parts.push(`~${s.modified}행`);
+        return parts.length ? `${s.table} ${parts.join(' ')}` : null;
+      })
+      .filter(Boolean) as string[];
+    if (changed.length) {
+      return changed.slice(0, 2).join(', ') + (changed.length > 2 ? ' 외' : '');
+    }
+    return '데이터 변경 없음 확인';
+  }
+
+  // ③ db 결과 아직 없음(진행 전)
+  return '데이터 반영 검증';
+}
+
+/** precondition SQL 에서 대상 테이블명 추출 (INSERT INTO / FROM). 없으면 null. */
+function precondTableOf(sql?: string | null): string | null {
+  if (!sql) return null;
+  const m = sql.match(/INSERT\s+INTO\s+"?(\w+)"?/i) || sql.match(/FROM\s+"?(\w+)"?/i);
+  return m ? m[1] : null;
+}
+
+/** DB precondition(실행 후) 결과 한 줄 텍스트 — 대상 테이블 포함해 구체적으로. */
+function dbPrecondText(
+  p: { matched?: boolean; seeded?: boolean; error?: string | null } | undefined,
+  table?: string | null,
+): string | null {
+  if (!p) return null;
+  const t = table ? `${table} ` : '';
+  if (p.error) return `DB 준비 실패 · ${p.error}`;
+  if (p.seeded) return `DB 준비 · ${t}없음 → 시드 적용 완료`;
+  if (p.matched) return `DB 준비 · ${t}이미 존재 (시드 불필요)`;
+  return `DB 준비 · ${t}상태 확인`;
+}
+
+/** 임의 값을 React 자식으로 안전한 문자열로 변환 — 객체(예: {plan_id, order_id})면 JSON 문자열화.
+ * step 의 value/selector 등이 문자열이 아닌 객체로 올 수 있어 직접 렌더 시 React 크래시 방지. */
+function asText(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    try { return JSON.stringify(v); } catch { return String(v); }
+  }
+  return String(v);
+}
+
+/** DB 변경 행 한 줄 표기 — key=value 나열 (긴 값은 CSS break-all 로 처리). */
+function formatRow(row: Record<string, unknown>): string {
+  return Object.entries(row)
+    .map(([k, v]) => `${k}=${v === null || v === undefined ? 'null' : String(v)}`)
+    .join('   ');
 }
 
 const METHOD_STYLE: Record<HttpMethod, string> = {
@@ -186,6 +264,26 @@ export const TestRunningPage = ({
   // 보여주는 스크린샷과 동일 스텝. stepMappings: TC 펼침 시 action mapping fetch.
   const [currentStep, setCurrentStep] = React.useState<{ tcId: string; stepIndex: number } | null>(null);
   const [stepMappings, setStepMappings] = React.useState<Record<string, ActionStep[]>>({});
+  // action mapping 에 실린 precondition — 실행 전(preview)에도 "준비" step 을 보여주기 위함.
+  const [precondMappings, setPrecondMappings] = React.useState<Record<string, { check?: string | null; seed?: string | null }>>({});
+  // DB 검증 라인 클릭 → 변경 행 상세 펼침 (tc.id 집합).
+  const [openDbDetail, setOpenDbDetail] = React.useState<Set<string>>(new Set());
+  const toggleDbDetail = React.useCallback((tcId: string) => {
+    setOpenDbDetail((prev) => {
+      const next = new Set(prev);
+      if (next.has(tcId)) next.delete(tcId); else next.add(tcId);
+      return next;
+    });
+  }, []);
+  // "준비"(precondition) step 클릭 → 파악/조치 상세 펼침.
+  const [openPrecondDetail, setOpenPrecondDetail] = React.useState<Set<string>>(new Set());
+  const togglePrecondDetail = React.useCallback((tcId: string) => {
+    setOpenPrecondDetail((prev) => {
+      const next = new Set(prev);
+      if (next.has(tcId)) next.delete(tcId); else next.add(tcId);
+      return next;
+    });
+  }, []);
   const fetchedMappingsRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
@@ -359,6 +457,13 @@ export const TestRunningPage = ({
     () => new Set((runProgress?.items ?? []).map(it => it.tc_id)),
     [runProgress],
   );
+
+  // tc_id → RunProgressItem — 스텝 아래 API/DB 검증 라인이 해당 TC 의 결과(api/db)를 참조.
+  const itemByTc = React.useMemo<Record<string, RunProgressItem>>(() => {
+    const map: Record<string, RunProgressItem> = {};
+    for (const it of runProgress?.items ?? []) map[it.tc_id] = it;
+    return map;
+  }, [runProgress]);
 
   // (liveGetNodeStatus 는 전체 계획 TC 수 (allTCs) 가 필요해 allTCs 계산부
   //  이후에 plain 함수로 정의 — useCallback 이 stale allTCs 를 캡처하지 않게)
@@ -587,6 +692,9 @@ export const TestRunningPage = ({
       getActionMapping(serviceUuid, runId, tcId)
         .then((am) => {
           if (am?.steps?.length) setStepMappings((prev) => ({ ...prev, [tcId]: am.steps }));
+          if (am?.db_check_sql || am?.db_seed_sql) {
+            setPrecondMappings((prev) => ({ ...prev, [tcId]: { check: am.db_check_sql, seed: am.db_seed_sql } }));
+          }
         })
         .catch(() => fetchedMappingsRef.current.delete(tcId));
     });
@@ -792,48 +900,208 @@ export const TestRunningPage = ({
                                 </div>
                               );
                             }
-                            return steps.map((st) => {
+                            const tcItem = itemByTc[tc.id];
+                            const apiStepNos = steps.filter((s) => s.api_endpoint).map((s) => s.step_no);
+                            // DB 검증 라인은 API 트리거 스텝(마지막) 밑에 — API 스텝이 없으면 마지막 스텝 밑에.
+                            const dbAnchorStepNo = apiStepNos.length
+                              ? apiStepNos[apiStepNos.length - 1]
+                              : steps[steps.length - 1]?.step_no;
+                            const dbVerifyText = deriveDbVerifyText(tcItem);
+                            // DB 변경 행 상세 — 클릭 시 펼침. 미변경/생략이면 클릭 비활성.
+                            const dbSnapshots = ((tcItem?.db as any)?.snapshots as any[] | undefined) ?? [];
+                            const dbChangedTables = dbSnapshots.filter(
+                              (s) => (s?.rows_added?.length || s?.rows_removed?.length));
+                            const hasDbDetail = dbChangedTables.length > 0;
+                            const dbDetailOpen = openDbDetail.has(tc.id);
+                            // 롤백 step — DB 테스트가 실제로 수행됐으면(skip 아님) 마지막에 표기.
+                            const dbRan = !!tcItem?.db && !(tcItem.db as any).skipped;
+                            // precondition step — 3상태: 예정(preview) / 로딩(실행중) / 완료(결과+토글).
+                            const dbPrecond = (tcItem?.db as any)?.precondition;
+                            const _planned = precondMappings[tc.id];
+                            const _precTable = precondTableOf(_planned?.check || _planned?.seed);
+                            const precResolved = !!dbPrecond;                              // 결과 도착
+                            const precPlanned = !!(_planned?.check || _planned?.seed);     // precondition 정의 있음
+                            const precLoading = !precResolved && precPlanned && isCurrentTc; // 실행 중
+                            const precDetailOpen = openPrecondDetail.has(tc.id);
+                            let dbPrecondLabel: string | null = null;
+                            if (precResolved) dbPrecondLabel = dbPrecondText(dbPrecond, _precTable);
+                            else if (precLoading) dbPrecondLabel = `DB 준비 · ${_precTable ?? '데이터'} 상태 확인 중…`;
+                            else if (precPlanned) dbPrecondLabel = `DB 준비 · ${_precTable ?? '데이터'} 존재 확인 (없으면 시드) · 예정`;
+                            const stepRows = steps.map((st) => {
                               // 프리뷰가 보여주는 스텝(artifact 이벤트) 과 동일 → 싱크
                               const isCurrent = currentStep?.tcId === tc.id
                                 && currentStep?.stepIndex === st.step_no;
+                              const showDbVerify = st.step_no === dbAnchorStepNo && !!dbVerifyText;
                               return (
-                                <div
-                                  key={st.step_no}
-                                  style={{ paddingLeft: '3.25rem' }}
-                                  className={`flex items-center gap-1.5 pr-2 py-1.5 border-b border-[#f0f0f0]/30 transition-colors ${
-                                    isCurrent
-                                      ? 'bg-[#EAE8F9]/70 border-l-[3px] border-l-[#3615CF]'
-                                      : 'bg-white hover:bg-slate-50'
-                                  }`}
-                                >
-                                  <span className="px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 bg-slate-100 text-slate-500">
-                                    {st.step_no}
-                                  </span>
-                                  <span className="text-[10px] font-medium text-[#1a1a2e] flex-shrink-0">
-                                    {ACTION_LABEL[st.action] ?? st.action}
-                                  </span>
-                                  {/* 실제 대상 요소(selector/target) 를 주 표시 — API 가 아님 */}
-                                  <span className="text-[9.5px] text-slate-500 truncate flex-1 font-mono">
-                                    {(() => {
-                                      const sel = (st as { selector?: string | null }).selector;
-                                      if (st.action === 'navigate' || st.action === 'assert_url') return st.value || '';
-                                      if (st.action === 'fill') {
-                                        const f = sel || st.target_name || '';
-                                        return st.value ? `${f} = ${st.value}` : f;
-                                      }
-                                      return sel || st.target_name || '';
-                                    })()}
-                                  </span>
-                                  {/* 이 스텝이 트리거하는 API — 보조 배지 (클릭 대상 아님) */}
-                                  {st.api_endpoint
-                                    ? <span className="px-1 py-0.5 text-[8px] font-mono rounded bg-[#3615CF]/10 text-[#3615CF] flex-shrink-0">{st.api_endpoint}</span>
-                                    : null}
-                                  {isCurrent
-                                    ? <Loader2 className="w-3 h-3 text-[#3615CF] animate-spin flex-shrink-0" />
-                                    : null}
-                                </div>
+                                <React.Fragment key={st.step_no}>
+                                  <div
+                                    style={{ paddingLeft: '3.25rem' }}
+                                    className={`flex items-center gap-1.5 pr-2 py-1.5 border-b border-[#f0f0f0]/30 transition-colors ${
+                                      isCurrent
+                                        ? 'bg-[#EAE8F9]/70 border-l-[3px] border-l-[#3615CF]'
+                                        : 'bg-white hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <span className="px-1.5 py-0.5 text-[8px] rounded font-bold font-mono flex-shrink-0 bg-slate-100 text-slate-500">
+                                      {st.step_no}
+                                    </span>
+                                    <span className="text-[10px] font-medium text-[#1a1a2e] flex-shrink-0">
+                                      {ACTION_LABEL[st.action] ?? st.action}
+                                    </span>
+                                    {/* 실제 대상 요소(selector/target) 를 주 표시 — API 가 아님 */}
+                                    <span className="text-[9.5px] text-slate-500 truncate flex-1 font-mono">
+                                      {(() => {
+                                        const sel = asText((st as { selector?: unknown }).selector);
+                                        const val = asText(st.value);
+                                        if (st.action === 'navigate' || st.action === 'assert_url') return val;
+                                        if (st.action === 'fill') {
+                                          const f = sel || asText(st.target_name);
+                                          return val ? `${f} = ${val}` : f;
+                                        }
+                                        return sel || asText(st.target_name);
+                                      })()}
+                                    </span>
+                                    {isCurrent
+                                      ? <Loader2 className="w-3 h-3 text-[#3615CF] animate-spin flex-shrink-0" />
+                                      : null}
+                                  </div>
+
+                                  {/* 검증 라인 — 스텝 아래 들여쓰기 + 노란색. 우측 태그 대신 무엇을
+                                      검증하는지 한 줄로 표기 (서버 검증 = 트리거 API, DB 검증 = 데이터 반영). */}
+                                  {st.api_endpoint && (
+                                    <div
+                                      style={{ paddingLeft: '4.75rem' }}
+                                      className="flex items-center gap-1.5 pr-2 py-1 border-b border-[#f0f0f0]/30 bg-[#FEFCE8]"
+                                    >
+                                      <span className="px-1.5 py-0.5 text-[8px] rounded font-bold bg-[#FEF08A] text-[#854D0E] flex-shrink-0">검증</span>
+                                      <span className="text-[10px] font-medium text-[#854D0E] truncate">
+                                        서버 검증 · <span className="font-mono">{asText(st.api_endpoint)}</span>
+                                      </span>
+                                    </div>
+                                  )}
+                                  {showDbVerify && (
+                                    <div
+                                      style={{ paddingLeft: '4.75rem' }}
+                                      onClick={hasDbDetail ? () => toggleDbDetail(tc.id) : undefined}
+                                      className={`flex items-center gap-1.5 pr-2 py-1 border-b border-[#f0f0f0]/30 bg-[#FEFCE8] ${
+                                        hasDbDetail ? 'cursor-pointer hover:bg-[#FEF9C3]' : ''
+                                      }`}
+                                    >
+                                      <span className="px-1.5 py-0.5 text-[8px] rounded font-bold bg-[#FEF08A] text-[#854D0E] flex-shrink-0">검증</span>
+                                      <span className="text-[10px] font-medium text-[#854D0E] truncate">
+                                        DB 검증 · {dbVerifyText}
+                                      </span>
+                                      {hasDbDetail && (
+                                        dbDetailOpen
+                                          ? <ChevronDown className="w-3 h-3 text-[#854D0E] flex-shrink-0 ml-auto" />
+                                          : <ChevronRight className="w-3 h-3 text-[#854D0E] flex-shrink-0 ml-auto" />
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* DB 변경 행 상세 — 클릭으로 펼침. 삭제/수정 전 행(−), 추가/수정 후 행(+). */}
+                                  {showDbVerify && hasDbDetail && dbDetailOpen && (
+                                    <div
+                                      style={{ paddingLeft: '4.75rem' }}
+                                      className="pr-3 py-1.5 border-b border-[#f0f0f0]/30 bg-[#FEFCE8]/50 space-y-2"
+                                    >
+                                      {dbChangedTables.map((s) => (
+                                        <div key={s.table} className="space-y-0.5">
+                                          <div className="text-[9px] font-bold text-[#854D0E]">
+                                            {s.table}
+                                            <span className="ml-1 font-normal text-[#a16207]">({s.row_count_before}→{s.row_count_after}행)</span>
+                                          </div>
+                                          {(s.rows_removed ?? []).map((r: Record<string, unknown>, i: number) => (
+                                            <div key={`rm-${i}`} className="flex items-start gap-1 text-[9px] font-mono leading-snug">
+                                              <span className="text-[#dc2626] flex-shrink-0">−</span>
+                                              <span className="text-slate-600 break-all">{formatRow(r)}</span>
+                                            </div>
+                                          ))}
+                                          {(s.rows_added ?? []).map((r: Record<string, unknown>, i: number) => (
+                                            <div key={`ad-${i}`} className="flex items-start gap-1 text-[9px] font-mono leading-snug">
+                                              <span className="text-[#16a34a] flex-shrink-0">+</span>
+                                              <span className="text-slate-700 break-all">{formatRow(r)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </React.Fragment>
                               );
                             });
+                            return (
+                              <>
+                                {/* precondition step — 최상단. 예정/로딩/완료(토글) 3상태. */}
+                                {dbPrecondLabel && (
+                                  <>
+                                    <div
+                                      style={{ paddingLeft: '3.25rem' }}
+                                      onClick={precResolved ? () => togglePrecondDetail(tc.id) : undefined}
+                                      className={`flex items-center gap-1.5 pr-2 py-1.5 border-b border-[#f0f0f0]/30 transition-colors ${
+                                        dbPrecond?.error ? 'bg-[#fef2f2]' : 'bg-white'
+                                      } ${precResolved ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+                                    >
+                                      <span className="px-1.5 py-0.5 text-[8px] rounded font-bold bg-slate-100 text-slate-500 flex-shrink-0">준비</span>
+                                      <span className={`text-[10px] font-medium truncate ${dbPrecond?.error ? 'text-[#dc2626]' : precLoading ? 'text-[#3615CF]' : 'text-slate-600'}`}>
+                                        {dbPrecondLabel}
+                                      </span>
+                                      {precLoading && <Loader2 className="w-3 h-3 text-[#3615CF] animate-spin flex-shrink-0 ml-auto" />}
+                                      {precResolved && (
+                                        precDetailOpen
+                                          ? <ChevronDown className="w-3 h-3 text-slate-400 flex-shrink-0 ml-auto" />
+                                          : <ChevronRight className="w-3 h-3 text-slate-400 flex-shrink-0 ml-auto" />
+                                      )}
+                                    </div>
+
+                                    {/* 파악 → 조치 상세 (완료 시 토글) */}
+                                    {precResolved && precDetailOpen && (
+                                      <div
+                                        style={{ paddingLeft: '4.75rem' }}
+                                        className="pr-3 py-1.5 border-b border-[#f0f0f0]/30 bg-slate-50/60 space-y-1.5 text-[9.5px] leading-snug"
+                                      >
+                                        <div>
+                                          <span className="font-bold text-slate-500">파악</span>
+                                          <span className="ml-1 text-slate-600">
+                                            {_precTable ? `${_precTable} 존재 여부 확인 → ` : '상태 확인 → '}
+                                            {dbPrecond?.error ? '확인 실패' : (dbPrecond?.matched ? '이미 존재' : '없음')}
+                                          </span>
+                                          {_planned?.check && (
+                                            <div className="font-mono text-slate-400 break-all">{_planned.check}</div>
+                                          )}
+                                        </div>
+                                        <div>
+                                          <span className="font-bold text-slate-500">조치</span>
+                                          <span className="ml-1 text-slate-600">
+                                            {dbPrecond?.error
+                                              ? `실패: ${dbPrecond.error}`
+                                              : dbPrecond?.seeded
+                                                ? '시드 주입 (테스트 데이터 생성)'
+                                                : '시드 불필요 (이미 충족)'}
+                                          </span>
+                                          {dbPrecond?.seeded && _planned?.seed && (
+                                            <div className="font-mono text-slate-400 break-all">{_planned.seed}</div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                                {stepRows}
+                                {/* 롤백 step — 테스트 후 DB 를 초기 상태로 되돌리는 정리 단계. */}
+                                {dbRan && (
+                                  <div
+                                    style={{ paddingLeft: '3.25rem' }}
+                                    className="flex items-center gap-1.5 pr-2 py-1.5 border-b border-[#f0f0f0]/30 bg-white"
+                                  >
+                                    <span className="px-1.5 py-0.5 text-[8px] rounded font-bold bg-slate-100 text-slate-500 flex-shrink-0">롤백</span>
+                                    <span className="text-[10px] font-medium text-slate-600">
+                                      DB 롤백 · 테스트 전 상태로 복원
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            );
                           })()}
                         </div>
                       );

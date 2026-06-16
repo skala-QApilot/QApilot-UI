@@ -86,6 +86,8 @@ export interface ActionStep {
 export interface ActionMapping {
   tc_id?: string;
   steps: ActionStep[];
+  db_check_sql?: string | null;   // 실행 전 DB precondition 확인 SQL (있으면 preview 에 "준비" 표시)
+  db_seed_sql?: string | null;    // 미충족 시 시드 SQL
 }
 
 export interface ApiCall {
