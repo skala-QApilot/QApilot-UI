@@ -859,6 +859,8 @@ export const TestResultPage = ({
   const [activeApiResult, setActiveApiResult] = useState<ApiResult | null>(null);
   // 스텝별 캡처 라이트박스 — 스텝 행 우측 카메라 버튼으로 열림
   const [stepShot, setStepShot] = useState<{ src: string; label: string } | null>(null);
+  // 눈 아이콘 클릭 시 우측 캡처(hero)를 이 스텝으로 고정 — 팝업 대신 우측 이미지 전환.
+  const [pinnedStep, setPinnedStep] = useState<number | null>(null);
   const [activeActionMapping, setActiveActionMapping] = useState<ActionMapping | null>(null);
 
   // PASS 탭 — tc_results 직접조회로 채운다 (kind='ui' && status='passed').
@@ -1234,9 +1236,15 @@ export const TestResultPage = ({
   const failStep = activeUiResult?.steps?.find(s => s.status === 'fail') ?? null;
   const liveErrorLog = failStep?.error ?? activeError?.errorLog ?? '';
 
-  // PASS — 스텝 요약을 runtime 로그로, 스크린샷이 있는 step 을 캡처로 사용.
+  // 실행 스텝(ui_result)엔 value 가 없음 — action_mapping 의 값(실제 입력값)을 step_no 로 합쳐 표시.
+  const amByStep = new Map((activeActionMapping?.steps ?? []).map(s => [s.step_no, s] as const));
+
+  // PASS — 스텝 요약을 runtime 로그로, 스크린샷이 있는 step 을 캡처로 사용. 값(value) 포함.
   const passRuntimeLog = activeUiResult?.steps?.length
-    ? activeUiResult.steps.map(s => `${s.step_no}. ${s.action} → ${s.status}`).join('\n')
+    ? activeUiResult.steps.map(s => {
+        const v = amByStep.get(s.step_no)?.value;
+        return `${s.step_no}. ${s.action}${v ? ` (${v})` : ''} → ${s.status ?? '실행'}`;
+      }).join('\n')
     : '모든 검증 항목을 통과했습니다.';
 
   // api-mode TC — 브라우저 미수행이라 스크린샷이 본질적으로 없음. 대신 API
@@ -1281,19 +1289,18 @@ export const TestResultPage = ({
     ?? (activeActionMapping?.steps?.length
           ? activeActionMapping.steps[activeActionMapping.steps.length - 1].step_no
           : 1);
-  const screenshotEndpoint = (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId)
-    ? (isApiModeTc
-        ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, apiModeHeroStep)
-        : (activeError && failStep
-            ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeError.scenario,
-                              activeFullTcId, failStep.step_no)
-            : (anyShotStep
-                ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario,
-                                  activeFullTcId, anyShotStep.step_no)
-                : null)))
+  // hero 캡처 스텝 — 눈 아이콘으로 고정한 스텝(pinnedStep) 우선, 없으면 기본(실패/캡처보유 스텝).
+  const baseHeroStep = isApiModeTc
+    ? apiModeHeroStep
+    : (activeError && failStep ? failStep.step_no : (anyShotStep ? anyShotStep.step_no : null));
+  const heroStep = pinnedStep ?? baseHeroStep;
+  const screenshotEndpoint = (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId && heroStep != null)
+    ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, heroStep)
     : null;
   // 인증 fetch → Blob objectURL (img 직접 로드 시 401 방지)
   const screenshotSrc = useBlobImage(screenshotEndpoint);
+  // TC 전환 시 고정 스텝 해제 (다음 TC 는 기본 hero 스텝부터)
+  useEffect(() => { setPinnedStep(null); }, [activeFullTcId]);
 
   const formatDuration = (duration: string) => duration;
 
@@ -1657,18 +1664,21 @@ export const TestResultPage = ({
                           <tr key={st.step_no} className={`border-t border-[#f5f5f5] ${isFail ? 'bg-red-50' : ''}`}>
                             <td className="py-1.5 w-8 text-[#9ca3af] align-top">{st.step_no}</td>
                             <td className="py-1.5 w-24 text-[#1a1a2e] font-medium align-top">{ACTION_LABEL[st.action] ?? st.action}</td>
+                            <td className="py-1.5 text-[#6b7280] align-top truncate max-w-[140px]" title={amByStep.get(st.step_no)?.value ?? ''}>
+                              {amByStep.get(st.step_no)?.value ?? <span className="text-[#d1d5db]">—</span>}
+                            </td>
                             <td className="py-1.5 align-top">
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                                 st.status === 'pass' ? 'bg-status-pass/15 text-status-pass'
                                 : st.status === 'fail' ? 'bg-status-fail/15 text-status-fail'
                                 : 'bg-gray-100 text-[#9ca3af]'
-                              }`}>{st.status}{isFail ? ' ← 실패' : ''}</span>
+                              }`}>{st.status ?? '실행'}{isFail ? ' ← 실패' : ''}</span>
                               {isFail && st.error ? (
                                 <div className="mt-1 text-[10px] text-status-fail whitespace-pre-wrap break-all">{st.error}</div>
                               ) : null}
                             </td>
                             <td className="py-1.5 w-10 text-right align-top">
-                              <button type="button" onClick={() => openStepShot(st.step_no, st.action)}
+                              <button type="button" onClick={() => setPinnedStep(st.step_no)}
                                 title="이 스텝의 캡처 보기"
                                 className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
                                 <Eye className="w-3.5 h-3.5" />
@@ -1739,7 +1749,7 @@ export const TestResultPage = ({
                               }`}>{st.status}</span>
                             </td>
                             <td className="py-1.5 w-10 text-right">
-                              <button type="button" onClick={() => openStepShot(st.step_no, st.action)}
+                              <button type="button" onClick={() => setPinnedStep(st.step_no)}
                                 title="이 스텝의 캡처 보기"
                                 className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
                                 <Eye className="w-3.5 h-3.5" />
@@ -1794,7 +1804,7 @@ export const TestResultPage = ({
                               }`}>{st.status}</span>
                             </td>
                             <td className="py-1.5 w-10 text-right">
-                              <button type="button" onClick={() => openStepShot(st.step_no, st.action)}
+                              <button type="button" onClick={() => setPinnedStep(st.step_no)}
                                 title="이 스텝의 캡처 보기"
                                 className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
                                 <Eye className="w-3.5 h-3.5" />
@@ -1857,7 +1867,7 @@ export const TestResultPage = ({
                             <td className="py-1.5 text-right">
                               <button
                                 type="button"
-                                onClick={() => openStepShot(s.step_no, s.action)}
+                                onClick={() => setPinnedStep(s.step_no)}
                                 title="이 스텝의 캡처 보기"
                                 className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors"
                               >
@@ -1925,12 +1935,12 @@ export const TestResultPage = ({
           )}
         </div>
 
-        <div className="w-64 bg-white border-l border-[#f0f0f0] flex flex-col overflow-y-auto flex-shrink-0">
+        <div className="flex-1 basis-0 bg-white border-l border-[#f0f0f0] flex flex-col overflow-y-auto">
           <div className="p-4 border-b border-[#f0f0f0]">
             <div className="text-xs font-semibold text-[#6b7280] mb-2 uppercase tracking-wide">
               {isApiModeTc ? '참고 화면 (검증은 API)' : 'UI 캡처'}
             </div>
-            <div className="w-full h-36 bg-gray-100 rounded border border-[#f0f0f0] flex items-center justify-center overflow-hidden">
+            <div className="w-full h-[55vh] bg-gray-100 rounded border border-[#f0f0f0] flex items-center justify-center overflow-hidden">
               {isApiModeTc && screenshotSrc ? (
                 <img src={screenshotSrc} alt="참고 화면 캡처" className="w-full h-full object-contain"
                      onError={(e) => {

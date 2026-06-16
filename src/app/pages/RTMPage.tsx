@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle, ChevronRight, Clock, XCircle } from 'lucide-react';
 import { RTMDonutChart } from '../components/common/RTMDonutChart';
+import { ResultDrawer } from '../components/ResultDrawer';
 import { useRtmStore } from '../../store/rtmStore';
 import { useScenarioStore } from '../../store/scenarioStore';
 import type { RtmRequirement } from '../../api/rtm';
+import { listAllRuns } from '../../api/runs';
 
 /** Zustand 무한 루프 회피 — `?? []` 인라인 fallback 은 매 렌더 새 배열 유발. */
 const EMPTY_REQUIREMENTS: RtmRequirement[] = [];
@@ -51,6 +53,24 @@ export const RTMPage = () => {
   }, [testCasesByTs]);
 
   const [selectedFrId, setSelectedFrId] = useState<string>(rtmRequirements[0]?.frId ?? '');
+  // 결과 사이드 패널 — TC 행 클릭 시 우측에 결과/응답/봇요약.
+  // ⚠️ RTM 버전의 traceId 는 "생성" trace 라 스크린샷/결과가 없음. 결과는 최신
+  // 완료된 "테스트" run trace 아래 있으므로 그걸 따로 조회해 drawer 에 넘긴다.
+  const [resultTraceId, setResultTraceId] = useState<string>('');
+  useEffect(() => {
+    if (!serviceId) { setResultTraceId(''); return; }
+    let cancelled = false;
+    listAllRuns(serviceId)
+      .then(runs => {
+        if (cancelled) return;
+        const done = runs.filter(r => r.status === 'completed');
+        done.sort((a, b) => (b.startTime || '').localeCompare(a.startTime || ''));
+        setResultTraceId(done[0]?.id ?? '');
+      })
+      .catch(() => { if (!cancelled) setResultTraceId(''); });
+    return () => { cancelled = true; };
+  }, [serviceId]);
+  const [drawerTc, setDrawerTc] = useState<{ ts: string; tc: string; pass: boolean } | null>(null);
 
   const selectedFr = rtmRequirements.find(r => r.frId === selectedFrId) ?? rtmRequirements[0];
   const totalReqs = rtmRequirements.length;
@@ -198,8 +218,13 @@ export const RTMPage = () => {
                   const row = raw as { ts?: string; tc?: string; date?: string; pass?: boolean };
                   const tcName = row.tc ? (tcNameMap[row.tc] ?? '') : '';
                   const dateStr = row.date ? formatKstDate(row.date) : '—';
+                  const clickable = !!(row.ts && row.tc && resultTraceId);
                   return (
-                    <tr key={i} className="hover:bg-gray-50 transition-colors">
+                    <tr
+                      key={i}
+                      onClick={() => { if (clickable) setDrawerTc({ ts: row.ts!, tc: row.tc!, pass: !!row.pass }); }}
+                      className={`transition-colors ${clickable ? 'cursor-pointer hover:bg-[#3615CF]/5' : 'hover:bg-gray-50'} ${drawerTc?.tc === row.tc ? 'bg-[#3615CF]/10' : ''}`}
+                    >
                       <td className="px-5 py-4">
                         <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{row.ts ?? ''}</span>
                       </td>
@@ -233,6 +258,20 @@ export const RTMPage = () => {
           )}
         </div>
       </div>
+
+      {/* 결과 사이드 패널 (TC 클릭 시) */}
+      {drawerTc && serviceId && resultTraceId && (
+        <ResultDrawer
+          open
+          onClose={() => setDrawerTc(null)}
+          serviceId={serviceId}
+          traceId={resultTraceId}
+          tsId={drawerTc.ts}
+          tcId={drawerTc.tc}
+          pass={drawerTc.pass}
+          tcName={tcNameMap[drawerTc.tc] ?? ''}
+        />
+      )}
     </div>
   );
 };
