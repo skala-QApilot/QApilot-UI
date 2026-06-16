@@ -513,7 +513,10 @@ export const TestRunningPage = ({
   // 지나가서, ui-mode 타임아웃 구간과 L3 분석 단계 (수 분) 동안 마지막
   // ui-mode TC 에 고정돼 'TS-016 멈춤' 으로 보였다 (run b3c98e44 전수 점검).
   const isRunningLive = selectedRun?.status === 'running';
-  const firstPending = isRunningLive && doneTcIds.size > 0
+  // doneTcIds 가 비어있어도(= TC #1 진행 중) firstPending = allTCs[0] 으로 잡혀야
+  // step panel auto-expand + 현재 스텝 강조가 첫 TC 부터 동작한다. 전 TC 완료 시엔
+  // find 가 undefined 를 반환해 L3 분석 단계 stuck-highlight 가드가 그대로 유지됨.
+  const firstPending = isRunningLive
     ? allTCs.find(({ tc }) => !doneTcIds.has(tc.id))
     : undefined;
   const currentTsId = firstPending?.sId ?? null;

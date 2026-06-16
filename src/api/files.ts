@@ -24,8 +24,12 @@ export async function listFiles(serviceId: string): Promise<DomainFile[]> {
 export async function uploadFile(serviceId: string, file: File): Promise<DomainFile> {
   const form = new FormData();
   form.append('file', file);
+  // api 인스턴스의 기본 Content-Type('application/json')을 해제해야
+  // axios가 FormData를 JSON으로 직렬화하지 않고 그대로 전송하며,
+  // 브라우저가 boundary 를 포함한 'multipart/form-data; boundary=...'
+  // 헤더를 자동 생성한다.
   const res = await api.post<{ file: DomainFile }>(basePath(serviceId), form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': undefined },
   });
   return res.data.file;
 }
@@ -34,7 +38,7 @@ export async function addFileVersion(serviceId: string, fileId: string, file: Fi
   const form = new FormData();
   form.append('file', file);
   const res = await api.post<{ file: DomainFile }>(`${basePath(serviceId)}/${encodeURIComponent(fileId)}/versions`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': undefined },
   });
   return res.data.file;
 }
