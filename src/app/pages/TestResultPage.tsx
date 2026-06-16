@@ -7,10 +7,31 @@ import { SubHeader } from '../components/common/SubHeader';
 import { useTestStore } from '../../store/testStore';
 import { useScenarioStore } from '../../store/scenarioStore';
 import { listDefects, type Defect } from '../../api/defects';
+import { listScenarios } from '../../api/scenarios';
 import {
-  getTcResult, listTcResults, getApiResult, getActionMapping, tcScreenshotUrl,
+  getTcResult, listTcResults, getApiResult, getActionMapping, tcScreenshotUrl, fetchTcScreenshotUrl,
   type UiResult, type ApiResult, type ActionMapping, type ActionStep, type ApiCall,
 } from '../../api/artifacts';
+
+/**
+ * 인증 필요한 스크린샷 엔드포인트를 Blob 으로 받아 objectURL 로 반환하는 훅.
+ * <img src=endpoint> 직접 로드는 Authorization 헤더 미첨부로 401 → 빈 화면이라,
+ * authed fetch 후 objectURL 로 바인딩한다. endpoint 변경/언마운트 시 자동 revoke.
+ */
+function useBlobImage(endpoint: string | null): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!endpoint) { setUrl(null); return; }
+    let active = true;
+    let obj: string | null = null;
+    fetchTcScreenshotUrl(endpoint).then((u) => {
+      if (active) { obj = u; setUrl(u); }
+      else if (u) URL.revokeObjectURL(u);
+    });
+    return () => { active = false; if (obj) URL.revokeObjectURL(obj); };
+  }, [endpoint]);
+  return url;
+}
 
 type HistoryDetailTab = 'FAIL' | 'PASS' | 'SKIP' | 'UNVERIFIED';
 
@@ -855,6 +876,27 @@ export const TestResultPage = ({
   // verdict 기준 failed tc_id — FAIL 탭이 defects 전체가 아닌 진짜 F 만 나열하도록
   const [failedVerdictIds, setFailedVerdictIds] = useState<Set<string> | null>(null);
 
+  // 시나리오 payload 의 사람이 읽는 이름 — TS/TC 번호 옆에 "회원가입 - 정상…" 표시용.
+  const [tcNames, setTcNames] = useState<Record<string, string>>({});  // 전체 tc_id → 이름
+  const [tsNames, setTsNames] = useState<Record<string, string>>({});  // ts_id → 이름
+  useEffect(() => {
+    if (!serviceUuid) { setTcNames({}); setTsNames({}); return; }
+    let cancelled = false;
+    listScenarios(serviceUuid).then((scs) => {
+      if (cancelled) return;
+      const tcm: Record<string, string> = {};
+      const tsm: Record<string, string> = {};
+      for (const s of scs) {
+        if (s.ts_id) tsm[s.ts_id] = s.name ?? '';
+        for (const tc of s.test_cases ?? []) tcm[tc.tc_id] = tc.name ?? '';
+      }
+      setTcNames(tcm); setTsNames(tsm);
+    }).catch(() => { if (!cancelled) { setTcNames({}); setTsNames({}); } });
+    return () => { cancelled = true; };
+  }, [serviceUuid]);
+  const tcNm = (scenario: string, testCase: string) => tcNames[`${scenario}-${testCase}`] ?? '';
+  const tsNm = (tsId: string) => tsNames[tsId] ?? '';
+
   useEffect(() => {
     if (!serviceUuid || !selectedExecutionId) {
       setPassCases([]);
@@ -1216,10 +1258,21 @@ export const TestResultPage = ({
     (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId)
       ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, stepNo)
       : null;
-  const openStepShot = (stepNo: number, action: string) => {
-    const src = stepShotUrl(stepNo);
-    if (src) setStepShot({ src, label: `step ${stepNo} · ${ACTION_LABEL[action] ?? action}${isApiModeTc ? ' (참고 화면 — 검증은 API)' : ''}` });
+  const openStepShot = async (stepNo: number, action: string) => {
+    const endpoint = stepShotUrl(stepNo);
+    if (!endpoint) return;
+    // 인증 fetch → Blob (img 직접 로드 시 401 방지). 라이트박스라 클릭 시점에 받음.
+    const src = await fetchTcScreenshotUrl(endpoint);
+    if (!src) return;
+    setStepShot((prev) => {
+      if (prev?.src) URL.revokeObjectURL(prev.src);
+      return { src, label: `step ${stepNo} · ${ACTION_LABEL[action] ?? action}${isApiModeTc ? ' (참고 화면 — 검증은 API)' : ''}` };
+    });
   };
+  const closeStepShot = () => setStepShot((prev) => {
+    if (prev?.src) URL.revokeObjectURL(prev.src);
+    return null;
+  });
   // api-mode 대표 화면 — 제출 직전(입력 완료된 폼) 이 가장 시연-친화적이라
   // 터미널 submit 스텝(api_endpoint 보유)을 hero 로. 없으면 마지막 스텝, 그것도
   // 없으면 step 1. (참고 화면은 스텝별로 다르게 저장됨 — navigate→fill→제출직전→결과)
@@ -1228,7 +1281,7 @@ export const TestResultPage = ({
     ?? (activeActionMapping?.steps?.length
           ? activeActionMapping.steps[activeActionMapping.steps.length - 1].step_no
           : 1);
-  const screenshotSrc = (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId)
+  const screenshotEndpoint = (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId)
     ? (isApiModeTc
         ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, apiModeHeroStep)
         : (activeError && failStep
@@ -1239,6 +1292,8 @@ export const TestResultPage = ({
                                   activeFullTcId, anyShotStep.step_no)
                 : null)))
     : null;
+  // 인증 fetch → Blob objectURL (img 직접 로드 시 401 방지)
+  const screenshotSrc = useBlobImage(screenshotEndpoint);
 
   const formatDuration = (duration: string) => duration;
 
@@ -1387,6 +1442,7 @@ export const TestResultPage = ({
                   />
                   <XCircle className="w-3.5 h-3.5 text-status-fail flex-shrink-0" />
                   <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  {tsNm(tsId) && <span className="text-[10px] text-[#9ca3af] truncate">{tsNm(tsId)}</span>}
                   <span className="ml-auto text-xs text-status-fail">FAIL {errors.length}</span>
                 </div>
                 {errors.map(err => {
@@ -1420,7 +1476,7 @@ export const TestResultPage = ({
                               : 'bg-[#d4a017]/10 text-[#d4a017]'
                           }`}>{isDefectDetection(err.category) ? '결함 검출' : '테스트·환경'}</span>
                         </div>
-                        <div className="text-[10px] text-[#9ca3af] truncate">{err.tcName}</div>
+                        <div className="text-[10px] text-[#9ca3af] truncate">{tcNm(err.scenario, err.testCase) || err.tcName}</div>
                       </div>
                       <button
                         onClick={e => { e.stopPropagation(); setShowRetestNavModal(true); setRetestCheckedIds(new Set([err.id])); setRetestTsIds([err.scenario]); }}
@@ -1440,6 +1496,7 @@ export const TestResultPage = ({
                 <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
                   <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
                   <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  {tsNm(tsId) && <span className="text-[10px] text-[#9ca3af] truncate">{tsNm(tsId)}</span>}
                   <span className="ml-auto text-xs text-status-pass">PASS {passes.length}</span>
                 </div>
                 {passes.map(p => {
@@ -1455,7 +1512,7 @@ export const TestResultPage = ({
                       <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
                       <div className="min-w-0">
                         <div className="text-xs font-medium text-[#1a1a2e] truncate">{p.testCase}</div>
-                        <div className="text-[10px] text-[#9ca3af] truncate">{p.tcName}</div>
+                        <div className="text-[10px] text-[#9ca3af] truncate">{tcNm(p.scenario, p.testCase) || p.tcName}</div>
                       </div>
                     </div>
                   );
@@ -1469,6 +1526,7 @@ export const TestResultPage = ({
                 <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
                   <MinusCircle className="w-3.5 h-3.5 text-[#7c8db5] flex-shrink-0" />
                   <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  {tsNm(tsId) && <span className="text-[10px] text-[#9ca3af] truncate">{tsNm(tsId)}</span>}
                   <span className="ml-auto text-xs text-[#7c8db5]">U {us.length}</span>
                 </div>
                 {us.map(p => {
@@ -1484,7 +1542,7 @@ export const TestResultPage = ({
                       <MinusCircle className="w-3.5 h-3.5 text-[#7c8db5] flex-shrink-0" />
                       <div className="min-w-0">
                         <div className="text-xs font-medium text-[#1a1a2e] truncate">{p.testCase}</div>
-                        <div className="text-[10px] text-[#9ca3af] truncate">판정 보류 — 검증축 부재/입력결손</div>
+                        <div className="text-[10px] text-[#9ca3af] truncate">{tcNm(p.scenario, p.testCase) || '판정 보류 — 검증축 부재/입력결손'}</div>
                       </div>
                     </div>
                   );
@@ -1497,6 +1555,7 @@ export const TestResultPage = ({
                 <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
                   <MinusCircle className="w-3.5 h-3.5 text-[#d4a017] flex-shrink-0" />
                   <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  {tsNm(tsId) && <span className="text-[10px] text-[#9ca3af] truncate">{tsNm(tsId)}</span>}
                   <span className="ml-auto text-xs text-[#d4a017]">S {skips.length}</span>
                 </div>
                 {skips.map(p => {
@@ -1512,7 +1571,7 @@ export const TestResultPage = ({
                       <MinusCircle className="w-3.5 h-3.5 text-[#d4a017] flex-shrink-0" />
                       <div className="min-w-0">
                         <div className="text-xs font-medium text-[#1a1a2e] truncate">{p.testCase}</div>
-                        <div className="text-[10px] text-[#9ca3af] truncate">검증 미완 — 수동 검토</div>
+                        <div className="text-[10px] text-[#9ca3af] truncate">{tcNm(p.scenario, p.testCase) || '검증 미완 — 수동 검토'}</div>
                       </div>
                     </div>
                   );
@@ -1572,6 +1631,9 @@ export const TestResultPage = ({
               <div className="flex items-center gap-3">
                 <XCircle className="w-5 h-5 text-status-fail" />
                 <span className="font-semibold text-[#1a1a2e]">{activeError.scenario} › {activeError.testCase}</span>
+                {tcNm(activeError.scenario, activeError.testCase) && (
+                  <span className="text-sm text-[#6b7280] truncate">{tcNm(activeError.scenario, activeError.testCase)}</span>
+                )}
               </div>
               <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
                 <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">① 결함 분류</div>
@@ -1583,8 +1645,46 @@ export const TestResultPage = ({
                 <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">② 현재 상태 요약</div>
                 <div className="text-sm text-[#6b7280]">{activeError.summary}</div>
               </div>
+              {/* ③ 실행 스텝 — pass 처럼 스텝별 진행 + 실패 지점 하이라이트 (data 변경 없이 ui_result.steps 사용) */}
               <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
-                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-3">③ 원인 분석 및 해결 방안</div>
+                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-3">③ 실행 스텝 (실패 지점)</div>
+                {activeUiResult?.steps?.length ? (
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {activeUiResult.steps.map((st: any) => {
+                        const isFail = st.status === 'fail';
+                        return (
+                          <tr key={st.step_no} className={`border-t border-[#f5f5f5] ${isFail ? 'bg-red-50' : ''}`}>
+                            <td className="py-1.5 w-8 text-[#9ca3af] align-top">{st.step_no}</td>
+                            <td className="py-1.5 w-24 text-[#1a1a2e] font-medium align-top">{ACTION_LABEL[st.action] ?? st.action}</td>
+                            <td className="py-1.5 align-top">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                st.status === 'pass' ? 'bg-status-pass/15 text-status-pass'
+                                : st.status === 'fail' ? 'bg-status-fail/15 text-status-fail'
+                                : 'bg-gray-100 text-[#9ca3af]'
+                              }`}>{st.status}{isFail ? ' ← 실패' : ''}</span>
+                              {isFail && st.error ? (
+                                <div className="mt-1 text-[10px] text-status-fail whitespace-pre-wrap break-all">{st.error}</div>
+                              ) : null}
+                            </td>
+                            <td className="py-1.5 w-10 text-right align-top">
+                              <button type="button" onClick={() => openStepShot(st.step_no, st.action)}
+                                title="이 스텝의 캡처 보기"
+                                className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-sm text-[#9ca3af]">실행된 스텝 기록이 없습니다.</div>
+                )}
+              </div>
+              <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
+                <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-3">④ 원인 분석 및 해결 방안</div>
                 <div className="space-y-2">
                   {activeError.solutions.map((sol, i) => (
                     <div key={i} className="flex gap-3 p-3 bg-gray-50 rounded border border-[#f0f0f0]">
@@ -1610,6 +1710,9 @@ export const TestResultPage = ({
                 <div className="flex items-center gap-3">
                   <MinusCircle className="w-5 h-5 text-[#7c8db5]" />
                   <span className="font-semibold text-[#1a1a2e]">{activeUnverified.scenario} › {activeUnverified.testCase}</span>
+                  {tcNm(activeUnverified.scenario, activeUnverified.testCase) && (
+                    <span className="text-sm text-[#6b7280] truncate">{tcNm(activeUnverified.scenario, activeUnverified.testCase)}</span>
+                  )}
                   <span className="px-2 py-0.5 text-xs rounded font-medium bg-[#7c8db5]/15 text-[#7c8db5]">판정 보류</span>
                 </div>
                 <div className="bg-white rounded-lg border border-[#7c8db5]/40 p-4">
@@ -1663,6 +1766,9 @@ export const TestResultPage = ({
                 <div className="flex items-center gap-3">
                   <MinusCircle className="w-5 h-5 text-[#d4a017]" />
                   <span className="font-semibold text-[#1a1a2e]">{activeSkip.scenario} › {activeSkip.testCase}</span>
+                  {tcNm(activeSkip.scenario, activeSkip.testCase) && (
+                    <span className="text-sm text-[#6b7280] truncate">{tcNm(activeSkip.scenario, activeSkip.testCase)}</span>
+                  )}
                   <span className="px-2 py-0.5 text-xs rounded font-medium bg-[#d4a017]/15 text-[#d4a017]">검증 미완</span>
                 </div>
                 <div className="bg-white rounded-lg border border-[#d4a017]/40 p-4">
@@ -1715,6 +1821,9 @@ export const TestResultPage = ({
                 <div className="flex items-center gap-3">
                   <CheckCircle className="w-5 h-5 text-status-pass" />
                   <span className="font-semibold text-[#1a1a2e]">{activePass.scenario} › {activePass.testCase}</span>
+                  {tcNm(activePass.scenario, activePass.testCase) && (
+                    <span className="text-sm text-[#6b7280] truncate">{tcNm(activePass.scenario, activePass.testCase)}</span>
+                  )}
                   <span className="px-2 py-0.5 text-xs rounded font-medium bg-green-100 text-status-pass">PASS</span>
                 </div>
 
@@ -1929,7 +2038,7 @@ export const TestResultPage = ({
       {stepShot && (
         <div
           className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-8"
-          onClick={() => setStepShot(null)}
+          onClick={() => closeStepShot()}
         >
           <div
             className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden"
@@ -1939,7 +2048,7 @@ export const TestResultPage = ({
               <span className="text-sm font-semibold text-[#1a1a2e]">{stepShot.label}</span>
               <button
                 type="button"
-                onClick={() => setStepShot(null)}
+                onClick={() => closeStepShot()}
                 className="text-[#9ca3af] hover:text-[#1a1a2e] text-lg leading-none px-1"
               >×</button>
             </div>

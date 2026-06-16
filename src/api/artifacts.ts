@@ -51,6 +51,22 @@ export function tcScreenshotUrl(
   return `${basePath(serviceId, traceId)}/tc-screenshot?${params}`;
 }
 
+/**
+ * 스크린샷을 Blob URL 로 반환 (정석). tc-screenshot 엔드포인트는 인증 필요라
+ * <img src=endpoint> 로 직접 로드하면 브라우저가 Authorization 헤더를 못 실어 401.
+ * authed `api` 클라이언트로 받아 objectURL 로 변환한다 (runs.fetchLatestScreenshotUrl 동일 패턴).
+ * 호출자는 사용 후 URL.revokeObjectURL() 로 해제할 것.
+ */
+export async function fetchTcScreenshotUrl(endpointUrl: string): Promise<string | null> {
+  try {
+    const res = await api.get<Blob>(endpointUrl, { responseType: 'blob' });
+    if (!res.data || res.data.size === 0) return null;
+    return URL.createObjectURL(res.data);
+  } catch {
+    return null;
+  }
+}
+
 export interface TcResultItem {
   ts_id: string;
   tc_id: string;
