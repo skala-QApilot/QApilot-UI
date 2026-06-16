@@ -52,7 +52,7 @@ export interface SlackShareContext {
 }
 
 const RESULT_ROW_HEADER = [
-  '결과', 'TS ID', 'TS명', 'TC ID', 'TC명', '분류', '원인 분석', '해결 방안', '테스트 스텝', 'API 호출', '검증 요약',
+  '결과', 'TS ID', 'TS명', 'TC ID', 'TC명', '장애유형', '결정분류', '원인 분석', '해결 방안', '테스트 스텝', 'API 호출', '검증 요약',
 ];
 
 // CSV 셀 값 escape — 쉼표/줄바꿈/쌍따옴표 포함 시 쌍따옴표로 감싸고 내부 쌍따옴표는 두 배로.
@@ -475,7 +475,7 @@ const appendDetailBlocks = (card: HTMLDivElement, detail: ResultRowDetail) => {
 
 /** FAIL 항목 카드 — TS/TC 식별 정보 + 분류 배지 + 원인 분석/해결 방안 + 스텝/API 상세. */
 const buildFailEntry = (row: string[], index: number, accent: string, detail: ResultRowDetail): HTMLDivElement => {
-  const [tsId, tsName, tcId, tcName, category, cause, solution] = row;
+  const [tsId, tsName, tcId, tcName, defectType, category, cause, solution] = row;
   const card = document.createElement('div');
   card.style.border = '1px solid #e5e7eb';
   card.style.borderRadius = '8px';
@@ -503,18 +503,27 @@ const buildFailEntry = (row: string[], index: number, accent: string, detail: Re
   idCol.appendChild(nameLine);
   head.appendChild(idCol);
 
-  if (category) {
+  const badgeCol = document.createElement('div');
+  badgeCol.style.display = 'flex';
+  badgeCol.style.flexDirection = 'column';
+  badgeCol.style.alignItems = 'flex-end';
+  badgeCol.style.gap = '3px';
+  const mkBadge = (text: string, color: string) => {
     const badge = document.createElement('div');
     badge.style.fontSize = '10px';
     badge.style.fontWeight = '600';
-    badge.style.color = accent;
-    badge.style.background = `${accent}1f`;
+    badge.style.color = color;
+    badge.style.background = `${color}1f`;
     badge.style.padding = '2px 8px';
     badge.style.borderRadius = '4px';
     badge.style.whiteSpace = 'nowrap';
-    badge.textContent = category;
-    head.appendChild(badge);
-  }
+    badge.textContent = text;
+    return badge;
+  };
+  // ①장애유형(amber) — 제품 결함일 때만. ②결정분류(accent) 는 항상.
+  if (defectType) badgeCol.appendChild(mkBadge(`장애유형 · ${defectType}`, '#b45309'));
+  if (category) badgeCol.appendChild(mkBadge(category, accent));
+  if (defectType || category) head.appendChild(badgeCol);
   card.appendChild(head);
 
   const addField = (label: string, value: string) => {
@@ -769,6 +778,8 @@ interface DetailError {
   /** Layer 3 분류 원본 — PRODUCT_DEFECT_CANDIDATE = '결함 검출'(FAIL 이 정상),
    *  그 외 TEST_*­/ENV_* = 테스트·환경 문제(FAIL 이 비정상). FAIL 세분 표시용. */
   category: string;
+  /** ①장애유형(defect_type) 한글 라벨 — ②결정분류(category)와 별개. 없으면 null. */
+  defectType: string | null;
   summary: string;
   solutions: Array<{ cause: string; solution: string }>;
   errorLog: string;
@@ -803,6 +814,12 @@ function defectToDetailError(d: Defect): DetailError {
       INFRA: '인프라', DOMAIN_RULE: '도메인 규칙',
     } as Record<string, string>)[d.category] ?? d.category,
     category: d.category,
+    defectType: d.defect_type
+      ? (({
+          UI_ERROR: 'UI 오류', API_ERROR: 'API 오류', DATA_MISMATCH: '데이터 불일치',
+          INFRA: '인프라', DOMAIN_RULE: '도메인 규칙',
+        } as Record<string, string>)[d.defect_type] ?? d.defect_type)
+      : null,
     summary: d.root_cause_top1 ?? '',
     solutions: d.root_cause_top1 || d.solution_guide
       ? [{ cause: d.root_cause_top1 ?? '', solution: d.solution_guide ?? '' }]
@@ -1085,7 +1102,7 @@ export const TestResultPage = ({
         status: 'FAIL', tsId: e.scenario, tcId: `${e.scenario}-${e.testCase}`,
         base: [
           e.scenario, tsNameMap[e.scenario] ?? '', e.testCase, tcNameMap[`${e.scenario}-${e.testCase}`] ?? '',
-          e.errorCode, sol?.cause ?? e.summary, sol?.solution ?? '',
+          e.defectType ?? '', e.errorCode, sol?.cause ?? e.summary, sol?.solution ?? '',
         ],
       });
     });
@@ -1094,7 +1111,7 @@ export const TestResultPage = ({
       const pushCase = (status: string, p: { scenario: string; testCase: string; id: string }) =>
         items.push({
           status, tsId: p.scenario, tcId: p.id,
-          base: [p.scenario, tsNameMap[p.scenario] ?? '', p.testCase, tcNameMap[p.id] ?? '', '', '', ''],
+          base: [p.scenario, tsNameMap[p.scenario] ?? '', p.testCase, tcNameMap[p.id] ?? '', '', '', '', ''],
         });
       passCases.forEach(p => pushCase('PASS', p));
       skipCases.forEach(p => pushCase('SKIPPED', p));
@@ -1637,9 +1654,24 @@ export const TestResultPage = ({
               </div>
               <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
                 <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">① 결함 분류</div>
-                <span className="inline-block px-3 py-1 bg-red-50 text-red-700 text-sm rounded border border-red-200 font-medium">
-                  {activeError.errorCode}
-                </span>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {/* ①장애유형(defect_type) — 제품 결함일 때만. ②결정분류와 별개 축. */}
+                  {activeError.defectType && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-[#9ca3af]">장애유형</span>
+                      <span className="inline-block px-3 py-1 bg-amber-50 text-amber-700 text-sm rounded border border-amber-200 font-medium">
+                        {activeError.defectType}
+                      </span>
+                    </div>
+                  )}
+                  {/* ②결정분류(category) — FAIL 의 책임 구분(제품/테스트/환경). */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-[#9ca3af]">결정분류</span>
+                    <span className="inline-block px-3 py-1 bg-red-50 text-red-700 text-sm rounded border border-red-200 font-medium">
+                      {activeError.errorCode}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div className="bg-white rounded-lg border border-[#f0f0f0] p-4">
                 <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">② 현재 상태 요약</div>

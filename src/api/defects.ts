@@ -8,6 +8,8 @@ export interface Defect {
   ts_id: string;
   tc_id: string;
   category: 'UI_ERROR' | 'API_ERROR' | 'DATA_MISMATCH' | 'INFRA' | 'DOMAIN_RULE' | string;
+  // ①장애유형 — ②결정분류(category)와 분리된 서버 V19 필드. product 결함만 값(없으면 null).
+  defect_type: 'UI_ERROR' | 'API_ERROR' | 'DATA_MISMATCH' | 'INFRA' | 'DOMAIN_RULE' | null;
   root_cause_top1: string | null;
   root_cause_confidence: number | null;
   solution_guide: string | null;
