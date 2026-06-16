@@ -14,6 +14,7 @@ import { useTestStore } from '../../store/testStore';
 import { fetchLatestScreenshotUrl, getRunProgress, stopRun, type RunProgress, type RunProgressItem } from '../../api/runs';
 import { getActionMapping, type ActionStep } from '../../api/artifacts';
 import { useRunStream } from '../../hooks/useRunStream';
+import ExecutionFlowGraph, { type FlowCall } from '../components/ExecutionFlowGraph';
 
 // 실행 스텝 action → 한글 라벨 (좌측 패널 표시용)
 const ACTION_LABEL: Record<string, string> = {
@@ -255,6 +256,35 @@ export const TestRunningPage = ({
   const [screenshotUrl, setScreenshotUrl] = React.useState<string | null>(null);
   const [runProgress, setRunProgress] = React.useState<RunProgress | null>(null);
   const screenshotUrlRef = React.useRef<string | null>(null);
+
+  // ── 좌측 사이드바 뷰 모드: 목록 / 실행 흐름 그래프 ──
+  const [leftViewMode, setLeftViewMode] = React.useState<'list' | 'flow'>('list');
+  const flowContainerRef = React.useRef<HTMLDivElement>(null);
+  const [flowSize, setFlowSize] = React.useState({ width: 520, height: 420 });
+  React.useEffect(() => {
+    const el = flowContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) setFlowSize({ width: Math.floor(width), height: Math.floor(height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [leftViewMode]);
+  // run progress 의 api.calls → 실행 흐름 시퀀스(TC별 호출 순서). 폴링되는 runProgress 를 그대로 사용.
+  const flowSequences: FlowCall[][] = React.useMemo(() => {
+    if (!runProgress) return [];
+    return runProgress.items
+      .map(item => {
+        const calls = ((item.api as any)?.calls as any[] | undefined) || [];
+        return calls.map(c => ({
+          method: String(c.method || 'GET'),
+          url: String(c.url || '/'),
+          statusCode: typeof c.status_code === 'number' ? c.status_code : null,
+        }));
+      })
+      .filter(seq => seq.length > 0);
+  }, [runProgress]);
 
   // tick 함수를 ref 로 — SSE 이벤트 핸들러가 stale closure 없이 최신 버전 호출 가능.
   const tickRef = React.useRef<() => Promise<void>>();
@@ -753,7 +783,7 @@ export const TestRunningPage = ({
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* Scenario sidebar — resizable */}
-        <div ref={sidebarRef} className="bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0 min-h-0" style={{ width: sidebarWidth ?? '66.67%' }}>
+        <div ref={sidebarRef} className="bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0 min-h-0" style={{ width: sidebarWidth ?? '47.37%' }}>
           <div className="flex items-center gap-1 px-3 pt-2.5 border-b border-[#f0f0f0] flex-shrink-0">
             <div className="flex min-w-0 flex-1 gap-1">
               {[
@@ -781,12 +811,12 @@ export const TestRunningPage = ({
               })}
             </div>
             <div className="mb-2 flex flex-shrink-0 overflow-hidden rounded-md border border-[#e5e7eb] bg-white">
-              <button className="p-1.5 text-primary-blue bg-primary-blue/10" aria-label="목록 보기"><List className="h-3.5 w-3.5" /></button>
-              <button className="p-1.5 text-[#9ca3af] hover:text-primary-blue" aria-label="흐름 보기"><GitBranch className="h-3.5 w-3.5" /></button>
+              <button onClick={() => setLeftViewMode('list')} className={`p-1.5 ${leftViewMode === 'list' ? 'text-primary-blue bg-primary-blue/10' : 'text-[#9ca3af] hover:text-primary-blue'}`} aria-label="목록 보기"><List className="h-3.5 w-3.5" /></button>
+              <button onClick={() => setLeftViewMode('flow')} className={`p-1.5 ${leftViewMode === 'flow' ? 'text-primary-blue bg-primary-blue/10' : 'text-[#9ca3af] hover:text-primary-blue'}`} aria-label="흐름 보기"><GitBranch className="h-3.5 w-3.5" /></button>
             </div>
           </div>
 
-          <div ref={scenarioListRef} className="flex-1 min-h-0 overflow-y-auto py-1">
+          <div ref={scenarioListRef} className="flex-1 min-h-0 overflow-y-auto py-1" style={leftViewMode === 'flow' ? { display: 'none' } : undefined}>
             <div>
               {scenarios.map(scenario => {
                 const isExpanded = expandedScenarios.includes(scenario.id);
@@ -1111,6 +1141,17 @@ export const TestRunningPage = ({
               })}
             </div>
           </div>
+
+          {leftViewMode === 'flow' && (
+            <div ref={flowContainerRef} className="flex-1 min-h-0 relative overflow-hidden bg-[#F2F3F5]">
+              <ExecutionFlowGraph sequences={flowSequences} width={flowSize.width} height={flowSize.height} />
+              {flowSequences.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center text-xs text-[#9ca3af] pointer-events-none">
+                  실행된 API 호출이 아직 없습니다
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Execution controls */}
           <div className="p-4 border-t border-[#f0f0f0] space-y-2 bg-white flex-shrink-0">

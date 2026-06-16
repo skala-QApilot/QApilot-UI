@@ -20,6 +20,8 @@ export interface TestCase {
   values?: TestValue[];
   tags?: string[];
   req_id?: string;
+  /** 검증 대상 API (예: "POST /api/orders"). 시나리오↔엔드포인트 그래프 소스. */
+  api?: string | null;
   /** Spring enrichment — 최근 실행 결과. 미실행 시 null. */
   last_run_status?: 'passed' | 'failed' | string | null;
   last_run_at?: string | null;

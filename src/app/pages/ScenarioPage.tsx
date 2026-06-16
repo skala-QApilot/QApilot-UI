@@ -1,9 +1,8 @@
 import React from 'react';
 import { AlertTriangle, Calendar, CheckCircle, ChevronDown, ChevronRight, Clock, Download, Edit2, FileText, Play, Plus, RotateCcw, Sparkles, Star, Trash2, X } from 'lucide-react';
-import ScenarioFlowGraph from '../components/ScenarioFlowGraph';
+import ScenarioEndpointGraph, { type EndpointScenario } from '../components/ScenarioEndpointGraph';
 import ScenarioGeneratingOverlay from '../components/ScenarioGeneratingOverlay';
 import { SearchBar } from '../components/common/SearchBar';
-import { mockTSFlows } from '../data/mockData';
 import { useRtmStore } from '../../store/rtmStore';
 import { useScenarioStore, toUiGroup, DRAFT_VERSION_ID } from '../../store/scenarioStore';
 import type { UiScenario, UiTestCase } from '../../store/scenarioStore';
@@ -415,12 +414,22 @@ onVersionRollback,
     };
   }, []);
 
-  // ── TS 흐름 그래프 노드 데이터 ──────────────────────────────
-  const tsFlowNodes = _dynamicScenarios.map(s => ({
-    id: s.id,
-    label: s.id,
-    name: s.name,
-  }));
+  // ── 시나리오 ↔ 엔드포인트 그래프 데이터 ──────────────────────────────
+  // 노드 집합은 트리와 동일하게 _dynamicScenarios 기준. 엔드포인트(TC.api)는 store 원본에서 ts_id로 조인.
+  // 여러 시나리오가 공유하는 엔드포인트 = 허브 = 변경 위험.
+  const storeScenarios = useScenarioStore((s) => s.scenarios);
+  const endpointScenarios: EndpointScenario[] = React.useMemo(() => {
+    const epByTs = new Map<string, string[]>();
+    for (const s of storeScenarios) {
+      const eps = new Set<string>();
+      for (const tc of s.test_cases ?? []) {
+        const api = tc.api;
+        if (typeof api === 'string' && api.trim()) eps.add(api.trim());
+      }
+      epByTs.set(s.ts_id, [...eps]);
+    }
+    return _dynamicScenarios.map((s) => ({ id: s.id, name: s.name, endpoints: epByTs.get(s.id) ?? [] }));
+  }, [storeScenarios, _dynamicScenarios]);
 
   // ResizeObserver로 center 컨테이너 크기를 캔버스에 전달
   const graphContainerRef = React.useRef<HTMLDivElement>(null);
@@ -1374,9 +1383,8 @@ onVersionRollback,
             <div
               ref={graphContainerRef}
               className="flex-1 bg-[#F2F3F5] overflow-hidden relative">
-              <ScenarioFlowGraph
-                tsNodes={tsFlowNodes}
-                flowEdges={mockTSFlows}
+              <ScenarioEndpointGraph
+                scenarios={endpointScenarios}
                 width={graphSize.width}
                 height={graphSize.height}
                 selectedId={graphSelectedId}
