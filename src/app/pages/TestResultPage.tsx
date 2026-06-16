@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { CheckCircle, ChevronLeft, Download, Eye, Loader2, RotateCcw, Send, XCircle, MinusCircle } from 'lucide-react';
+import { CheckCircle, ChevronLeft, Download, Eye, Loader2, Pause, Play, RotateCcw, Send, XCircle, MinusCircle } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas-pro';
 import { SubHeader } from '../components/common/SubHeader';
@@ -12,6 +12,7 @@ import {
   getTcResult, listTcResults, getApiResult, getActionMapping, tcScreenshotUrl, fetchTcScreenshotUrl,
   type UiResult, type ApiResult, type ActionMapping, type ActionStep, type ApiCall,
 } from '../../api/artifacts';
+import { useStepGifPlayer } from '../hooks/useStepGifPlayer';
 
 /**
  * 인증 필요한 스크린샷 엔드포인트를 Blob 으로 받아 objectURL 로 반환하는 훅.
@@ -859,8 +860,6 @@ export const TestResultPage = ({
   const [activeApiResult, setActiveApiResult] = useState<ApiResult | null>(null);
   // 스텝별 캡처 라이트박스 — 스텝 행 우측 카메라 버튼으로 열림
   const [stepShot, setStepShot] = useState<{ src: string; label: string } | null>(null);
-  // 눈 아이콘 클릭 시 우측 캡처(hero)를 이 스텝으로 고정 — 팝업 대신 우측 이미지 전환.
-  const [pinnedStep, setPinnedStep] = useState<number | null>(null);
   const [activeActionMapping, setActiveActionMapping] = useState<ActionMapping | null>(null);
 
   // PASS 탭 — tc_results 직접조회로 채운다 (kind='ui' && status='passed').
@@ -1289,18 +1288,30 @@ export const TestResultPage = ({
     ?? (activeActionMapping?.steps?.length
           ? activeActionMapping.steps[activeActionMapping.steps.length - 1].step_no
           : 1);
-  // hero 캡처 스텝 — 눈 아이콘으로 고정한 스텝(pinnedStep) 우선, 없으면 기본(실패/캡처보유 스텝).
+  // 실행 스텝 캡처를 GIF 처럼 0.5초마다 자동 재생 — ui 스텝(없으면 action_mapping 스텝) 순서대로.
+  // 매끄러운 전환을 위해 모든 스텝 캡처를 미리 받아 캐시한다 (스텝의 눈 아이콘 클릭 시 정지).
+  const gif = useStepGifPlayer({
+    stepNos: (activeUiResult?.steps?.length
+      ? activeUiResult.steps.map(s => s.step_no)
+      : (activeActionMapping?.steps ?? []).map(s => s.step_no)),
+    endpointFor: (n) =>
+      (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId)
+        ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, n)
+        : null,
+    resetKey: activeFullTcId,
+  });
+  // hero 캡처 스텝 — 자동 재생/선택된 스텝(gif.active) 우선, 없으면 기본(실패/캡처보유 스텝).
   const baseHeroStep = isApiModeTc
     ? apiModeHeroStep
     : (activeError && failStep ? failStep.step_no : (anyShotStep ? anyShotStep.step_no : null));
-  const heroStep = pinnedStep ?? baseHeroStep;
+  const heroStep = gif.active ?? baseHeroStep;
   const screenshotEndpoint = (serviceUuid && selectedExecutionId && activeAnyTc && activeFullTcId && heroStep != null)
     ? tcScreenshotUrl(serviceUuid, selectedExecutionId, activeAnyTc.scenario, activeFullTcId, heroStep)
     : null;
-  // 인증 fetch → Blob objectURL (img 직접 로드 시 401 방지)
-  const screenshotSrc = useBlobImage(screenshotEndpoint);
-  // TC 전환 시 고정 스텝 해제 (다음 TC 는 기본 hero 스텝부터)
-  useEffect(() => { setPinnedStep(null); }, [activeFullTcId]);
+  // 프리로드 캐시(gif.src) 우선. 캐시 히트면 fetch 를 건너뛰고(엔드포인트 null),
+  // 미스(캡처 없음/스텝 없음)일 때만 인증 fetch → Blob objectURL (img 직접 로드 시 401 방지)
+  const fallbackShot = useBlobImage(gif.src ? null : screenshotEndpoint);
+  const screenshotSrc = gif.src ?? fallbackShot;
 
   const formatDuration = (duration: string) => duration;
 
@@ -1660,8 +1671,9 @@ export const TestResultPage = ({
                     <tbody>
                       {activeUiResult.steps.map((st: any) => {
                         const isFail = st.status === 'fail';
+                        const isActive = gif.active === st.step_no;
                         return (
-                          <tr key={st.step_no} className={`border-t border-[#f5f5f5] ${isFail ? 'bg-red-50' : ''}`}>
+                          <tr key={st.step_no} className={`border-t border-[#f5f5f5] ${isActive ? 'bg-[#3615CF]/10' : isFail ? 'bg-red-50' : ''}`}>
                             <td className="py-1.5 w-8 text-[#9ca3af] align-top">{st.step_no}</td>
                             <td className="py-1.5 w-24 text-[#1a1a2e] font-medium align-top">{ACTION_LABEL[st.action] ?? st.action}</td>
                             <td className="py-1.5 text-[#6b7280] align-top truncate max-w-[140px]" title={amByStep.get(st.step_no)?.value ?? ''}>
@@ -1678,9 +1690,9 @@ export const TestResultPage = ({
                               ) : null}
                             </td>
                             <td className="py-1.5 w-10 text-right align-top">
-                              <button type="button" onClick={() => setPinnedStep(st.step_no)}
-                                title="이 스텝의 캡처 보기"
-                                className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
+                              <button type="button" onClick={() => gif.pick(st.step_no)}
+                                title="이 스텝의 캡처 보기 (자동 재생 정지)"
+                                className={`p-1 rounded hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors ${isActive ? 'text-[#3615CF]' : 'text-[#9ca3af]'}`}>
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
                             </td>
@@ -1737,8 +1749,10 @@ export const TestResultPage = ({
                   {activeUiResult?.steps?.length ? (
                     <table className="w-full text-xs">
                       <tbody>
-                        {activeUiResult.steps.map((st: any) => (
-                          <tr key={st.step_no} className="border-t border-[#f5f5f5]">
+                        {activeUiResult.steps.map((st: any) => {
+                          const isActive = gif.active === st.step_no;
+                          return (
+                          <tr key={st.step_no} className={`border-t border-[#f5f5f5] ${isActive ? 'bg-[#3615CF]/10' : ''}`}>
                             <td className="py-1.5 w-8 text-[#9ca3af]">{st.step_no}</td>
                             <td className="py-1.5 w-24 text-[#1a1a2e] font-medium">{st.action}</td>
                             <td className="py-1.5">
@@ -1749,14 +1763,15 @@ export const TestResultPage = ({
                               }`}>{st.status}</span>
                             </td>
                             <td className="py-1.5 w-10 text-right">
-                              <button type="button" onClick={() => setPinnedStep(st.step_no)}
-                                title="이 스텝의 캡처 보기"
-                                className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
+                              <button type="button" onClick={() => gif.pick(st.step_no)}
+                                title="이 스텝의 캡처 보기 (자동 재생 정지)"
+                                className={`p-1 rounded hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors ${isActive ? 'text-[#3615CF]' : 'text-[#9ca3af]'}`}>
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   ) : (
@@ -1792,8 +1807,10 @@ export const TestResultPage = ({
                   {activeUiResult?.steps?.length ? (
                     <table className="w-full text-xs">
                       <tbody>
-                        {activeUiResult.steps.map((st: any) => (
-                          <tr key={st.step_no} className="border-t border-[#f5f5f5]">
+                        {activeUiResult.steps.map((st: any) => {
+                          const isActive = gif.active === st.step_no;
+                          return (
+                          <tr key={st.step_no} className={`border-t border-[#f5f5f5] ${isActive ? 'bg-[#3615CF]/10' : ''}`}>
                             <td className="py-1.5 w-8 text-[#9ca3af]">{st.step_no}</td>
                             <td className="py-1.5 w-24 text-[#1a1a2e] font-medium">{st.action}</td>
                             <td className="py-1.5">
@@ -1804,14 +1821,15 @@ export const TestResultPage = ({
                               }`}>{st.status}</span>
                             </td>
                             <td className="py-1.5 w-10 text-right">
-                              <button type="button" onClick={() => setPinnedStep(st.step_no)}
-                                title="이 스텝의 캡처 보기"
-                                className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors">
+                              <button type="button" onClick={() => gif.pick(st.step_no)}
+                                title="이 스텝의 캡처 보기 (자동 재생 정지)"
+                                className={`p-1 rounded hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors ${isActive ? 'text-[#3615CF]' : 'text-[#9ca3af]'}`}>
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   ) : (
@@ -1853,8 +1871,10 @@ export const TestResultPage = ({
                         </tr>
                       </thead>
                       <tbody>
-                        {activeActionMapping.steps.map(s => (
-                          <tr key={s.step_no} className="border-t border-[#f5f5f5]">
+                        {activeActionMapping.steps.map(s => {
+                          const isActive = gif.active === s.step_no;
+                          return (
+                          <tr key={s.step_no} className={`border-t border-[#f5f5f5] ${isActive ? 'bg-[#3615CF]/10' : ''}`}>
                             <td className="py-1.5 text-[#9ca3af]">{s.step_no}</td>
                             <td className="py-1.5 text-[#1a1a2e] font-medium">{ACTION_LABEL[s.action] ?? s.action}</td>
                             <td className="py-1.5 text-[#6b7280] truncate max-w-[120px]">{(s as { selector?: string | null }).selector || s.target_name || s.target_kind || '—'}</td>
@@ -1867,15 +1887,16 @@ export const TestResultPage = ({
                             <td className="py-1.5 text-right">
                               <button
                                 type="button"
-                                onClick={() => setPinnedStep(s.step_no)}
-                                title="이 스텝의 캡처 보기"
-                                className="p-1 rounded text-[#9ca3af] hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors"
+                                onClick={() => gif.pick(s.step_no)}
+                                title="이 스텝의 캡처 보기 (자동 재생 정지)"
+                                className={`p-1 rounded hover:text-[#3615CF] hover:bg-[#3615CF]/10 transition-colors ${isActive ? 'text-[#3615CF]' : 'text-[#9ca3af]'}`}
                               >
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   ) : (
@@ -1937,8 +1958,20 @@ export const TestResultPage = ({
 
         <div className="flex-1 basis-0 bg-white border-l border-[#f0f0f0] flex flex-col overflow-y-auto">
           <div className="p-4 border-b border-[#f0f0f0]">
-            <div className="text-xs font-semibold text-[#6b7280] mb-2 uppercase tracking-wide">
-              {isApiModeTc ? '참고 화면 (검증은 API)' : 'UI 캡처'}
+            <div className="flex items-center mb-2">
+              <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">
+                {isApiModeTc ? '참고 화면 (검증은 API)' : 'UI 캡처'}
+                {gif.active != null ? <span className="ml-1 text-[#9ca3af] normal-case">· step {gif.active}</span> : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => gif.setPlaying((p) => !p)}
+                title={gif.playing ? '자동 재생 정지' : '자동 재생 (스텝 캡처 GIF)'}
+                className="ml-auto flex items-center gap-1 text-[10px] text-[#9ca3af] hover:text-[#3615CF] transition-colors"
+              >
+                {gif.playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                {gif.playing ? '재생 중' : '정지됨'}
+              </button>
             </div>
             <div className="w-full h-[55vh] bg-gray-100 rounded border border-[#f0f0f0] flex items-center justify-center overflow-hidden">
               {isApiModeTc && screenshotSrc ? (
