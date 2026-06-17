@@ -37,7 +37,6 @@ function stripUrl(url: string): string {
   p = p.replace(/\/[0-9]+(?=\/|$)/g, '/{id}').replace(/\/[0-9a-f-]{8,}(?=\/|$)/g, '/{id}');
   return p || '/';
 }
-function epKey(c: FlowCall): string { return `${(c.method || 'GET').toUpperCase()} ${stripUrl(c.url || '/')}`; }
 
 // ── run 진행 데이터(시퀀스 목록) → 노드/엣지 ──
 export function buildFlow(sequences: FlowCall[][]): { nodes: FNode[]; edges: FEdge[] } {
@@ -51,9 +50,11 @@ export function buildFlow(sequences: FlowCall[][]): { nodes: FNode[]; edges: FEd
   for (const seq of sequences) {
     let prev: string | null = null;
     for (const c of seq) {
-      const key = epKey(c);
-      const method = (c.method || 'GET').toUpperCase();
       const path = stripUrl(c.url || '/');
+      // 정적 자산(js/css/이미지)과 페이지 이동(HTML)은 제외 — 백엔드 API 실행 흐름만 본다.
+      if (!path.startsWith('/api/')) continue;
+      const method = (c.method || 'GET').toUpperCase();
+      const key = `${method} ${path}`;
       const isErr = typeof c.statusCode === 'number' && c.statusCode >= 400;
       touch(key, method, path, isErr);
       if (prev && prev !== key) {
