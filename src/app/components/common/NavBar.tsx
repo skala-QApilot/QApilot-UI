@@ -73,19 +73,6 @@ export function NavBar({
           </div>
         )}
 
-        {/* 말풍선 + 캐릭터 */}
-        <div className="flex items-center">
-          <div className="flex items-center gap-2 px-5 py-1.5 bg-[#3615CF] rounded-full text-white text-sm font-semibold shadow-sm select-none">
-            <span>[QA 프로젝트 #1] cross check 중</span>
-            <span className="speech-ellipsis" aria-hidden="true">
-              <span>.</span>
-              <span>.</span>
-              <span>.</span>
-            </span>
-          </div>
-          <div className="w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-l-[8px] border-l-[#3615CF] -ml-px flex-shrink-0" />
-        </div>
-
         {/* 알림 버튼 */}
         <div className="relative flex-shrink-0">
           <button
@@ -94,11 +81,9 @@ export function NavBar({
             aria-label="알람 열기"
           >
             <img src={agentImageSrc} alt="QApilot" className="w-full h-full object-cover rounded-full" />
-            {unreadNotifications > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-[#3615CF] text-white text-[10px] rounded-full flex items-center justify-center font-bold shadow-sm">
-                {unreadNotifications}
-              </span>
-            )}
+            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-[#3615CF] text-white text-[10px] rounded-full flex items-center justify-center font-bold shadow-sm">
+              1
+            </span>
           </button>
           {notificationOpen && (
             <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl z-50">

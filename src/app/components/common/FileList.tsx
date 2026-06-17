@@ -68,7 +68,7 @@ export const FileList = ({ showNewButton = true, serviceId }: FileListProps) => 
           </button>
         )}
       </div>
-      <div className="space-y-1 flex-1 min-h-0 overflow-y-auto max-h-[60vh] pr-1">
+      <div className="space-y-1 flex-1 min-h-0 overflow-y-auto no-scrollbar pr-1">
         {files.map(file => (
           <div key={file.id} className="flex items-center gap-3 py-2.5 group">
             <Folder className="w-5 h-5 flex-shrink-0 text-[#a0a8b4]" fill="currentColor" strokeWidth={0} />

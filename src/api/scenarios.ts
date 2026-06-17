@@ -14,6 +14,8 @@ export interface TestValue {
 export interface TestCase {
   tc_id: string;
   name: string;
+  /** 대상 API 엔드포인트. e.g. "POST /api/auth/login" */
+  api?: string | null;
   given?: string;
   when?: string;
   then?: string;

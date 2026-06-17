@@ -35,10 +35,10 @@ export const ExecutionHistoryRow = ({ exec, onClick, loading = false }: Executio
       onClick={onClick}
       className="w-full flex items-center gap-5 py-3 hover:bg-gray-50 transition-colors text-left"
     >
-      <div className="flex-1 min-w-0">
-        <span className="text-sm text-[#374151]">{exec.groupId}</span>
+      <div className="flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
+        <span className="text-sm text-[#374151] truncate">{exec.groupId}</span>
         {exec.executionNumber !== undefined && (
-          <span className="text-xs text-[#c4c9d4] ml-2">#{exec.executionNumber}</span>
+          <span className="text-xs text-[#c4c9d4] flex-shrink-0">#{exec.executionNumber}</span>
         )}
       </div>
       <span className="text-xs text-[#c4c9d4] flex-shrink-0">{exec.startDate}</span>

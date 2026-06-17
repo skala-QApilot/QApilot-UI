@@ -1,5 +1,5 @@
 import React from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 interface LineConfig {
   dataKey: string;
@@ -7,6 +7,7 @@ interface LineConfig {
   strokeWidth?: number;
   dashed?: boolean;
   name: string;
+  gradient?: boolean;
 }
 
 interface PassRateChartProps {
@@ -37,11 +38,9 @@ export const PassRateChart = ({
   stickyAxes = false,
 }: PassRateChartProps) => {
   const defaultLines: LineConfig[] = [
-    { dataKey: 'pass', stroke: 'var(--status-pass)', strokeWidth: 2.5, name: 'PASS' },
+    { dataKey: 'pass', stroke: 'var(--status-pass)', strokeWidth: 2.5, name: 'PASS', gradient: true },
     { dataKey: 'total', stroke: '#9ca3af', strokeWidth: 2, name: '전체' },
     { dataKey: 'fail', stroke: 'var(--status-fail)', strokeWidth: 2, dashed: true, name: 'FAIL' },
-    // 판정 보류/검증 미완 — 가는 점선으로 표시 (PASS/FAIL 어디에도 안 보이면
-    // '전체' 와 합이 안 맞아 보인다). 0 인 날은 축에 붙어 시각 노이즈 없음.
     { dataKey: 'unverified', stroke: '#7c8db5', strokeWidth: 1.5, dashed: true, name: 'UNVERIFIED' },
     { dataKey: 'skipped', stroke: '#d4a017', strokeWidth: 1.5, dashed: true, name: 'SKIPPED' },
   ];
@@ -56,6 +55,8 @@ export const PassRateChart = ({
 
   const chartLines = lines || defaultLines;
   const chartLegend = legend || defaultLegend;
+
+  const gradientLines = chartLines.filter(l => l.gradient);
 
   const header = (
     <div className="flex items-center justify-between mb-3">
@@ -89,7 +90,7 @@ export const PassRateChart = ({
     ro.observe(el);
 
     const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // 이미 가로 스크롤 중이면 패스
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
       e.preventDefault();
       el.scrollLeft += e.deltaY;
     };
@@ -101,13 +102,23 @@ export const PassRateChart = ({
     };
   }, [stickyAxes]);
 
-  const PX_PER_POINT = 60;
+  const PX_PER_POINT = containerWidth > 0 ? Math.floor(containerWidth / 8) : 40;
   const chartWidth = Math.max(containerWidth, data.length * PX_PER_POINT);
+
+  const gradientDefs = (
+    <defs>
+      {gradientLines.map(l => (
+        <linearGradient key={l.dataKey} id={`grad-${l.dataKey}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={l.stroke} stopOpacity={0.22} />
+          <stop offset="100%" stopColor={l.stroke} stopOpacity={0} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
 
   if (stickyAxes) {
     return (
       <div className={className ?? 'flex-1 min-w-0'}>
-        {/* stickyAxes 전용 헤더: Y축 너비만큼 offset 후 범례 우측 정렬 */}
         <div className="flex items-center mb-3">
           <div className="flex-shrink-0 whitespace-nowrap">
             <Label>{title}</Label>
@@ -118,10 +129,10 @@ export const PassRateChart = ({
                 <div key={label} className="flex items-center gap-1.5">
                   <svg width="18" height="10">
                     <line x1="0" y1="5" x2="18" y2="5"
-                      stroke={color} strokeWidth="2"
+                      stroke={color} strokeWidth="2.5"
                       strokeDasharray={dashed ? '3 2' : undefined} />
                   </svg>
-                  <span className="text-xs text-[#9ca3af]">{label}</span>
+                  <span className="text-xs font-bold" style={{ color }}>{label}</span>
                 </div>
               ))}
             </div>
@@ -130,7 +141,7 @@ export const PassRateChart = ({
         <div className="flex" style={{ height }}>
 
           {/* Fixed Y-axis panel */}
-          <div className="flex-shrink-0 bg-white" style={{ width: Y_AXIS_WIDTH + 4 }}>
+          <div className="flex-shrink-0 bg-transparent" style={{ width: Y_AXIS_WIDTH + 4 }}>
             <LineChart
               width={Y_AXIS_WIDTH + 4}
               height={height}
@@ -153,12 +164,13 @@ export const PassRateChart = ({
             className="flex-1 min-w-0 overflow-x-auto no-scrollbar"
             style={{ scrollbarWidth: 'none' } as React.CSSProperties}
           >
-            <LineChart
+            <ComposedChart
               width={chartWidth}
               height={height}
               data={data}
               margin={{ top: 2, right: 10, bottom: 0, left: 0 }}
             >
+              {gradientDefs}
               <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
               <XAxis
                 dataKey="date"
@@ -171,19 +183,34 @@ export const PassRateChart = ({
               <Tooltip
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
               />
-              {chartLines.map(line => (
-                <Line
-                  key={line.dataKey}
-                  type="monotone"
-                  dataKey={line.dataKey}
-                  stroke={line.stroke}
-                  strokeWidth={line.strokeWidth || 2}
-                  strokeDasharray={line.dashed ? '4 2' : undefined}
-                  dot={false}
-                  name={line.name}
-                />
-              ))}
-            </LineChart>
+              {chartLines.map(line =>
+                line.gradient ? (
+                  <Area
+                    key={line.dataKey}
+                    type="monotone"
+                    dataKey={line.dataKey}
+                    stroke={line.stroke}
+                    strokeWidth={line.strokeWidth || 2}
+                    fill={`url(#grad-${line.dataKey})`}
+                    dot={false}
+                    name={line.name}
+                    connectNulls
+                  />
+                ) : (
+                  <Line
+                    key={line.dataKey}
+                    type="monotone"
+                    dataKey={line.dataKey}
+                    stroke={line.stroke}
+                    strokeWidth={line.strokeWidth || 2}
+                    strokeDasharray={line.dashed ? '4 2' : undefined}
+                    dot={false}
+                    name={line.name}
+                    connectNulls
+                  />
+                )
+              )}
+            </ComposedChart>
           </div>
         </div>
       </div>
@@ -194,24 +221,40 @@ export const PassRateChart = ({
     <div className={className ?? 'flex-1 min-w-0'}>
       {header}
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data} margin={{ top: 2, right: 4, bottom: 0, left: -20 }}>
+        <ComposedChart data={data} margin={{ top: 2, right: 4, bottom: 0, left: -20 }}>
+          {gradientDefs}
           <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
           <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#c4c9d4' }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fontSize: 12, fill: '#c4c9d4' }} axisLine={false} tickLine={false} domain={[0, 100]} />
           <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }} />
-          {chartLines.map(line => (
-            <Line
-              key={line.dataKey}
-              type="monotone"
-              dataKey={line.dataKey}
-              stroke={line.stroke}
-              strokeWidth={line.strokeWidth || 2}
-              strokeDasharray={line.dashed ? '4 2' : undefined}
-              dot={false}
-              name={line.name}
-            />
-          ))}
-        </LineChart>
+          {chartLines.map(line =>
+            line.gradient ? (
+              <Area
+                key={line.dataKey}
+                type="monotone"
+                dataKey={line.dataKey}
+                stroke={line.stroke}
+                strokeWidth={line.strokeWidth || 2}
+                fill={`url(#grad-${line.dataKey})`}
+                dot={false}
+                name={line.name}
+                connectNulls
+              />
+            ) : (
+              <Line
+                key={line.dataKey}
+                type="monotone"
+                dataKey={line.dataKey}
+                stroke={line.stroke}
+                strokeWidth={line.strokeWidth || 2}
+                strokeDasharray={line.dashed ? '4 2' : undefined}
+                dot={false}
+                name={line.name}
+                connectNulls
+              />
+            )
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

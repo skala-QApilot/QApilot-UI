@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { Copy, Check, Download, Edit2, KeyRound, Link2, MoreHorizontal, Plus, Shield, ShieldCheck, Users, X, Server } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Download, Edit2, ExternalLink, GitBranch, MoreHorizontal, Plus, Shield, ShieldCheck, Users, X, Server } from 'lucide-react';
+import { SutServiceGraph } from '../components/SutServiceGraph';
 import { SearchBar } from '../components/common/SearchBar';
 import { FileList } from '../components/common/FileList';
 import { ExecutionHistoryRow } from '../components/common/ExecutionHistoryRow';
+import { ExecutionHistoryList } from '../components/common/ExecutionHistoryList';
 import { PassRateChart } from '../components/common/PassRateChart';
 import { RTMDonutChart } from '../components/common/RTMDonutChart';
 import { useMemo } from 'react';
@@ -68,56 +70,15 @@ const Field = ({ label, placeholder, type = 'text' }: { label: string; placehold
   </div>
 );
 
-function CopyBlock({ label, icon, value }: { label: string; icon: React.ReactNode; value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="mb-6">
-      <label className="flex items-center gap-1.5 text-sm font-semibold text-[#1a1a2e] mb-1.5">
-        {icon}
-        {label}
-      </label>
-      <div className="w-full max-w-lg flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e5e7eb] bg-[#f9fafb]">
-        <span className="flex-1 text-sm text-[#374151] font-mono truncate">{value}</span>
-        <button
-          onClick={handleCopy}
-          className="shrink-0 flex items-center gap-1 text-xs text-[#6b7280] hover:text-[#3615CF] transition-colors"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-[#10b981]" /> : <Copy className="w-3.5 h-3.5" />}
-          <span>{copied ? '복사됨' : '복사'}</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function SettingsTab({
   serviceName,
-  projectSlug,
   serviceId,
-  dashboardUrl,
-  serverAuthToken,
-  localPath,
-  framework,
-  language,
   reposFromServer,
   stagingUrlFromServer,
   onServiceUpdated,
 }: {
   serviceName: string;
-  projectSlug?: string;
   serviceId?: string;
-  dashboardUrl?: string;
-  serverAuthToken?: string;
-  localPath?: string;
-  framework?: string;
-  language?: string;
   reposFromServer?: Array<{ repo_url: string; branch?: string | null; role?: string | null; token_set?: boolean }>;
   stagingUrlFromServer?: string | null;
   onServiceUpdated?: (dto: ServiceDto) => void;
@@ -194,11 +155,11 @@ function SettingsTab({
     }));
   };
 
-  const updateGithubEntry = (id: string, field: 'url' | 'token', value: string) => {
+  const updateGithubEntry = (id: string, field: 'url' | 'token' | 'branch', value: string) => {
     setDraft(prev => ({
       ...prev,
       githubEntries: prev.githubEntries.map(entry => (
-        entry.id === id ? { ...entry, [field]: value } : entry
+        entry.id === id ? { ...entry, [field]: field === 'branch' ? (value || null) : value } : entry
       )),
     }));
   };
@@ -319,22 +280,48 @@ function SettingsTab({
               {draft.githubEntries.map(entry => (
                 <div key={entry.id} className="flex items-start gap-2">
                   <div className="flex-1 space-y-2">
-                    <input
-                      type="url"
-                      value={entry.url}
-                      onChange={e => updateGithubEntry(entry.id, 'url', e.target.value)}
-                      disabled={!editing}
-                      placeholder="https://github.com/owner/repo"
-                      className="w-full rounded-xl border border-[#e5e7eb] bg-white px-4 py-3 text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
-                    />
-                    <input
-                      type="password"
-                      value={entry.token}
-                      onChange={e => updateGithubEntry(entry.id, 'token', e.target.value)}
-                      disabled={!editing}
-                      placeholder={entry.tokenSet ? '토큰 저장됨 — 변경하려면 새 토큰 입력' : 'GitHub Personal Access Token (optional)'}
-                      className="w-full rounded-xl border border-[#e5e7eb] bg-white px-4 py-3 font-mono text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
-                    />
+                    <div className="group relative">
+                      <input
+                        type="url"
+                        value={entry.url}
+                        onChange={e => updateGithubEntry(entry.id, 'url', e.target.value)}
+                        disabled={!editing}
+                        placeholder="https://github.com/owner/repo"
+                        className="w-full rounded-xl border border-[#e5e7eb] bg-white px-4 py-3 pr-10 text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
+                      />
+                      {entry.url.trim() && (
+                        <a
+                          href={entry.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="absolute right-3 top-1/2 hidden -translate-y-1/2 text-[#c4c9d4] transition-colors hover:text-[#3615CF] group-hover:block"
+                          aria-label="GitHub 저장소 열기"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <GitBranch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#c4c9d4]" />
+                        <input
+                          type="text"
+                          value={entry.branch ?? ''}
+                          onChange={e => updateGithubEntry(entry.id, 'branch', e.target.value)}
+                          disabled={!editing}
+                          placeholder="branch (기본: main)"
+                          className="w-full rounded-xl border border-[#e5e7eb] bg-white pl-9 pr-3 py-3 font-mono text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
+                        />
+                      </div>
+                      <input
+                        type="password"
+                        value={entry.token}
+                        onChange={e => updateGithubEntry(entry.id, 'token', e.target.value)}
+                        disabled={!editing}
+                        placeholder={entry.tokenSet ? '토큰 저장됨 — 변경하려면 입력' : 'Personal Access Token (optional)'}
+                        className="flex-1 rounded-xl border border-[#e5e7eb] bg-white px-4 py-3 font-mono text-sm text-[#1a1a2e] outline-none transition-all placeholder:text-[#c4c9d4] focus:border-[#3615CF]/50 focus:ring-2 focus:ring-[#3615CF]/10 disabled:bg-white disabled:text-[#9ca3af]"
+                      />
+                    </div>
                   </div>
 
                   {draft.githubEntries.length > 1 && (
@@ -368,40 +355,6 @@ function SettingsTab({
           </section>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <div className="border-t border-[#ece9fb] px-1 py-4">
-            <div className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-[#9ca3af]">Project Slug</div>
-            <div className="truncate text-sm font-semibold text-[#1a1a2e]">{projectSlug || '미연결'}</div>
-          </div>
-          <div className="border-t border-[#ece9fb] px-1 py-4">
-            <div className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-[#9ca3af]">Framework</div>
-            <div className="truncate text-sm font-semibold text-[#1a1a2e]">{framework || '미확인'}</div>
-          </div>
-          <div className="border-t border-[#ece9fb] px-1 py-4">
-            <div className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-[#9ca3af]">Language</div>
-            <div className="truncate text-sm font-semibold text-[#1a1a2e]">{language || '미확인'}</div>
-          </div>
-        </div>
-
-        {(localPath || serverAuthToken) && (
-          <div className="mt-6 border-t border-[#ece9fb] px-1 py-5">
-            <div className="mb-4 text-sm font-semibold text-[#1a1a2e]">연결 정보</div>
-            {localPath && (
-              <CopyBlock
-                label="로컬 프로젝트 경로"
-                icon={<Link2 className="h-4 w-4 text-[#3615CF]" />}
-                value={localPath}
-              />
-            )}
-            {serverAuthToken && (
-              <CopyBlock
-                label="Server Auth Token"
-                icon={<KeyRound className="h-4 w-4 text-[#3615CF]" />}
-                value={serverAuthToken}
-              />
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -543,68 +496,126 @@ export function HomePage({
   const overallTotal = rtmRequirements.reduce((s, r) => s + r.totalCount, 0);
   const overallPct = overallTotal > 0 ? Math.round((overallPassTotal / overallTotal) * 100) : 0;
 
+  // PASS율 박스 높이 동적 측정
+  const passRateBoxRef = useRef<HTMLDivElement>(null);
+  const [passRateChartH, setPassRateChartH] = useState(120);
+  useEffect(() => {
+    const el = passRateBoxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => {
+      setPassRateChartH(Math.max(60, Math.floor(e.contentRect.height) - 34));
+    });
+    ro.observe(el);
+    setPassRateChartH(Math.max(60, el.clientHeight - 34));
+    return () => ro.disconnect();
+  }, []);
+
   // 실행 이력 / PASS 추이 — testStore.results 변경 시에만 재계산 (getter 가 매 호출마다 새 배열을 만들기 때문에 selector 직접 호출 금지).
   const testResults = useTestStore((s) => s.results);
   const executionHistory = useMemo(
     () => useTestStore.getState().getExecutionHistory(),
     [testResults],
   );
-  const passHistory = useMemo(
-    () => useTestStore.getState().getPassHistory(14),
-    [testResults],
-  );
+  const passRateHistory = useMemo(() => {
+    const raw = useTestStore.getState().getPassHistory(14);
+    if (raw.length === 0) return [];
+
+    // M/D → Date 파싱 (dayKey 가 'M/D' 형식을 반환)
+    const parseDate = (md: string) => {
+      const [m, d] = md.split('/').map(Number);
+      const now = new Date();
+      const year = (m > now.getMonth() + 1) ? now.getFullYear() - 1 : now.getFullYear();
+      return new Date(year, m - 1, d);
+    };
+
+    const mapped = raw.map(p => {
+      const executed = p.pass + p.fail + p.skipped + p.unverified;
+      const rate = (v: number) => executed > 0 ? Math.round(v / executed * 100) : null;
+      return { date: p.date, passRate: rate(p.pass), skipRate: rate(p.skipped), unverifiedRate: rate(p.unverified) };
+    });
+
+    // 날짜 범위 채우기 — 빈 날짜는 null (차트에서 connectNulls 로 연결)
+    const dateMap = new Map(mapped.map(p => [p.date, p]));
+    const start = parseDate(raw[0].date);
+    const end   = parseDate(raw[raw.length - 1].date);
+    const filled = [];
+    for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const label = `${d.getMonth() + 1}/${d.getDate()}`;
+      filled.push(dateMap.get(label) ?? { date: label, passRate: null, skipRate: null, unverifiedRate: null });
+    }
+    return filled;
+  }, [testResults]);
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
       {activeTab === 'overview' && (
-        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-          {/* 상단 — RTM + PASS율 */}
-          <div className="flex-shrink-0 flex items-start gap-10 px-10 py-6 border-b border-[#f0f0f0]">
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0 px-2 py-3">
 
-            {/* RTM */}
-            <div className="flex-shrink-0">
+          {/* 상단 — RTM(2) + Service Graph(3) + PASS율(2.5) · 박스 없음 */}
+          <div className="flex-1 min-h-0 flex items-stretch gap-6 pl-10 pr-8 pt-4 pb-5 border-b border-[#f0f0f0]">
+
+            {/* RTM — 콘텐츠 크기만큼만 */}
+            <div className="flex-shrink-0 flex flex-col">
               <Label>RTM</Label>
-              <div className="flex items-center gap-6 mt-[28px]">
+              <div className="flex-1 flex items-center">
                 <RTMDonutChart
                   metReqs={metReqs}
                   unmetReqs={unmetReqs}
                   unrunReqs={unrunReqs}
                   totalReqs={totalReqs}
                   overallPct={overallPct}
-                  size="xl"
+                  size="lg"
                 />
               </div>
             </div>
 
-            {/* PASS율 — Y축 고정, 데이터만 가로 스크롤 */}
-            <div className="flex-1 min-w-0">
+            {/* 구분선 */}
+            <div className="w-px bg-[#f0f0f0] self-stretch flex-shrink-0" />
+
+            {/* Service Graph — 1.2 */}
+            <div style={{ flex: 2.4 }} className="min-w-0 flex flex-col">
+              <span className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-widest mb-1">Service Graph</span>
+              <div className="flex-1 min-h-0">
+                <SutServiceGraph serviceId={serviceId} />
+              </div>
+            </div>
+
+            {/* 구분선 */}
+            <div className="w-px bg-[#f0f0f0] self-stretch flex-shrink-0" />
+
+            {/* PASS율 — flex:2.4 */}
+            <div ref={passRateBoxRef} style={{ flex: 2.4 }} className="min-w-0 flex flex-col overflow-hidden">
               <PassRateChart
-                data={passHistory}
-                height={260}
+                data={passRateHistory}
+                height={passRateChartH}
                 stickyAxes
+                lines={[
+                  { dataKey: 'passRate',      stroke: 'var(--status-pass)', strokeWidth: 2.5, name: 'PASS율', gradient: true },
+                  { dataKey: 'skipRate',       stroke: '#9ca3af',            strokeWidth: 2,   name: 'SKIP율' },
+                  { dataKey: 'unverifiedRate', stroke: '#7c8db5',            strokeWidth: 2,   dashed: true, name: 'UNVERIFIED율' },
+                ]}
+                legend={[
+                  { color: 'var(--status-pass)', label: 'PASS율' },
+                  { color: '#9ca3af',             label: 'SKIP율' },
+                  { color: '#7c8db5',             label: 'UNVERIFIED율', dashed: true },
+                ]}
               />
             </div>
           </div>
 
-          {/* 하단 — FILES + 이력 2분할 */}
-          <div className="flex-1 min-h-0 overflow-y-auto flex gap-8 px-12 py-10">
+          {/* 하단 — FILES + 이력 · 박스 있음 */}
+          <div className="flex-1 min-h-0 flex gap-6 px-10 pt-6 pb-10">
 
-            {/* FILES */}
-            <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col rounded-[2.5rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm px-8 py-7">
+            {/* FILES — 박스 (flex:3 = 0.6) */}
+            <div style={{ flex: 3 }} className="min-w-0 min-h-0 flex flex-col rounded-[3rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm overflow-hidden px-10 py-7">
               <FileList serviceId={serviceId} />
             </div>
 
-            {/* 이력 */}
-            <div className="flex-1 min-w-0 rounded-[2.5rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm px-8 py-7 overflow-y-auto">
-              <Label>이력</Label>
-              <div className="mt-4 space-y-0.5">
-                {executionHistory.map(exec => (
-                  <ExecutionHistoryRow
-                    key={exec.id}
-                    exec={exec}
-                    onClick={() => setCurrentPage('테스트')}
-                  />
-                ))}
-              </div>
+            {/* 이력 — FILES 와 동일한 박스 */}
+            <div style={{ flex: 5 }} className="min-w-0 min-h-0 flex flex-col rounded-[3rem] border border-[#ece9fb] bg-[#f9f8ff] shadow-sm overflow-hidden px-10 py-7">
+              <ExecutionHistoryList
+                history={executionHistory}
+                onRowClick={() => setCurrentPage('테스트')}
+              />
             </div>
 
           </div>
@@ -618,13 +629,7 @@ export function HomePage({
       {activeTab === 'settings' && (
         <SettingsTab
           serviceName={serviceName}
-          projectSlug={projectSlug}
           serviceId={projectMeta?.service_id}
-          dashboardUrl={projectCredentials?.dashboard_url || (projectSlug ? `http://localhost:8080/${projectSlug}` : undefined)}
-          serverAuthToken={projectCredentials?.server_auth_token}
-          localPath={projectMeta?.local_path}
-          framework={projectMeta?.framework}
-          language={projectMeta?.language}
           reposFromServer={projectMeta?.repos}
           stagingUrlFromServer={projectMeta?.staging_url}
           onServiceUpdated={onServiceUpdated}

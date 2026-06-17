@@ -167,7 +167,11 @@ export const useTestStore = create<TestState>()((set, get) => ({
       agg[k].skipped += r.skip_count ?? 0;
     }
     const sorted = Object.entries(agg)
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) => {
+        const [am, ad] = a.split('/').map(Number);
+        const [bm, bd] = b.split('/').map(Number);
+        return am !== bm ? am - bm : ad - bd;
+      })
       .slice(-days);
     return sorted.map(([date, { pass, fail, unverified, skipped }]) => ({
       date, pass, fail, unverified, skipped,
