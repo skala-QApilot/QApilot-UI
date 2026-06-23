@@ -372,6 +372,7 @@ export default function App() {
   const currentRtmVersion = uiRtmVersions.find(v => v.id === selectedRtmVersion)
     ?? uiRtmVersions[0]
     ?? { id: '', label: '—', date: '', basedOn: '' };
+  const currentRtmVersionLabel = currentRtmVersion.label || 'v1.0';
 
   // ── main 브랜치 hooks 보충 ────────────────────────────────────────────────
   // HEAD inline state 와 중복되지 않는 state 만 destructure (중복은 hook 안의 값을 무시).
@@ -1537,7 +1538,7 @@ export default function App() {
                       onClick={() => setRtmVersionOpen(v => !v)}
                       className="flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-[#3615CF]/10 hover:bg-[#3615CF]/15 transition-colors"
                     >
-                      <span className="text-[11px] font-semibold text-[#3615CF]">{currentRtmVersion.id}</span>
+                      <span className="text-[11px] font-semibold text-[#3615CF]">{currentRtmVersionLabel}</span>
                       <ChevronDown className="w-3 h-3 text-[#3615CF]" />
                     </button>
                     {rtmVersionOpen && (

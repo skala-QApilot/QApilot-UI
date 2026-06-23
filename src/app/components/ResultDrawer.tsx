@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, X, CheckCircle, XCircle, Eye } from 'lucide-react';
+import { Bot, X, CheckCircle, XCircle, Eye, Play, Pause } from 'lucide-react';
 import {
-  getTcResult, getApiResult, getActionMapping, tcScreenshotUrl, fetchTcScreenshotUrl,
+  getTcResult, getApiResult, getActionMapping, tcScreenshotUrl,
   type UiResult, type ApiResult, type ActionMapping,
 } from '../../api/artifacts';
 import { listDefects, type Defect } from '../../api/defects';
 import { buildVerdictSummary, koAction } from '../utils/verdictSummary';
+import { useStepGifPlayer } from '../hooks/useStepGifPlayer';
 
 interface ResultDrawerProps {
   open: boolean;
@@ -28,11 +29,8 @@ export function ResultDrawer({
   const [am, setAm] = useState<ActionMapping | null>(null);   // 실제 입력값(value) 출처
   const [apiRes, setApiRes] = useState<ApiResult | null>(null);
   const [defect, setDefect] = useState<Defect | null>(null);
-  const [activeStep, setActiveStep] = useState<number>(1);   // 캡처 표시 중인 스텝
-  const [shotUrl, setShotUrl] = useState<string | null>(null);
-  const [shotLoading, setShotLoading] = useState(false);
 
-  // 결과 데이터 로드 (tcId 바뀌면 재로드). activeStep 은 fail 스텝(없으면 1)로 초기화.
+  // 결과 데이터 로드 (tcId 바뀌면 재로드).
   useEffect(() => {
     if (!open || !serviceId || !traceId || !tcId) return;
     let cancelled = false;
@@ -48,26 +46,17 @@ export function ResultDrawer({
       setAm(m);
       setApiRes(a);
       setDefect(defects.find(d => d.tc_id === tcId) ?? null);
-      setActiveStep(u?.steps?.find(s => s.status === 'fail')?.step_no ?? u?.steps?.[0]?.step_no ?? 1);
     })();
     return () => { cancelled = true; };
   }, [open, serviceId, traceId, tsId, tcId, pass]);
 
-  // 캡처 로드 — activeStep 바뀔 때마다 (스텝별 화면 전환)
-  useEffect(() => {
-    if (!open || !serviceId || !traceId || !tcId) return;
-    let cancelled = false;
-    let obj: string | null = null;
-    setShotLoading(true);
-    setShotUrl(null);
-    fetchTcScreenshotUrl(tcScreenshotUrl(serviceId, traceId, tsId, tcId, activeStep)).then((url) => {
-      if (cancelled) { if (url) URL.revokeObjectURL(url); return; }
-      obj = url;
-      setShotUrl(url);
-      setShotLoading(false);
-    });
-    return () => { cancelled = true; if (obj) URL.revokeObjectURL(obj); };
-  }, [open, serviceId, traceId, tsId, tcId, activeStep]);
+  // 실행 스텝 캡처를 GIF 처럼 0.5초마다 자동 재생 (스텝 행 클릭 시 정지).
+  const gif = useStepGifPlayer({
+    stepNos: (ui?.steps ?? []).map((s) => s.step_no),
+    endpointFor: (n) => tcScreenshotUrl(serviceId, traceId, tsId, tcId, n),
+    resetKey: `${traceId}/${tsId}/${tcId}`,
+  });
+  const activeStep = gif.active;
 
   // 리사이즈 드래그 (좌측 핸들)
   const dragging = useRef(false);
@@ -138,15 +127,28 @@ export function ResultDrawer({
           </div>
         </div>
 
-        {/* 결과 화면 — 선택한 스텝의 캡처 */}
+        {/* 결과 화면 — 스텝 캡처 GIF 자동 재생 (▶/⏸ 로 정지·재개) */}
         <div>
-          <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide mb-2">
-            결과 화면 {steps.length ? <span className="text-[#9ca3af] normal-case">· step {activeStep}</span> : null}
+          <div className="flex items-center mb-2">
+            <div className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">
+              결과 화면 {steps.length ? <span className="text-[#9ca3af] normal-case">· step {activeStep}</span> : null}
+            </div>
+            {steps.length > 1 && (
+              <button
+                type="button"
+                onClick={() => gif.setPlaying((p) => !p)}
+                title={gif.playing ? '자동 재생 정지' : '자동 재생'}
+                className="ml-auto flex items-center gap-1 text-[10px] text-[#9ca3af] hover:text-[#3615CF] transition-colors"
+              >
+                {gif.playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                {gif.playing ? '재생 중' : '정지됨'}
+              </button>
+            )}
           </div>
           <div className="w-full bg-gray-100 rounded border border-[#f0f0f0] flex items-center justify-center overflow-hidden" style={{ minHeight: 180 }}>
-            {shotUrl
-              ? <img src={shotUrl} alt={`step ${activeStep} 캡처`} className="w-full object-contain" />
-              : <div className="text-xs text-[#9ca3af] py-14">{shotLoading ? '불러오는 중…' : '이 스텝의 캡처가 없습니다'}</div>}
+            {gif.src
+              ? <img src={gif.src} alt={`step ${activeStep} 캡처`} className="w-full object-contain" />
+              : <div className="text-xs text-[#9ca3af] py-14">이 스텝의 캡처가 없습니다</div>}
           </div>
         </div>
 
@@ -162,7 +164,7 @@ export function ResultDrawer({
                   return (
                     <tr
                       key={st.step_no}
-                      onClick={() => setActiveStep(st.step_no)}
+                      onClick={() => gif.pick(st.step_no)}
                       className={`border-t border-[#f5f5f5] cursor-pointer ${isActive ? 'bg-[#3615CF]/5' : isFail ? 'bg-red-50' : 'hover:bg-gray-50'}`}
                     >
                       <td className="py-1.5 w-8 text-[#9ca3af] align-top">{st.step_no}</td>

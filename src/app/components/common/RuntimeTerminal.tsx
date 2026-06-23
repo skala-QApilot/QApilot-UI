@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { ReactNode, RefObject } from 'react';
 
 interface RuntimeLog {
@@ -41,15 +42,26 @@ export const TerminalFrame = ({ title, children, bodyClassName = '', className =
   </div>
 );
 
-export const RuntimeTerminal = ({ logs, highlightedLogIdx, idPrefix, scrollContainerRef }: RuntimeTerminalProps) => (
+export const RuntimeTerminal = ({ logs, highlightedLogIdx, idPrefix, scrollContainerRef }: RuntimeTerminalProps) => {
+  // scrollContainerRef 가 없으면 자체 ref 로 폴백 (자동 스크롤용).
+  const localRef = useRef<HTMLDivElement>(null);
+  const containerRef = scrollContainerRef ?? localRef;
+
+  // 로그 갱신 시 항상 맨 아래로 — 라이브 로그 tail 추적 (스크롤 하단 고정).
+  useEffect(() => {
+    const el = containerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logs, containerRef]);
+
+  return (
   <TerminalFrame
     title="qapilot-runtime - zsh"
     className="flex min-h-0 flex-1 flex-col"
     bodyClassName="min-h-0 flex-1 overflow-y-auto"
   >
     <div
-      ref={scrollContainerRef}
-      className="h-full min-h-0 space-y-1 overflow-y-auto p-4 font-mono text-[12px] leading-relaxed text-[#e8eaed]"
+      ref={containerRef}
+      className="h-full min-h-0 space-y-1 overflow-y-auto p-4 font-mono text-[10px] leading-relaxed text-[#e8eaed]"
     >
       {logs.map((log, idx) => (
         <div
@@ -84,4 +96,5 @@ export const RuntimeTerminal = ({ logs, highlightedLogIdx, idPrefix, scrollConta
       </div>
     </div>
   </TerminalFrame>
-);
+  );
+};
