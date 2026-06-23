@@ -1388,9 +1388,18 @@ export const TestResultPage = ({
         )}
       />
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-64 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
-          {/* 4탭 풀스펠링이 w-64 를 넘칠 수 있어 wrap 허용 (UNVERIFIED 삐져나옴 수정) */}
-          <div className="px-2 border-b border-[#f0f0f0] flex items-center gap-0 flex-wrap flex-shrink-0">
+        <div className="w-80 bg-white border-r border-[#f0f0f0] flex flex-col flex-shrink-0">
+          <div
+            className="no-scrollbar px-3 border-b border-[#f0f0f0] flex items-center gap-3 flex-nowrap flex-shrink-0 overflow-x-auto overflow-y-hidden overscroll-contain"
+            style={{ scrollbarWidth: 'none' }}
+            onWheel={(event) => {
+              const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+              if (delta !== 0) {
+                event.currentTarget.scrollLeft += delta;
+                event.preventDefault();
+              }
+            }}
+          >
             {([
               { id: 'FAIL' as const, label: 'FAIL', count: exec.fail, color: 'text-status-fail' },
               { id: 'PASS' as const, label: 'PASS', count: exec.pass, color: 'text-status-pass' },
@@ -1400,7 +1409,7 @@ export const TestResultPage = ({
               <button
                 key={tab.id}
                 onClick={() => { setHistoryDetailTab(tab.id); setSelectedFailTC(null); }}
-                className={`px-2 py-3 text-[11px] font-semibold relative flex items-center gap-1 transition-colors ${
+                className={`px-1 py-3 text-[11px] font-semibold relative flex flex-none items-center gap-1.5 whitespace-nowrap transition-colors ${
                   historyDetailTab === tab.id ? tab.color : 'text-[#9ca3af] hover:text-[#6b7280]'
                 }`}
               >
@@ -1423,28 +1432,6 @@ export const TestResultPage = ({
             ))}
           </div>
 
-          {/* 유효 판정율 — PASS + 결함검출 FAIL = 시스템이 유의미한 결론을 낸 비율.
-              FAIL 중 PRODUCT_DEFECT_CANDIDATE 는 제품 결함을 잡은 '정상 FAIL'. */}
-          {(() => {
-            const totalCount = (exec.pass ?? 0) + (exec.fail ?? 0)
-              + (exec.skipped ?? skipCases.length) + (exec.unverified ?? unverifiedCases.length);
-            const validCount = (exec.pass ?? 0) + defectFailCount;
-            const validRate = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
-            return (
-              <div className="px-4 py-2 border-b border-[#f0f0f0] bg-gray-50/60 flex-shrink-0">
-                <div className="flex items-center justify-between text-[10px] text-[#6b7280]">
-                  <span>유효 판정율 (PASS + 결함 검출)</span>
-                  <span className="font-bold text-[#1a1a2e]">{validRate}%</span>
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-[10px]">
-                  <span className="text-status-fail">결함 검출 {defectFailCount}</span>
-                  <span className="text-[#9ca3af]">·</span>
-                  <span className="text-[#d4a017]">테스트·환경 {abnormalFailCount}</span>
-                </div>
-              </div>
-            );
-          })()}
-
           <div className="flex-1 overflow-y-auto py-2">
             {historyDetailTab === 'FAIL' && Object.entries(failsByTS).map(([tsId, errors]) => (
               <div key={tsId}>
@@ -1459,9 +1446,9 @@ export const TestResultPage = ({
                     className="w-3.5 h-3.5 accent-[var(--status-fail)] flex-shrink-0"
                   />
                   <XCircle className="w-3.5 h-3.5 text-status-fail flex-shrink-0" />
-                  <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  <span className="flex-shrink-0 whitespace-nowrap text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
                   {tsNm(tsId) && <span className="text-[10px] text-[#9ca3af] truncate">{tsNm(tsId)}</span>}
-                  <span className="ml-auto text-xs text-status-fail">FAIL {errors.length}</span>
+                  <span className="ml-auto flex-shrink-0 whitespace-nowrap text-xs text-status-fail">FAIL {errors.length}</span>
                 </div>
                 {errors.map(err => {
                   const isActive = (selectedFailTC ?? verdictFails[0]?.id) === err.id;
@@ -1513,9 +1500,9 @@ export const TestResultPage = ({
               <div key={tsId}>
                 <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
                   <CheckCircle className="w-3.5 h-3.5 text-status-pass flex-shrink-0" />
-                  <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  <span className="flex-shrink-0 whitespace-nowrap text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
                   {tsNm(tsId) && <span className="text-[10px] text-[#9ca3af] truncate">{tsNm(tsId)}</span>}
-                  <span className="ml-auto text-xs text-status-pass">PASS {passes.length}</span>
+                  <span className="ml-auto flex-shrink-0 whitespace-nowrap text-xs text-status-pass">PASS {passes.length}</span>
                 </div>
                 {passes.map(p => {
                   const isActive = selectedFailTC === p.id;
@@ -1543,9 +1530,9 @@ export const TestResultPage = ({
               <div key={tsId}>
                 <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
                   <MinusCircle className="w-3.5 h-3.5 text-[#7c8db5] flex-shrink-0" />
-                  <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  <span className="flex-shrink-0 whitespace-nowrap text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
                   {tsNm(tsId) && <span className="text-[10px] text-[#9ca3af] truncate">{tsNm(tsId)}</span>}
-                  <span className="ml-auto text-xs text-[#7c8db5]">U {us.length}</span>
+                  <span className="ml-auto flex-shrink-0 whitespace-nowrap text-xs text-[#7c8db5]">U {us.length}</span>
                 </div>
                 {us.map(p => {
                   const isActive = selectedFailTC === p.id;
@@ -1572,9 +1559,9 @@ export const TestResultPage = ({
               <div key={tsId}>
                 <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-[#f0f0f0]">
                   <MinusCircle className="w-3.5 h-3.5 text-[#d4a017] flex-shrink-0" />
-                  <span className="text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
+                  <span className="flex-shrink-0 whitespace-nowrap text-xs font-semibold text-[#1a1a2e]">{tsId}</span>
                   {tsNm(tsId) && <span className="text-[10px] text-[#9ca3af] truncate">{tsNm(tsId)}</span>}
-                  <span className="ml-auto text-xs text-[#d4a017]">S {skips.length}</span>
+                  <span className="ml-auto flex-shrink-0 whitespace-nowrap text-xs text-[#d4a017]">S {skips.length}</span>
                 </div>
                 {skips.map(p => {
                   const isActive = selectedFailTC === p.id;
